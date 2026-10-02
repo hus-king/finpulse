@@ -14,6 +14,8 @@ STOCK_ENTITIES = {
     "贵州茅台": {"code": "600519", "aliases": ["贵州茅台", "茅台", "600519"]},
     "宁德时代": {"code": "300750", "aliases": ["宁德时代", "寧德時代", "Contemporary Amperex", "CATL", "300750"]},
     "中芯国际": {"code": "688981", "aliases": ["中芯国际", "中芯國際", "SMIC", "688981"]},
+    "平安银行": {"code": "000001", "aliases": ["平安银行", "平安銀行", "000001"]},
+    "比亚迪": {"code": "002594", "aliases": ["比亚迪", "比亞迪", "BYD", "002594"]},
 }
 REASONS = {
     "quote_page": "行情、历史价格或评级聚合页面，不是独立新闻",
@@ -24,14 +26,21 @@ REASONS = {
     "missing_date": "没有可用的发布时间，待核验",
     "duplicate_event": "同一股票、相近日期的同一事件，合并来源",
     "invalid_url": "缺少有效的 HTTP/HTTPS 来源链接",
+    "missing_content": "正文或搜索片段不足以进行研判",
+    "garbled_title": "标题存在乱码或缺少可读的主体信息",
+    "insufficient_event_evidence": "正文或片段未提供标题事件的有效材料，暂不研判",
+    "event_after_publication": "已发生交易事件晚于标注发布日期，待核验",
 }
 
 
 def normalize_url(url):
-    parts = urlsplit(url)
-    if parts.scheme not in ("https", "http") or not parts.netloc:
+    try:
+        parts = urlsplit(url)
+    except (ValueError, TypeError):
         return ""
-    tracking = {"from", "spm", "gubaurl", "guba", "name", "source", "ref"}
+    if parts.scheme not in ("https", "http") or not parts.netloc or parts.username or parts.password:
+        return ""
+    tracking = {"from", "spm", "gubaurl", "guba", "name", "source", "ref", "oid", "vt", "cid", "node_id", "clickid"}
     query = [(k, v) for k, v in parse_qsl(parts.query) if not k.lower().startswith("utm_") and k.lower() not in tracking]
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, urlencode(query), ""))
 
@@ -53,7 +62,7 @@ def clean_text(raw, title=""):
     position = text.find(short_title) if len(short_title) >= 8 else -1
     if 0 < position < 2500:
         text = text[position:]
-    footer = re.search(r"(?m)^\s*(?:责任编辑[：:]|用户评论|网友评论|实时资讯|相关报道|相关推荐|相关阅读|时报热榜|热点视频|新浪简介\||Copyright|关于我们\||追加内容|举报|下载[\"“]?证券时报|\s*-\s*\d{2}/)", text)
+    footer = re.search(r"(?m)^\s*(?:#{1,6}\s*)?(?:责任编辑[：:]|用户评论|网友评论|实时资讯|最新资讯|相关报道|相关推荐|相关阅读|推荐阅读|热门推荐|推荐新闻|推荐资讯|免责声明|时报热榜|热点视频|新浪简介\||Copyright|关于我们\||追加内容|举报|下载[\"“]?证券时报|\s*-\s*\d{2}/)", text)
     if footer:
         text = text[:footer.start()]
     text = text.replace("[...]", "[搜索片段存在截断]")
@@ -106,9 +115,9 @@ def category(title, text):
         return "derivatives", "衍生品事件", "auxiliary"
     if re.search(r"目标价|评级|高盛", title):
         return "analyst_opinion", "机构观点", "auxiliary"
-    if re.search(r"(?:跌|涨)\s*\d|盘中|成交额|资金净流", title):
+    if re.search(r"(?:跌|涨)\s*\d|盘中|成交额|资金净|主力资金|北水|南下资金|净买入|净卖出", title):
         return "market_brief", "行情快讯", "auxiliary"
-    if re.search(r"公告|股东会|债券发行|财务资助|持股计划", title) or (re.search(r"Contemporary Amperex", title, flags=re.I) and "公告" in text[:1000]):
+    if re.search(r"公告|股东会|债券发行|财务资助|持股计划|回购", title) or (re.search(r"Contemporary Amperex", title, flags=re.I) and "公告" in text[:1000]):
         return "announcement", "公告材料", "company"
     return "company_news", "公司相关新闻", "company"
 
@@ -163,14 +172,41 @@ def clean_report(raw_report, extracts=None):
             url = normalize_url(raw.get("url", ""))
             full_text = extracts.get(url)
             text, stats = clean_text(full_text if full_text is not None else raw.get("content", ""), raw.get("title", ""))
-            meta, body = metadata_date(raw.get("published_date")), body_publication_date(text)
+            extracted_date = body_publication_date(text) if full_text is not None else None
+            text_source = "extracted_body" if full_text is not None else "search_fragments"
+            # Dynamic news pages can expose a headline followed only by sidebar
+            # stories. Do not present that extraction as the article's body.
+            title_actions = re.findall(r'暂停|停业|回购|持股计划|增持|减持|净利润|营收|业绩|债券|解禁|处罚|收购', raw.get('title', ''))
+            remainder = '\n'.join(line for line in text.splitlines() if core_title(raw.get('title', '')) not in line)
+            if full_text is not None and title_actions and not any(action in remainder for action in title_actions):
+                text, stats = clean_text(raw.get('content', ''), raw.get('title', ''))
+                stats['extraction_mismatch'] = True
+                text_source = 'search_fragments'
+            # A fallback fragment must not hide an older publication header
+            # discovered in the extracted page. Conflicts stay quarantined.
+            meta, body = metadata_date(raw.get("published_date")), body_publication_date(text) or extracted_date
             effective = body or meta
             kind, label, tier = category(raw.get("title", ""), text)
-            item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": STOCK_ENTITIES[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": "conflict" if body and meta and body != meta else "body_verified" if body else "metadata_only" if meta else "missing", "text_source": "extracted_body" if full_text is not None else "search_fragments", "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
+            item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": STOCK_ENTITIES[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": "conflict" if body and meta and body != meta else "body_verified" if body else "metadata_only" if meta else "missing", "text_source": text_source, "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
             reasons = []
             title = raw.get("title", "")
+            if not re.search(r'[\u4e00-\u9fff]{2,}', title) and not any(alias.isascii() and not alias.isdigit() and alias.lower() in title.lower() for alias in STOCK_ENTITIES[stock]['aliases']):
+                reasons.append('garbled_title')
             if not url:
                 reasons.append("invalid_url")
+            if len(text.strip()) < 30:
+                reasons.append("missing_content")
+            remainder = '\n'.join(line for line in text.splitlines() if core_title(raw.get('title', '')) not in line)
+            if title_actions and not any(action in remainder for action in title_actions):
+                reasons.append('insufficient_event_evidence')
+            occurred = re.search(r'(?m)^(\d{1,2})月(\d{1,2})日[^。\n]{0,100}(?:收盘|买入|发帖|直线拉升)', text[:1000])
+            if occurred and effective and not re.search(r'将|拟|计划', occurred.group()):
+                try:
+                    event_day = date(effective.year, int(occurred[1]), int(occurred[2]))
+                    if 0 < (event_day - effective).days <= 31:
+                        reasons.append('event_after_publication')
+                except ValueError:
+                    pass
             if not any(alias.lower() in title.lower() for alias in STOCK_ENTITIES[stock]["aliases"]):
                 reasons.append("not_primary_entity")
             if re.search(r"股票股价|股价行情|历史行情|详细报价|詳細報價|即時報價|股票预测|股票預測|RT Quote", title, flags=re.I):

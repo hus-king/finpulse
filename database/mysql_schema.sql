@@ -38,3 +38,14 @@ CREATE TABLE IF NOT EXISTS admin_audit (
     created_at BIGINT NOT NULL,
     INDEX admin_audit_time_idx(created_at)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS research_records (
+    namespace VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    record_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    owner VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
+    payload LONGTEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY(namespace,record_key,owner),
+    INDEX research_records_time_idx(namespace,updated_at)
+) ENGINE=InnoDB;

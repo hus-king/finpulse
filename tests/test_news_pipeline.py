@@ -2,10 +2,33 @@ import unittest
 from datetime import date
 
 from backend.market_data import build_snapshots
-from backend.news_cleaning import body_publication_date, clean_report, clean_text, metadata_date, same_event
+from backend.news_cleaning import body_publication_date, clean_report, clean_text, metadata_date, normalize_url, same_event
 
 
 class NewsPipelineTests(unittest.TestCase):
+    def test_tracking_and_promotional_url_parameters_are_removed(self):
+        self.assertEqual(normalize_url('https://finance.sina.cn/a.html?oid=spam&vt=4&id=123'), 'https://finance.sina.cn/a.html?id=123')
+
+    def test_wrong_sidebar_extraction_is_not_used_as_news_body(self):
+        title = '贵州茅台旗下自营渠道暂停营业一天'
+        url = 'https://example.com/a'
+        raw = {'date_range': ['2026-09-01', '2026-10-03'], 'searches': [{'stock': '贵州茅台', 'response': {'results': [{'title': title, 'url': url, 'published_date': '2026-09-30', 'content': '贵州茅台自营渠道计划暂停营业一天，具体原因与实际业务影响尚需核实，请查看公告原文。'}]}}]}
+        result = clean_report(raw, {url: title + '\n2026-09-30\n段永平买入贵州茅台，个股当日价格上涨，相关新闻来自其他报道。'})
+        self.assertEqual(result['items'][0]['text_source'], 'search_fragments')
+        self.assertNotIn('段永平', result['items'][0]['cleaned_text'])
+
+    def test_headline_and_unrelated_sidebar_without_event_evidence_are_quarantined(self):
+        raw = {'date_range': ['2026-09-01', '2026-10-03'], 'searches': [{'stock': '贵州茅台', 'response': {'results': [{'title': '贵州茅台旗下自营渠道暂停营业一天', 'url': 'https://example.com/a', 'published_date': '2026-09-30', 'content': '贵州茅台旗下自营渠道暂停营业一天\n段永平买入贵州茅台，个股当日价格上涨，相关新闻来自其他报道。'}]}}]}
+        result = clean_report(raw)
+        self.assertEqual(result['items'], [])
+        self.assertIn('insufficient_event_evidence', result['audit'][0]['reason_codes'])
+
+    def test_completed_trade_cannot_precede_article_publication_in_metadata(self):
+        raw = {'date_range': ['2026-09-01', '2026-10-03'], 'searches': [{'stock': '贵州茅台', 'response': {'results': [{'title': '段永平加仓贵州茅台', 'url': 'https://example.com/a', 'published_date': '2026-09-25', 'content': '9月28日，投资者已买入贵州茅台三万股，并发布交易截图，当日收盘价格出现变化。'}]}}]}
+        result = clean_report(raw)
+        self.assertEqual(result['items'], [])
+        self.assertIn('event_after_publication', result['audit'][0]['reason_codes'])
+
     def test_body_year_is_not_mistaken_for_publication_date(self):
         self.assertIsNone(body_publication_date("2025年公司营收增长。2026年展望仍有不确定性。"))
         self.assertEqual(body_publication_date("来源：界面新闻2025-09-02 09:42\n正文"), date(2025, 9, 2))

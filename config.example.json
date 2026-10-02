@@ -4,6 +4,19 @@
   "model": "replace-with-your-model",
   "tavily_api_key": "",
   "tavily_base_url": "https://api.tavily.com",
+  "scheduler": {
+    "enabled": false,
+    "morning_time": "08:30"
+  },
+  "notifications": {
+    "smtp": {
+      "host": "",
+      "port": 465,
+      "username": "",
+      "password": "",
+      "from_email": ""
+    }
+  },
   "database": {
     "engine": "sqlite",
     "host": "127.0.0.1",

@@ -1,158 +1,162 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BookOpen, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Code2, Command, Cpu, FlaskConical, LayoutDashboard, LoaderCircle, Plus, Radio, RefreshCw, Search, Sparkles, TrendingUp, X, Zap } from 'lucide-react';
+import { Activity, CheckCircle2, ExternalLink, FlaskConical, LoaderCircle, Plus, Search, X } from 'lucide-react';
 import { api } from './api';
-import AiDrawer from './AiDrawer';
+import { useAuth } from './AuthContext';
 import AccountMenu from './AccountMenu';
 import AdminPanel from './AdminPanel';
-import { ShieldCheck } from 'lucide-react';
-import { useAuth } from './AuthContext';
-import PriceChart from './PriceChart';
-import type { Dashboard, Health, ModelReply, News, Stock } from './types';
+import AiDrawer from './AiDrawer';
+import ResearchDashboard from './ResearchDashboard';
+import BriefingPanel from './BriefingPanel';
+import useDialogScroll from './useDialogScroll';
+import type { Dashboard, Health, Job, ModelReply, Stock } from './types';
+import { number, percent, tone } from './format';
 
-const price = (value: number) => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const percent = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
-const tone = (value: number) => value >= 0 ? 'up' : 'down';
+const defaults = ['600519', '300750', '688981'];
 
-function Sparkline({ seed, rising }: { seed: number; rising: boolean }) {
-  const values = Array.from({ length: 24 }, (_, i) => Math.sin(i * 1.2 + seed) * 5 + Math.cos(i * 0.4) * 4 + (rising ? -i * 0.7 : i * 0.5) + 24);
-  const points = values.map((value, i) => `${i * 3.3},${value}`).join(' ');
-  return <svg className={`sparkline ${rising ? 'up' : 'down'}`} viewBox="0 0 78 43" aria-hidden="true"><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
+function Dialog({ title, children, close }: { title: string; children: React.ReactNode; close: () => void }) {
+  useDialogScroll();
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, [close]);
+  return <div className="modal-overlay" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}><section className="research-modal" role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button autoFocus className="icon-button" aria-label="关闭弹窗" onClick={close}><X size={20} /></button></header>{children}</section></div>;
 }
 
 export default function App() {
-  const { user, loading: authLoading, requireAuth, requestLogin, sessionError, refreshSession } = useAuth();
+  const { user, loading: authLoading, requireAuth, sessionError } = useAuth();
+  const [view, setView] = useState('dashboard');
   const [accountOpen, setAccountOpen] = useState(false);
-  const previousUser = useRef<string | null>(null);
-  const testController = useRef<AbortController | null>(null);
   const [catalog, setCatalog] = useState<Stock[]>([]);
-  const [watchlist, setWatchlist] = useState<string[]>(() => { try { const saved = JSON.parse(localStorage.getItem('finpulse.watchlist') ?? 'null'); return Array.isArray(saved) && saved.length > 0 && saved.every(item => typeof item === 'string') ? saved : ['600519', '300750', '688981']; } catch { return ['600519', '300750', '688981']; } });
+  const [watchlist, setWatchlist] = useState<string[]>(defaults);
+  const [watchReady, setWatchReady] = useState(false);
+  const [savingWatch, setSavingWatch] = useState(false);
   const [code, setCode] = useState('600519');
   const [data, setData] = useState<Dashboard | null>(null);
+  const [snapshots, setSnapshots] = useState<Record<string, Dashboard>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [adding, setAdding] = useState(false);
-  const [mode, setMode] = useState('近 3 月');
-  const [indicator, setIndicator] = useState('成交量');
-  const [drawer, setDrawer] = useState<{ stock: Stock; news?: News } | null>(null);
-  const [view, setView] = useState('dashboard');
+  const [search, setSearch] = useState('');
+  const [drawer, setDrawer] = useState<{ stock: Stock; news?: Dashboard['news'][number] } | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [collecting, setCollecting] = useState(false);
   const [lastReply, setLastReply] = useState<ModelReply | null>(null);
   const [testing, setTesting] = useState(false);
-  const [testError, setTestError] = useState('');
-  const [info, setInfo] = useState(false);
-
-  useEffect(() => { if (user?.role !== 'admin') setView(previous => previous === 'admin' ? 'dashboard' : previous); }, [user?.role]);
-
-  useEffect(() => {
-    if (previousUser.current && previousUser.current !== user?.id) {
-      testController.current?.abort(); setTesting(false);
-      setDrawer(null); setLastReply(null); setTestError(''); setAccountOpen(false);
-    }
-    previousUser.current = user?.id ?? null;
-  }, [user?.id]);
-  useEffect(() => () => testController.current?.abort(), []);
+  const [audit, setAudit] = useState<{ summary: Record<string, number>; audit: { id: string; title: string; status: string; reasons: string[]; url: string }[] } | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const userId = useRef(user?.id);
+  const controller = useRef<AbortController | null>(null);
+  userId.current = user?.id;
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setAdding(true); setSearch(''); }
-      if (event.key === 'Escape') { setAdding(false); setInfo(false); }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    const abort = new AbortController();
+    Promise.all([api<{ items: Stock[] }>('/api/stocks', undefined, abort.signal), api<Health>('/api/health', undefined, abort.signal)])
+      .then(async ([stocks, status]) => {
+        setCatalog(stocks.items); setHealth(status);
+        const results = await Promise.all(stocks.items.map(stock => api<Dashboard>(`/api/dashboard/${stock.code}`, undefined, abort.signal)));
+        if (!abort.signal.aborted) setSnapshots(Object.fromEntries(results.map(item => [item.stock.code, item])));
+      }).catch(e => { if (e.name !== 'AbortError') setError(e.message); });
+    return () => abort.abort();
   }, []);
+
   useEffect(() => {
-    const controller = new AbortController();
-    Promise.all([api<{ items: Stock[] }>('/api/stocks', undefined, controller.signal), api<Health>('/api/health', undefined, controller.signal)]).then(([stocks, status]) => { setCatalog(stocks.items); setHealth(status); }).catch(error => { if (error.name !== 'AbortError') setError(error.message); });
-    return () => controller.abort();
-  }, []);
-  useEffect(() => { localStorage.setItem('finpulse.watchlist', JSON.stringify(watchlist)); }, [watchlist]);
+    if (authLoading) return;
+    const abort = new AbortController();
+    controller.current?.abort(); setJob(null); setCollecting(false); setTesting(false); setDrawer(null); setLastReply(null); setAccountOpen(false); setAudit(null); setWatchReady(false); setWatchlist(defaults);
+    if (user?.role !== 'admin') setView(previous => previous === 'admin' ? 'dashboard' : previous);
+    if (user) {
+      api<{ codes: string[] }>('/api/watchlist', undefined, abort.signal).then(result => { setWatchlist(result.codes); setWatchReady(true); }).catch(e => { if (e.name !== 'AbortError') setError(e.message); });
+    } else { setWatchReady(true); }
+    return () => abort.abort();
+  }, [user?.id, authLoading]);
+
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true); setError('');
-    api<Dashboard>(`/api/dashboard/${code}`, undefined, controller.signal).then(setData).catch(error => { if (error.name !== 'AbortError') setError(error.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+    const abort = new AbortController();
+    setLoading(true); setData(null); setError('');
+    api<Dashboard>(`/api/dashboard/${code}`, undefined, abort.signal).then(setData).catch(e => { if (e.name !== 'AbortError') setError(e.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    return () => abort.abort();
   }, [code]);
-  const openEvent = useCallback(() => { if (data) setDrawer({ stock: data.stock, news: data.news[0] }); }, [data]);
+
+  const loadSnapshot = useCallback(async (target: string, signal?: AbortSignal) => {
+    const next = await api<Dashboard>(`/api/dashboard/${target}`, undefined, signal);
+    if (!signal?.aborted) { setSnapshots(previous => ({ ...previous, [target]: next })); if (code === target) setData(next); }
+  }, [code]);
+
+  useEffect(() => {
+    if (!job || !['queued', 'running'].includes(job.status) || !user) return;
+    const abort = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const latest = await api<Job>(`/api/research/jobs/${job.id}`, undefined, abort.signal);
+        if (abort.signal.aborted) return;
+        if (!['queued', 'running'].includes(latest.status)) { await loadSnapshot(latest.code, abort.signal); if (!abort.signal.aborted) { setCollecting(false); setJob(latest); } }
+        else { setJob(latest); }
+      } catch (e) { if (!abort.signal.aborted) { setError((e as Error).message); setCollecting(false); setJob(null); } }
+    }, 2000);
+    return () => { abort.abort(); window.clearTimeout(timer); };
+  }, [job, user?.id, loadSnapshot]);
+
+  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setAdding(true); } };
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
+
+  async function collect(days: number, community: boolean) {
+    if (!requireAuth('登录后可以采集真实新闻并使用模型研判。')) return;
+    const abort = new AbortController(); controller.current?.abort(); controller.current = abort;
+    setCollecting(true); setError(''); setJob(null);
+    try { setJob(await api<Job>(`/api/research/${code}/refresh`, { days, max_articles: 3, include_community: community }, abort.signal)); }
+    catch (e) { if (!abort.signal.aborted) { setError((e as Error).message); setCollecting(false); } }
+  }
+
+  async function updateWatchlist(next: string[]) {
+    if (!requireAuth('登录后，自选股会保存在你的账号中。') || !watchReady || savingWatch) return;
+    const owner = user?.id; setSavingWatch(true);
+    try {
+      const result = await api<{ codes: string[] }>('/api/watchlist', { codes: next });
+      if (userId.current === owner) setWatchlist(result.codes);
+    } catch (e) { setError((e as Error).message); }
+    finally { setSavingWatch(false); }
+  }
+
+  async function openAudit() {
+    if (!requireAuth('登录后可查看新闻清洗与去重记录。')) return;
+    const owner = user?.id; setAuditLoading(true);
+    try { const result = await api<NonNullable<typeof audit>>(`/api/research/${code}/audit`); if (owner === userId.current) setAudit(result); }
+    catch (e) { setError((e as Error).message); }
+    finally { setAuditLoading(false); }
+  }
 
   async function testConnection() {
-    if (!requireAuth('登录后即可发送模型连接测试。')) return;
-    const controller = new AbortController();
-    testController.current = controller;
-    setTesting(true); setTestError('');
-    try {
-      const result = await api<ModelReply>('/api/chat', { messages: [{ role: 'user', content: '这是连接测试，请只回复：FinPulse 连接成功。' }] }, controller.signal);
-      if (controller.signal.aborted) return;
-      setLastReply(result);
-      setHealth(await api<Health>('/api/health', undefined, controller.signal));
-    } catch (error) { if (!controller.signal.aborted) setTestError((error as Error).message); }
-    finally { if (!controller.signal.aborted) setTesting(false); }
-  }
-  async function refresh() {
-    setLoading(true); setError('');
-    try { const [next, status] = await Promise.all([api<Dashboard>(`/api/dashboard/${code}`), api<Health>('/api/health')]); setData(next); setHealth(status); }
-    catch (error) { setError((error as Error).message); }
-    finally { setLoading(false); }
+    if (!requireAuth('登录后可以发送模型连接测试。')) return;
+    const abort = new AbortController(); controller.current?.abort(); controller.current = abort;
+    setTesting(true); setError('');
+    try { const result = await api<ModelReply>('/api/chat', { messages: [{ role: 'user', content: '连接测试，请只回复：FinPulse 连接成功。' }] }, abort.signal); if (!abort.signal.aborted) setLastReply(result); }
+    catch (e) { if (!abort.signal.aborted) setError((e as Error).message); }
+    finally { if (!abort.signal.aborted) setTesting(false); }
   }
 
-  const stocks = catalog.filter(stock => watchlist.includes(stock.code));
-  const matches = catalog.filter(stock => `${stock.code}${stock.name}${stock.initials}`.toLowerCase().includes(search.trim().toLowerCase()));
-
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <a className="brand" href="/" aria-label="FinPulse 首页"><span className="brand-icon"><Activity size={22} /></span><span>Fin<span className="brand-light">Pulse</span><small>智能股票舆情</small></span></a>
-      <div className="workspace-label">研究工作台 <span>DEMO</span></div>
-      <nav className="main-nav" aria-label="主导航"><button className={view === 'dashboard' ? 'active' : ''} onClick={() => setView('dashboard')}><LayoutDashboard size={18} />概览看板<span className="nav-indicator" /></button><button className={view === 'lab' ? 'active' : ''} onClick={() => setView('lab')}><FlaskConical size={18} />AI 请求实验室<span className="tiny-tag">LIVE</span></button>{user?.role === 'admin' && <button className={view === 'admin' ? 'active' : ''} onClick={() => setView('admin')}><ShieldCheck size={18} />管理中心</button>}</nav>
-      <div className="sidebar-divider" />
-      <div className="section-label">我的自选 <span className="count">{stocks.length}</span><button className="icon-button" onClick={() => { setAdding(true); setSearch(''); }} aria-label="添加自选股"><Plus size={16} /></button></div>
-      <div className="watchlist">{stocks.map((stock, i) => <button key={stock.code} className={`stock-item ${code === stock.code ? 'selected' : ''}`} onClick={() => { setCode(stock.code); setView('dashboard'); }}><div className="stock-row"><strong>{stock.name}</strong><span className={tone(stock.change)}>{percent(stock.change)}</span></div><div className="stock-row muted"><span className="mono">{stock.exchange} {stock.code}</span><span className="mono">{price(stock.price)}</span></div><Sparkline seed={i * 3} rising={stock.change >= 0} /></button>)}</div>
-      <button className="add-stock" onClick={() => { setAdding(true); setSearch(''); }}><Plus size={15} /> 添加自选股</button>
-      <div className="sidebar-bottom"><div className="local-status"><span className="status-dot" /><span>本地工作空间</span><span className="mono">v0.2</span></div><button className="profile" disabled={authLoading} onClick={() => user ? setAccountOpen(!accountOpen) : requestLogin()}><span className="avatar">{user ? user.nickname.slice(0, 1).toUpperCase() : 'FP'}</span><span><strong>{user ? user.nickname : '登录你的工作空间'}</strong><small>{user ? `@${user.username}` : 'LOGIN TO USE AI'}</small></span><ChevronRight size={17} /></button></div>
-    </aside>
-
-    <div className="workspace">
-      <header className="topbar"><div className="breadcrumbs">工作台 <ChevronRight size={13} /><span>{view === 'admin' ? '管理中心' : view === 'dashboard' ? '概览看板' : 'AI 请求实验室'}</span></div><button className="global-search" onClick={() => { setAdding(true); setSearch(''); }}><Search size={15} /><span>搜索股票名称 / 代码</span><Command size={12} /><span className="mono">K</span></button><div className="top-actions"><span className="demo-pill"><span /> 演示模式</span><button className="icon-button" onClick={() => setInfo(true)} aria-label="Demo 说明"><CircleHelp size={18} /></button><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
-
-      <main>
-        <div className="page-heading"><div><div className="eyebrow">LESS NOISE. MORE INSIGHT.</div><h1>{view === 'admin' ? '管理账号，维护团队工作空间' : view === 'dashboard' ? '看清市场的每一次脉动' : '让每一次请求都有回声'}</h1><p>{view === 'admin' ? '查看网站账号、管理用户状态与操作记录。' : view === 'dashboard' ? '连接行情、新闻与市场情绪，让研究更有依据。' : '从本地后端到模型服务，验证你的 AI 请求链路。'}</p></div>{view !== 'admin' && <button className="outline-button" onClick={refresh} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> 刷新看板</button>}</div>
-
-        {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
-
-        {error && <div className="error-box" role="alert">{error}<button onClick={refresh}>重新连接</button></div>}
-        {sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}<button onClick={() => { void refreshSession(); }}>重试</button></div>}
-        {data && view === 'dashboard' && <>
-          <div className="market-strip">{data.market.indices.map(index => <div className="market-index" key={index.name}><span>{index.name}</span><strong className="mono">{index.value}</strong><span className={`market-change ${tone(index.change)}`}>{index.change >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{percent(index.change)}</span></div>)}<div className="market-strip-note"><span className="status-dot" /> 示例行情 <span className="mono">09.30</span></div></div>
-
-          <div className="dashboard-grid">
-            <div className="main-column">
-              <section className="panel chart-panel"><header className="stock-header"><div className="stock-title"><span className="stock-emblem">{data.stock.name.slice(0, 1)}</span><div><h2>{data.stock.name}<span className="industry-tag">{data.stock.industry}</span></h2><span className="mono muted">{data.stock.exchange}:{data.stock.code}</span></div></div><button className="subtle-button" onClick={() => { setAdding(true); setSearch(''); }}>切换标的<ChevronDown size={14} /></button></header>
-                <div className="quote-row"><div className="current-price"><strong className={`mono ${tone(data.stock.change)}`}>{price(data.stock.price)}</strong><span className={tone(data.stock.change)}>{percent(data.stock.change)} <ArrowUpRight size={15} /></span></div><div className="quote-details"><div><span>今开</span><strong className="mono">{price(data.candles.at(-1)!.open)}</strong></div><div><span>最高</span><strong className="mono up">{price(data.candles.at(-1)!.high)}</strong></div><div><span>最低</span><strong className="mono down">{price(data.candles.at(-1)!.low)}</strong></div><div><span>数据日期</span><strong className="mono">09-30</strong></div></div></div>
-                <div className="chart-toolbar"><div className="segmented">{['近 1 月', '近 3 月', '全部'].map(item => <button key={item} className={mode === item ? 'active' : ''} onClick={() => setMode(item)}>{item}</button>)}</div><div className="chart-legend"><span><i style={{ background: '#e8c681' }} />MA5</span><span><i style={{ background: '#7b9cf3' }} />MA10</span><span><i style={{ background: '#b488dd' }} />MA20</span></div><span className="chart-kind">日 K<ChevronDown size={11} /></span></div>
-                <PriceChart candles={data.candles} mode={mode} indicator={indicator} onEvent={openEvent} />
-                <footer className="chart-footer"><div className="indicator-switch">{['成交量', 'MACD'].map(item => <button key={item} className={indicator === item ? 'active' : ''} onClick={() => setIndicator(item)}>{item}</button>)}</div><span><span className="event-dot">AI</span> 点击图中标记查看示例新闻</span><span className="chart-hint">滚轮缩放</span></footer>
-              </section>
-
-              <section className="panel news-panel"><header className="panel-heading"><div><Radio size={17} className="mint-text" /><h2>舆情雷达</h2><span className="count">{data.news.length}</span></div><span className="sample-label">示例新闻 · 示例评分</span></header><div className="news-list">{data.news.map(news => <article className="news-item" key={news.id}><span className={`sentiment-number ${news.score > 0 ? 'positive' : news.score < 0 ? 'negative' : 'neutral'}`}>{news.score > 0 ? '+' : ''}{news.score}</span><div className="news-content"><div className="news-meta"><span>{news.source}</span><span>·</span><time className="mono">{news.time}</time><span className="news-topic">{news.tag}</span></div><h3>{news.title}</h3><p>{news.content}</p></div><button className="analyze-button" onClick={() => setDrawer({ stock: data.stock, news })}><Sparkles size={13} /><span>AI 研判</span><ChevronRight size={13} /></button></article>)}</div><footer className="news-footer"><BookOpen size={13} /> 新闻内容为演示材料。登录后点击 AI 研判可获取真实模型分析。</footer></section>
-            </div>
-
-            <div className="insight-column">
-              <section className="panel temperature-panel"><header className="panel-heading"><div><Activity size={17} className="mint-text" /><h2>市场情绪温度</h2></div><span className="sample-label">示例</span></header><div className="temperature-value"><strong className="mono">{data.market.temperature}<small>/100</small></strong><span>温和乐观 <TrendingUp size={13} /></span></div><div className="temperature-scale"><div className="temperature-marker" style={{ left: `${data.market.temperature}%` }} /></div><div className="scale-labels"><span>极度恐慌</span><span>中性</span><span>极度贪婪</span></div><p>市场风险偏好有所回暖<br />关注消息面的持续性与成交变化</p></section>
-              <section className="panel sentiment-panel"><header className="panel-heading"><div><MessageIcon /><h2>社区情绪洞察</h2></div><span className="sample-label">示例</span></header><div className="sentiment-subtitle">{data.stock.name} <span>· {data.sentiment.sample_count} 条样本</span></div><div className="bull-bear"><div><span className="bull-label">看多</span><strong className="mono up">{data.sentiment.bull}<small>%</small></strong></div><span className="versus">VS</span><div><span className="bear-label">看空</span><strong className="mono down">{data.sentiment.bear}<small>%</small></strong></div></div><div className="ratio-track"><span style={{ width: `${data.sentiment.bull}%` }} /><span style={{ width: `${data.sentiment.bear}%` }} /></div><div className="sentiment-caption"><span>讨论偏乐观</span><span>加权多空比</span></div><div className="inner-divider" /><div className="keyword-heading">讨论热词 <span>WORD PULSE</span></div><div className="word-cloud">{data.sentiment.keywords.map((word, index) => <span key={word} className={`word-${index}`}>{word}</span>)}</div><div className="sentiment-note"><span className="status-dot" /> 示例情绪未达到极端预警阈值</div></section>
-              <section className="ai-invitation"><div className="ai-orb"><Sparkles size={23} /></div><span className="eyebrow">POWERED BY AI</span><h2>把消息，变成线索。</h2><p>提炼关键信息，拆解影响逻辑。<br />让你的下一次追问更有方向。</p><button onClick={() => setDrawer({ stock: data.stock })}>与 AI 一起研究<ArrowRight size={16} /></button><span className="ai-connection"><span className={`status-dot ${lastReply ? '' : 'pending'}`} />{lastReply ? '模型请求已验证' : health?.configured ? '模型已配置 · 等待首次请求' : '模型尚未配置'}</span></section>
-            </div>
-          </div>
-        </>}
-
-        {view === 'lab' && <div className="lab-grid"><section className="panel lab-panel"><span className="lab-symbol"><Cpu size={30} /></span><span className="eyebrow">MODEL CONNECTION</span><h2>连接你的研究引擎</h2><p>配置从本地文件读取。发送测试请求，确认模型可以正常响应。</p><dl className="connection-details"><div><dt>服务提供方</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd className="mono">{health?.model ?? '未配置'}</dd></div><div><dt>密钥状态</dt><dd>{health?.configured ? <><CheckCircle2 size={14} className="mint-text" /> 已在后端配置</> : '请检查 config.local.json'}</dd></div><div><dt>请求路径</dt><dd className="mono">浏览器 → localhost → 模型服务</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured} onClick={testConnection}>{testing ? <LoaderCircle className="spin" size={16} /> : <Zap size={16} />}{testing ? '正在请求模型…' : user ? '发送连接测试' : '登录后测试连接'}<ArrowRight size={15} /></button>{testError && <div className="error-box" role="alert">{testError}</div>}</section><section className="panel response-panel"><header className="panel-heading"><div><Code2 size={18} className="mint-text" /><h2>最近一次真实响应</h2></div><span className={`response-badge ${lastReply ? 'success' : ''}`}>{lastReply ? '200 OK' : '等待请求'}</span></header>{lastReply ? <><div className="response-stats"><div><span>耗时</span><strong className="mono">{(lastReply.elapsed_ms / 1000).toFixed(2)}<small>s</small></strong></div><div><span>Token 用量</span><strong className="mono">{lastReply.usage.total_tokens ?? '—'}</strong></div><div><span>请求编号</span><strong className="mono request-id">{lastReply.request_id}</strong></div></div><div className="live-label"><span className="status-dot" /> 模型原始响应</div><pre className="raw-response">{lastReply.content}</pre></> : <div className="empty-response"><Activity size={42} /><h3>一切就绪，等待第一个信号</h3><p>点击左侧按钮，或在看板中发起 AI 研判。<br />请求结果和用量会显示在这里。</p></div>}</section><section className="lab-note"><Sparkles size={17} /><div><strong>从连接测试到完整研判</strong><p>返回概览看板，选择一条示例新闻，点击「AI 研判」即可体验结构化评分、摘要和因果链。</p></div><button onClick={() => setView('dashboard')}>打开看板<ArrowRight size={14} /></button></section></div>}
-        {loading && !data && <div className="loading-state"><LoaderCircle className="spin" size={25} /><span>正在连接本地工作空间…</span></div>}
-        <footer className="page-footer"><span><Activity size={12} /> FinPulse <span className="footer-dot">·</span> 每一条信息，都值得更清晰的理解。</span><span>行情 / 新闻 / 社区数据为示例 <span className="footer-dot">·</span> AI 请求真实发送</span></footer>
-      </main>
-    </div>
-
-    {drawer && <AiDrawer key={`${drawer.stock.code}-${drawer.news?.id ?? 'chat'}`} stock={drawer.stock} news={drawer.news} onClose={() => setDrawer(null)} onResult={setLastReply} />}
-    {adding && <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setAdding(false); }}><section className="stock-modal" role="dialog" aria-modal="true" aria-labelledby="stock-modal-title"><header><div><span className="eyebrow">BUILD YOUR WATCHLIST</span><h2 id="stock-modal-title">发现你关注的标的</h2></div><button className="icon-button" aria-label="关闭股票搜索" onClick={() => setAdding(false)}><X size={20} /></button></header><label className="stock-search"><Search size={18} /><input autoFocus aria-label="搜索股票" placeholder="名称、代码或拼音缩写，如 GZMT" value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setAdding(false); }} /></label><span className="sample-label">演示股票库 · {matches.length} 个结果</span><div className="search-results">{matches.map(stock => <button key={stock.code} onClick={() => { if (!watchlist.includes(stock.code)) setWatchlist(previous => [...previous, stock.code]); setCode(stock.code); setView('dashboard'); setAdding(false); }}><span className="search-stock-info"><strong>{stock.name}<small>{stock.industry}</small></strong><span className="mono muted">{stock.exchange} {stock.code}</span></span><span className={tone(stock.change)}>{percent(stock.change)}</span><span className="search-stock-action">{watchlist.includes(stock.code) ? '打开' : '添加'}<Plus size={14} /></span></button>)}{matches.length === 0 && <div className="search-empty">没有匹配的演示股票，请尝试名称或代码。</div>}</div></section></div>}
-    {info && <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setInfo(false); }}><section className="info-modal" role="dialog" aria-modal="true" aria-labelledby="info-title"><button className="icon-button" aria-label="关闭说明" onClick={() => setInfo(false)}><X size={20} /></button><span className="brand-icon"><Activity size={26} /></span><h2 id="info-title">FinPulse 本地 Demo</h2><p>当前展示用于验证页面交互与模型请求。行情、新闻、社区情绪均为固定示例，后续可以接入你提供的功能与数据。</p><p>注册或登录后，AI 研判、问答和连接测试会通过本地后端调用已配置的真实模型。密钥保存在后端配置文件中。</p><button className="primary-button" onClick={() => setInfo(false)}>开始探索<ArrowRight size={15} /></button></section></div>}
+  const matches = catalog.filter(stock => `${stock.name}${stock.code}${stock.initials}`.toLowerCase().includes(search.toLowerCase().trim()));
+  const running = collecting || !!job && ['queued', 'running'].includes(job.status);
+  const openAssistant = useCallback((news?: Dashboard['news'][number]) => { if (data) setDrawer({ stock: data.stock, news }); }, [data]);
+  return <div className="finance-shell">
+    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/"><Activity size={25} /><span>Fin<strong>Pulse</strong><small>财经研究</small></span></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票名称、代码或拼音</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
+    <nav className="finance-nav" aria-label="主导航"><div>{[{ id: 'dashboard', label: '行情与新闻' }, { id: 'briefing', label: '自选股早报' }, { id: 'lab', label: '连接状态' }, ...(user?.role === 'admin' ? [{ id: 'admin', label: '管理中心' }] : [])].map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>{item.label}</button>)}<span>中国 A 股 · 有限股票池</span></div></nav>
+    <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>历史日线收盘</span></div>{catalog.slice(0, 3).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待采集'}</small></span><strong className="mono">{number(cached?.stock.price)}</strong><span className={tone(cached?.stock.change ?? null)}>{percent(cached?.stock.change)}</span></button>; })}</div></div>
+    <main className="finance-main"><div className="finance-heading"><div><p className="eyebrow">YOUR SIGNAL, IN CONTEXT</p><h1>{view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><span className="workspace-tag">LOCAL WORKSPACE <span>v0.3</span></span></div>
+      {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
+      {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
+      {view === 'briefing' && <BriefingPanel key={user?.id ?? 'guest'} />}
+      {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯历史日线</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
+      {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} />}
+      <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>历史日线 ≠ 实时报价 · AI 研判需要结合原文核验</span></footer>
+    </main>
+    {drawer && <AiDrawer key={`${user?.id}-${drawer.stock.code}-${drawer.news?.id ?? 'chat'}`} stock={drawer.stock} news={drawer.news} onClose={() => setDrawer(null)} onResult={reply => { setLastReply(reply); void loadSnapshot(code).catch(e => setError(e.message)); }} />}
+    {adding && <Dialog title="查找与管理自选股" close={() => setAdding(false)}><label className="stock-search"><Search size={18} /><input autoFocus aria-label="搜索股票" placeholder="名称、代码或拼音缩写，如 GZMT" value={search} onChange={e => setSearch(e.target.value)} /></label><p className="supported-caption">当前支持 {catalog.length} 只股票 · 点击名称切换研究标的</p><div className="catalog-list">{matches.map(stock => <div key={stock.code}><button onClick={() => { setCode(stock.code); setView('dashboard'); setAdding(false); }}><strong>{stock.name}</strong><small>{stock.exchange} {stock.code} · {stock.industry}</small></button><button disabled={!watchReady || savingWatch} onClick={() => { void updateWatchlist(watchlist.includes(stock.code) ? watchlist.filter(row => row !== stock.code) : [...watchlist, stock.code]); }}>{watchlist.includes(stock.code) ? <CheckCircle2 size={15} /> : <Plus size={15} />}{watchlist.includes(stock.code) ? '已关注' : '加自选'}</button></div>)}{!matches.length && <p className="rail-empty">没有匹配标的，试试代码或名称。</p>}</div></Dialog>}
+    {audit && <Dialog title="新闻清洗与去重记录" close={() => setAudit(null)}><p className="supported-caption">保留 {audit.summary.retained ?? 0} · 过滤 {audit.summary.filtered ?? 0} · 合并 {audit.summary.merged ?? 0}</p><div className="audit-records">{audit.audit?.map(row => <article key={row.id}><span className={`audit-status ${row.status}`}>{row.status === 'retained' ? '保留' : row.status === 'merged' ? '合并' : '过滤'}</span><h3>{row.title}</h3><p>{row.reasons.join('；') || '通过主体、日期、内容与来源检查'}</p>{row.url && <a href={row.url} target="_blank" rel="noopener noreferrer">查看原文<ExternalLink size={12} /></a>}</article>)}</div></Dialog>}
   </div>;
 }
-
-function MessageIcon() { return <Radio size={17} className="mint-text" />; }

@@ -4,3 +4,4 @@ httpx>=0.28,<1
 akshare>=1.19.1,<2
 argon2-cffi>=25.1,<26
 PyMySQL[rsa]>=1.1,<2
+APScheduler>=3.11,<4
