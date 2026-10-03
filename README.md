@@ -426,4 +426,12 @@ npm.cmd run build
 
 网络断开时共享 MySQL 会返回 503，不会偷偷切换到 SQLite。后台 SSH 隧道增加自动重连；查看 `.runtime/mysql-tunnel.stderr.log`，也可以在独立终端运行 `powershell -File scripts/mysql-tunnel.ps1 -Reconnect`。若 SSH 无法完成认证或连接超时，先恢复 SSH 网络，再重试页面采集。
 
+2026-10-03 连接复查：本机把 `airhust.cn` 解析为虚拟代理地址，域名路径和真实 IP 直连均出现过连接重置。本机现在让**这个项目的 SSH 隧道**通过已有的本地 SOCKS 代理转发，没有修改全局代理配置。可在 `database.ssh_proxy` 填写本地代理地址（如 `127.0.0.1:7897`），或使用 `scripts/mysql-tunnel.ps1 -Reconnect -SocksProxy 127.0.0.1:7897`。该字段只允许回环地址，需要 Git for Windows 自带的 `connect.exe`；脚本自动寻找它。其他开发机不需要代理时保留空值。
+
+也可在 `database.ssh_address` 填写管理员确认的服务器真实 IP，或使用 `-DirectAddress <真实IP>` 绕过虚拟 DNS；留空使用原域名。真实 IP 变更后需同步修改。域名、直连和 SOCKS 路由均保留 SSH 主机密钥核验和原账号权限；切换路由前需停止旧的项目隧道及其重连进程，再重新启动。
+
+数据库仅对网络异常造成的**初始连接失败**最多尝试 3 次，间隔 2/4 秒；账号密码错误不重试，已经执行的 SQL 和事务不自动重复提交。新增测试覆盖建连恢复、错误密码和中途断连不重复写入，全套 52 项测试通过。较长的外网中断仍可能返回 503，不能据此保证服务器网络永不掉线。
+
+路由修复后，针对实际运行的 `localhost:8000` 完成一轮完整检查：管理员登录、共享数据库读写、真实模型请求、Tavily 采集、行情保存、清洗审计、早报预览、订阅读取、管理接口、退出登录和会话失效均通过。中芯国际本轮保留 4 条新闻，读取/保存 1 条研判和 150 条日线；模型连接测试额外调用真实服务并返回成功。AkShare 东方财富新闻仍报 SSL 错误，流程通过 Tavily 获取新闻并标为 partial。没有发送邮件或微信。本机检查记录保存在被 Git 忽略的 `.runtime/connection-check.json`。
+
 页面参考 [Yahoo Finance](https://finance.yahoo.com/) 的横向导航、行情卡片、主新闻栏与侧栏信息层级，保留 FinPulse 自己的内容和交互。API 实现参考 [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)、[AkShare 股票文档](https://akshare.akfamily.xyz/data/stock/stock.html)、[APScheduler](https://apscheduler.readthedocs.io/en/3.x/userguide.html)、[PushPlus 消息接口](https://www.pushplus.plus/doc/guide/api.html)。

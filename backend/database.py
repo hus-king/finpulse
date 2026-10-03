@@ -43,15 +43,24 @@ class MySQLAuthStore(AuthStore):
 
     @contextmanager
     def connection(self):
-        raw = pymysql.connect(
-            host=self.config.get("host", "127.0.0.1"), port=int(self.config.get("port", 13306)),
-            user=self.config["username"], password=self.config["password"],
-            database=self.config.get("name", "finpulse_dev"), charset="utf8mb4",
-            cursorclass=DictCursor, autocommit=True, connect_timeout=5,
-            # Avoid gap locks from expiry cleanup competing with new session inserts.
-            init_command="SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
-            read_timeout=15, write_timeout=15,
-        )
+        # Retry only connection establishment, before any application statement
+        # or transaction. Never replay writes after a connection drops mid-query.
+        for attempt in range(3):
+            try:
+                raw = pymysql.connect(
+                    host=self.config.get("host", "127.0.0.1"), port=int(self.config.get("port", 13306)),
+                    user=self.config["username"], password=self.config["password"],
+                    database=self.config.get("name", "finpulse_dev"), charset="utf8mb4",
+                    cursorclass=DictCursor, autocommit=True, connect_timeout=5,
+                    # Avoid gap locks from expiry cleanup competing with new session inserts.
+                    init_command="SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
+                    read_timeout=15, write_timeout=15,
+                )
+                break
+            except pymysql.OperationalError as exc:
+                if attempt == 2 or not exc.args or exc.args[0] not in (2003, 2006, 2013):
+                    raise
+                time.sleep(2 * (attempt + 1))
         try:
             yield MySQLConnection(raw)
         finally:

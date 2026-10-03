@@ -19,6 +19,8 @@
   },
   "database": {
     "engine": "sqlite",
+    "ssh_address": "",
+    "ssh_proxy": "",
     "host": "127.0.0.1",
     "port": 13306,
     "name": "finpulse_dev",
