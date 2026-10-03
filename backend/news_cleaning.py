@@ -45,6 +45,21 @@ def normalize_url(url):
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, urlencode(query), ""))
 
 
+def source_page_kind(url):
+    """Known quote/financial/profile paths are not individual news articles."""
+    parts = urlsplit(url)
+    host, path = parts.hostname or '', parts.path.lower()
+    if host == 'www.qcc.com' and path.startswith('/firm/'):
+        return 'company_profile'
+    if (host.endswith('.finance.sina.com.cn') and ('/quotes_service/' in path or '/vfd_' in path)
+        or host == 'www.cnyes.com' and path.startswith('/astock/quote/')
+        or (host == 'investing.com' or host.endswith('.investing.com')) and path.startswith('/equities/')
+        or host == 'stockanalysis.com' and path.startswith('/quote/')
+        or host == 'finance.yahoo.com' and path.startswith('/quote/')):
+        return 'quote_page'
+    return None
+
+
 def core_title(title):
     title = unicodedata.normalize("NFKC", html.unescape(title))
     title = re.sub(r"_新浪财经_新浪网.*$|\s*[—–]\s*Noticias.*$", "", title)
@@ -159,7 +174,8 @@ def same_event(left, right):
     return matched, {"title_jaccard": round(jaccard, 3), "title_sequence": round(sequence, 3), "simhash_distance": distance}
 
 
-def clean_report(raw_report, extracts=None):
+def clean_report(raw_report, extracts=None, entities=None):
+    entities = STOCK_ENTITIES if entities is None else entities
     extracts = dict(extracts or {})
     for result in raw_report.get("extract", {}).get("response", {}).get("results", []):
         extracts.setdefault(normalize_url(result["url"]), result.get("raw_content", ""))
@@ -187,10 +203,13 @@ def clean_report(raw_report, extracts=None):
             meta, body = metadata_date(raw.get("published_date")), body_publication_date(text) or extracted_date
             effective = body or meta
             kind, label, tier = category(raw.get("title", ""), text)
-            item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": STOCK_ENTITIES[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": "conflict" if body and meta and body != meta else "body_verified" if body else "metadata_only" if meta else "missing", "text_source": text_source, "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
+            item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": entities[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": "conflict" if body and meta and body != meta else "body_verified" if body else "metadata_only" if meta else "missing", "text_source": text_source, "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
             reasons = []
+            source_kind = source_page_kind(url)
+            if source_kind:
+                reasons.append(source_kind)
             title = raw.get("title", "")
-            if not re.search(r'[\u4e00-\u9fff]{2,}', title) and not any(alias.isascii() and not alias.isdigit() and alias.lower() in title.lower() for alias in STOCK_ENTITIES[stock]['aliases']):
+            if not re.search(r'[\u4e00-\u9fff]{2,}', title) and not any(alias.isascii() and not alias.isdigit() and alias.lower() in title.lower() for alias in entities[stock]['aliases']):
                 reasons.append('garbled_title')
             if not url:
                 reasons.append("invalid_url")
@@ -207,12 +226,14 @@ def clean_report(raw_report, extracts=None):
                         reasons.append('event_after_publication')
                 except ValueError:
                     pass
-            if not any(alias.lower() in title.lower() for alias in STOCK_ENTITIES[stock]["aliases"]):
+            if not any(alias.lower() in title.lower() for alias in entities[stock]["aliases"]):
                 reasons.append("not_primary_entity")
             if re.search(r"股票股价|股价行情|历史行情|详细报价|詳細報價|即時報價|股票预测|股票預測|RT Quote", title, flags=re.I):
-                reasons.append("quote_page")
+                if 'quote_page' not in reasons:
+                    reasons.append("quote_page")
             if re.search(r"规模最大|公司概况|公司简介|公司介紹|企业介绍", title):
-                reasons.append("company_profile")
+                if 'company_profile' not in reasons:
+                    reasons.append("company_profile")
             if not effective:
                 reasons.append("missing_date")
             if body and meta and body != meta:

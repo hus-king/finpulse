@@ -1,4 +1,4 @@
-"""Initial supported stock universe; no invented market prices."""
+"""Fallback metadata and default watchlist; StockCatalog extends exchange listings."""
 CATALOG = [
     {'code': '600519', 'name': '贵州茅台', 'initials': 'GZMT', 'exchange': 'SH', 'industry': '白酒'},
     {'code': '300750', 'name': '宁德时代', 'initials': 'NDSD', 'exchange': 'SZ', 'industry': '新能源'},

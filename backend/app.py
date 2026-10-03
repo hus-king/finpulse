@@ -10,14 +10,13 @@ from urllib.parse import urlparse
 
 import httpx
 import pymysql
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
-from .catalog import CATALOG
 from .research import ResearchService
 from .research_store import ResearchStore
 from .research_api import router as research_router
@@ -144,8 +143,11 @@ def health():
 
 
 @app.get("/api/stocks")
-def stocks():
-    return {"items": [{**stock, 'price': None, 'change': None} for stock in CATALOG], "data_source": "live"}
+async def stocks(q: str | None = Query(default=None, max_length=80), codes: str | None = Query(default=None, max_length=160), limit: int = Query(default=30, ge=1, le=50)):
+    catalog = app.state.research.catalog
+    if q is not None:
+        await catalog.ensure()
+    return catalog.search(q or '', limit, codes.split(',') if codes is not None else None)
 
 
 @app.get("/api/dashboard/{code}")

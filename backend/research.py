@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException
 
 from . import providers
-from .catalog import stock_by_code
+from .stock_catalog import StockCatalog
 from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url
 from .prompts import Analysis, CommunityAnalysis, COMMUNITY_SYSTEM, NEWS_SYSTEM, PROMPT_VERSION, parse_json
 
@@ -40,9 +40,14 @@ def forward_returns(news, candles):
 class ResearchService:
     def __init__(self, store, completion):
         self.store, self.completion = store, completion
+        self.catalog = StockCatalog(store)
+        if store is not None:
+            store.catalog = self.catalog
+        self.watch_locks = {}
         self.locks = {}
         self.capacity = asyncio.Semaphore(2)
         self.tasks = set()
+        self.job_tasks = {}
         self.active = {}
 
     async def close(self):
@@ -63,7 +68,9 @@ class ResearchService:
         self.active[key] = job['id']
         task = asyncio.create_task(self._job(job, user['id'], days, max_articles, community))
         self.tasks.add(task)
+        self.job_tasks[job['id']] = task
         task.add_done_callback(self.tasks.discard)
+        task.add_done_callback(lambda finished: self.job_tasks.pop(job['id'], None))
         return job
 
     async def _job(self, job, owner, days, maximum, community):
@@ -111,7 +118,7 @@ class ResearchService:
                 messages.append({'role': 'user', 'content': '上一轮输出未通过JSON校验。请严格按照规定的字段、整数评分和三项因果链重新生成，不添加额外字段。'})
 
     async def collect(self, code, days, maximum, include_community, progress=lambda stage: None):
-        stock = stock_by_code(code)
+        stock = self.catalog.get(code)
         if not stock:
             raise HTTPException(404, '暂不支持该股票。')
         end = datetime.now(SHANGHAI).date()
@@ -149,7 +156,7 @@ class ResearchService:
             except providers.ProviderError as exc:
                 statuses['extract'] = 'error'
                 warnings.append(str(exc) + '；仅使用搜索片段')
-        cleaned = clean_report(raw, extracts)
+        cleaned = clean_report(raw, extracts, self.catalog.entities(stock))
         if any(row['text_stats'].get('extraction_mismatch') for row in cleaned['items']):
             warnings.append('部分页面正文与标题主题不匹配，已降级为搜索片段')
         items = sorted(cleaned['items'], key=lambda row: (row['effective_date'], row['tier'] == 'company', row.get('search_relevance') or 0), reverse=True)
@@ -226,7 +233,7 @@ class ResearchService:
             return {'status': 'error', 'sample_count': len(posts), 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': posts, 'error': str(exc) if isinstance(exc, providers.ProviderError) else '社区采集或结构化分类失败', 'note': '未生成有效情绪比例'}
 
     def dashboard(self, code):
-        stock = stock_by_code(code)
+        stock = self.catalog.get(code)
         if not stock:
             raise HTTPException(404, '暂不支持该股票。')
         return self.store.get('dashboard', code, default={'stock': {**stock, 'price': None, 'change': None}, 'quote': {'status': 'not_collected', 'is_realtime': False}, 'candles': [], 'news': [], 'sentiment': {'status': 'not_collected', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': []}, 'as_of': None, 'data_source': 'live', 'pipeline': None, 'backtest': forward_returns([], [])})

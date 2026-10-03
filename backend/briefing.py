@@ -19,8 +19,9 @@ def build_briefing(store, owner):
     codes = store.get('watchlist', 'list', owner, DEFAULT_WATCHLIST)
     sections = []
     for code in codes:
-        stock = stock_by_code(code)
         snapshot = store.get('dashboard', code, default={})
+        stock = store.catalog.get(code) if hasattr(store, 'catalog') else stock_by_code(code)
+        stock = stock or snapshot.get('stock') or {'name': code}
         news = snapshot.get('news', [])
         sections.append({'code': code, 'name': stock['name'], 'as_of': snapshot.get('as_of'), 'news': [{'id': row['id'], 'title': row['title'], 'url': row['url'], 'time': row['time'], 'score': row.get('score'), 'summary': (row.get('analysis') or {}).get('summary'), 'uncertainty': (row.get('analysis') or {}).get('uncertainty')} for row in news[:5]]})
     generated = datetime.now(SHANGHAI).isoformat()
