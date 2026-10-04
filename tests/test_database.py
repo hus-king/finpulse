@@ -41,3 +41,13 @@ class ConnectionRecoveryTests(unittest.TestCase):
             raw.commit.assert_not_called()
             raw.close.assert_called_once()
             sleep.assert_not_called()
+
+    def test_rollback_failure_preserves_original_database_error(self):
+        raw = MagicMock()
+        raw.rollback.side_effect = pymysql.InterfaceError(0, 'closed socket')
+        original = pymysql.OperationalError(2013, 'query interrupted')
+        with patch('backend.database.pymysql.connect', return_value=raw):
+            with self.assertRaises(pymysql.OperationalError) as failure, self.store.transaction():
+                raise original
+        self.assertIs(failure.exception, original)
+        raw.commit.assert_not_called()

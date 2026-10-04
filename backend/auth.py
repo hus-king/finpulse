@@ -123,27 +123,43 @@ class AuthStore:
         now = int(self.clock())
         exceeded = None
         with self.transaction() as conn:
-            conn.execute("DELETE FROM auth_rate_limits WHERE window_start<=?", (now-RATE_WINDOW_SECONDS,))
-            for bucket, maximum in limits:
-                row = conn.execute("SELECT attempts, window_start FROM auth_rate_limits WHERE bucket=?", (bucket,)).fetchone()
-                if row and row["attempts"] >= maximum:
+            # Lock concrete bucket rows in a stable order. Global expiry deletes
+            # inside this transaction caused InnoDB gap-lock deadlocks under load.
+            for bucket, maximum in sorted(limits):
+                if self.dialect == 'mysql':
+                    # Duplicate-key UPDATE takes an exclusive row lock directly;
+                    # INSERT IGNORE followed by FOR UPDATE can deadlock on S->X upgrades.
+                    conn.execute('INSERT INTO auth_rate_limits VALUES(?,?,0) ON DUPLICATE KEY UPDATE bucket=bucket', (bucket, now))
+                else:
+                    conn.execute('INSERT OR IGNORE INTO auth_rate_limits VALUES(?,?,0)', (bucket, now))
+                lock = ' FOR UPDATE' if self.dialect == 'mysql' else ''
+                row = conn.execute("SELECT attempts, window_start FROM auth_rate_limits WHERE bucket=?" + lock, (bucket,)).fetchone()
+                if row['window_start'] <= now-RATE_WINDOW_SECONDS:
+                    conn.execute('UPDATE auth_rate_limits SET attempts=0,window_start=? WHERE bucket=?', (now, bucket))
+                elif row["attempts"] >= maximum:
                     exceeded = RATE_WINDOW_SECONDS-(now-row["window_start"])
                     break
             if exceeded is None:
                 for bucket, _ in limits:
-                    suffix = "ON DUPLICATE KEY UPDATE attempts=attempts+1" if self.dialect == "mysql" else "ON CONFLICT(bucket) DO UPDATE SET attempts=attempts+1"
-                    conn.execute("INSERT INTO auth_rate_limits VALUES(?,?,1) " + suffix, (bucket, now))
+                    conn.execute('UPDATE auth_rate_limits SET attempts=attempts+1 WHERE bucket=?', (bucket,))
         if exceeded is not None:
             raise AuthError(429, "尝试次数过多，请稍后再试。", "RATE_LIMITED", {"Retry-After": str(max(1, exceeded))})
 
     def _create_session(self, conn, user_id, old_token=None):
         now = int(self.clock())
-        conn.execute("DELETE FROM sessions WHERE expires_at<=? OR last_seen_at<=?", (now, now-IDLE_SECONDS))
         if old_token and re.fullmatch(r"[A-Za-z0-9_-]{43}", old_token):
             conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash(old_token),))
         token = secrets.token_urlsafe(32)
         conn.execute("INSERT INTO sessions VALUES(?,?,?,?,?)", (token_hash(token), user_id, now, now+SESSION_SECONDS, now))
         return token, now+SESSION_SECONDS
+
+    def cleanup_expired(self):
+        # Standalone autocommit statements; never combine range deletions with
+        # concurrent session/bucket inserts in the same transaction.
+        now = int(self.clock())
+        with self.connection() as conn:
+            conn.execute('DELETE FROM sessions WHERE expires_at<=? OR last_seen_at<=?', (now, now-IDLE_SECONDS))
+            conn.execute('DELETE FROM auth_rate_limits WHERE window_start<=?', (now-RATE_WINDOW_SECONDS,))
 
     def register(self, username, nickname, password, old_token=None):
         # Password hashing and external model calls never hold a SQLite write lock.

@@ -49,6 +49,10 @@ class ResearchService:
         self.tasks = set()
         self.job_tasks = {}
         self.active = {}
+        self.inflight = {}
+        self.max_pending = 40
+        self.live_jobs = {}
+        self.job_starts = {}
 
     async def close(self):
         for task in list(self.tasks):
@@ -56,16 +60,26 @@ class ResearchService:
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    def launch(self, code, user, days=30, max_articles=3, community=False):
+    async def launch(self, code, user, days=30, max_articles=3, community=False, start=True):
         # A single process is intentional; concurrent refreshes of a stock reuse a job.
         key = (user['id'], code)
         if key in self.active:
-            return self.store.get('job', self.active[key], user['id'])
-        if len(self.active) >= 8:
+            return self.live_jobs[self.active[key]]
+        if len(self.active) >= self.max_pending:
             raise HTTPException(429, '任务队列已满，请稍后重试。')
         job = {'id': uuid.uuid4().hex, 'code': code, 'status': 'queued', 'stage': '等待处理', 'created_at': now_iso(), 'warnings': [], 'counts': {}}
-        self.store.put('job', job['id'], job, user['id'])
         self.active[key] = job['id']
+        self.live_jobs[job['id']] = job
+        try:
+            await asyncio.to_thread(self.store.put, 'job', job['id'], job, user['id'])
+        except BaseException:
+            self.active.pop(key, None)
+            self.live_jobs.pop(job['id'], None)
+            raise
+        event = asyncio.Event()
+        self.job_starts[job['id']] = event
+        if start:
+            event.set()
         task = asyncio.create_task(self._job(job, user['id'], days, max_articles, community))
         self.tasks.add(task)
         self.job_tasks[job['id']] = task
@@ -74,33 +88,79 @@ class ResearchService:
         return job
 
     async def _job(self, job, owner, days, maximum, community):
+        updates = asyncio.Queue()
+        async def persist_progress():
+            while True:
+                snapshot = await updates.get()
+                try:
+                    await asyncio.to_thread(self.store.put, 'job', job['id'], snapshot, owner)
+                except Exception:
+                    logging.getLogger(__name__).warning('Could not save research progress')
+                finally:
+                    updates.task_done()
+        writer = asyncio.create_task(persist_progress())
         try:
-            async with self.capacity:
-                async with self.locks.setdefault(job['code'], asyncio.Lock()):
-                    job.update(status='running')
-                    def progress(stage):
-                        job['stage'] = stage
-                        self.store.put('job', job['id'], job, owner)
-                    result = await asyncio.wait_for(self.collect(job['code'], days, maximum, community, progress), timeout=1800)
-                    job.update(status='partial' if result['pipeline']['warnings'] else 'completed', stage='处理完成', counts=result['pipeline']['counts'], warnings=result['pipeline']['warnings'])
+            await self.job_starts[job['id']].wait()
+            def progress(stage):
+                job.update(status='running', stage=stage)
+                updates.put_nowait(dict(job))
+            result = await self.refresh_shared(job['code'], days, maximum, community, progress)
+            job.update(status='partial' if result['pipeline']['warnings'] else 'completed', stage='处理完成', counts=result['pipeline']['counts'], warnings=result['pipeline']['warnings'])
         except asyncio.CancelledError:
             job.update(status='failed', stage='服务停止，任务已中断', warnings=['可重新发起采集'])
             raise
         except Exception as exc:
             job.update(status='failed', stage='处理失败', warnings=[str(exc.detail) if isinstance(exc, HTTPException) else '数据处理失败，请重试（' + type(exc).__name__ + '）'])
         finally:
+            await updates.join()
+            writer.cancel()
+            await asyncio.gather(writer, return_exceptions=True)
             job['finished_at'] = now_iso()
             try:
-                self.store.put('job', job['id'], job, owner)
+                await asyncio.to_thread(self.store.put, 'job', job['id'], job, owner)
             except Exception as exc:
                 logging.getLogger(__name__).error('Unable to save research job state: %s', type(exc).__name__)
             finally:
                 self.active.pop((owner, job['code']), None)
+                self.live_jobs.pop(job['id'], None)
+                self.job_starts.pop(job['id'], None)
+
+    async def refresh_shared(self, code, days=7, maximum=3, community=False, progress=lambda stage: None):
+        """Share identical concurrent work; each account keeps its own job record."""
+        key = (code, days, maximum, community)
+        if key not in self.inflight:
+            listeners = set()
+            async def run():
+                # Wait for the stock lock before reserving global capacity.
+                async with self.locks.setdefault(code, asyncio.Lock()):
+                    async with self.capacity:
+                        def notify(stage):
+                            for callback in list(listeners):
+                                try:
+                                    callback(stage)
+                                except Exception:
+                                    logging.getLogger(__name__).warning('Could not persist job progress')
+                        return await asyncio.wait_for(self.collect(code, days, maximum, community, notify), 1800)
+            task = asyncio.create_task(run())
+            self.inflight[key] = (task, listeners)
+            self.tasks.add(task)
+            task.add_done_callback(self.tasks.discard)
+            def finish(done):
+                self.inflight.pop(key, None)
+                if not done.cancelled():
+                    done.exception()  # Retrieve errors even if all observers disconnect.
+            task.add_done_callback(finish)
+        task, listeners = self.inflight[key]
+        listeners.add(progress)
+        try:
+            return await asyncio.shield(task)
+        finally:
+            listeners.discard(progress)
 
     async def analyze_document(self, stock, item):
         content = item['content'][:10000]
         key = fingerprint(stock['code'], item['title'], content, PROMPT_VERSION, providers.read_config().get('model', ''))
-        cached = self.store.get('analysis', key)
+        cached = await asyncio.to_thread(self.store.get, 'analysis', key)
         if cached:
             return {**cached, 'cached': True}
         payload = {'stock_name': stock['name'], 'stock_code': stock['code'], 'exchange': stock['exchange'], 'title': item['title'], 'content': content, 'category': item.get('tag'), 'published_date': item['time'], 'url': item['url'], 'text_source': item['text_source'], 'date_status': item['date_status']}
@@ -110,7 +170,7 @@ class ResearchService:
             try:
                 analysis = parse_json(result['content'], Analysis)
                 reply = {**result, 'analysis': analysis, 'prompt_version': PROMPT_VERSION, 'analyzed_at': now_iso(), 'cached': False}
-                self.store.put('analysis', key, reply)
+                await asyncio.to_thread(self.store.put, 'analysis', key, reply)
                 return reply
             except (ValueError, TypeError):
                 if attempt:
@@ -133,7 +193,7 @@ class ResearchService:
             else:
                 statuses[name] = 'ok' if response.get('results') else 'empty'
                 searches.append({'stock': stock['name'], 'provider': name, 'response': response})
-        previous = self.store.get('dashboard', code, default={})
+        previous = await asyncio.to_thread(self.store.get, 'dashboard', code, default={})
         if isinstance(results[2], Exception):
             warnings.append(str(results[2]) if isinstance(results[2], providers.ProviderError) else '行情获取失败')
             market = {**previous.get('quote', {}), 'status': 'stale' if previous.get('candles') else 'unavailable', 'error': '本次行情采集失败'}
@@ -162,7 +222,7 @@ class ResearchService:
         items = sorted(cleaned['items'], key=lambda row: (row['effective_date'], row['tier'] == 'company', row.get('search_relevance') or 0), reverse=True)
         news = []
         for item in items:
-            article = {'id': fingerprint(code, item['url'])[:32], 'title': item['title'], 'source': urlsplit(item['url']).hostname, 'url': item['url'], 'content': item['cleaned_text'][:12000], 'score': None, 'tag': item['category_label'], 'time': item['effective_date'], 'sources': item['sources'], 'text_source': item['text_source'], 'date_status': item['date_status'], 'analysis_status': 'pending', 'analysis': None}
+            article = {'id': fingerprint(code, item['url'])[:32], 'title': item['title'], 'source': urlsplit(item['url']).hostname, 'url': item['url'], 'content': item['cleaned_text'][:12000], 'score': None, 'tag': item['category_label'], 'tier': item['tier'], 'search_relevance': item.get('search_relevance'), 'time': item['effective_date'], 'sources': item['sources'], 'text_source': item['text_source'], 'date_status': item['date_status'], 'analysis_status': 'pending', 'analysis': None}
             news.append(article)
         progress('生成并校验 AI 新闻研判')
         analyzed = 0
@@ -189,9 +249,9 @@ class ResearchService:
         quote = {key: value for key, value in market.items() if key != 'candles'}
         result = {'stock': {**stock, 'price': quote.get('price'), 'change': quote.get('change')}, 'quote': quote, 'candles': candles, 'news': news, 'sentiment': community, 'as_of': now_iso(), 'data_source': 'live', 'pipeline': {'date_range': raw['date_range'], 'statuses': statuses, 'counts': {**cleaned['summary'], 'extracted': len(extracts), 'analyzed': analyzed}, 'warnings': list(dict.fromkeys(warnings)), 'job_status': 'partial' if warnings else 'completed'}, 'backtest': forward_returns(news, candles)}
         snapshot_key = uuid.uuid4().hex
-        self.store.put('collection', snapshot_key, {'code': code, 'collected_at': result['as_of'], 'raw': raw, 'cleaning': cleaned, 'extract_urls': list(extracts), 'pipeline': result['pipeline']})
+        await asyncio.to_thread(self.store.put, 'collection', snapshot_key, {'code': code, 'collected_at': result['as_of'], 'raw': raw, 'cleaning': cleaned, 'extract_urls': list(extracts), 'pipeline': result['pipeline']})
         result['pipeline']['collection_id'] = snapshot_key
-        self.store.put('dashboard', code, result)
+        await asyncio.to_thread(self.store.put, 'dashboard', code, result)
         return result
 
     async def community(self, stock, start, end):

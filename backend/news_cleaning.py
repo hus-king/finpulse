@@ -51,11 +51,19 @@ def source_page_kind(url):
     host, path = parts.hostname or '', parts.path.lower()
     if host == 'www.qcc.com' and path.startswith('/firm/'):
         return 'company_profile'
+    if host.endswith('.finance.sina.com.cn') and '/vci_corpmanager/' in path:
+        return 'company_profile'
+    if host == 'data.eastmoney.com' and re.fullmatch(r'/notice/\d{6}\.html', path):
+        return 'news_index'
     if (host.endswith('.finance.sina.com.cn') and ('/quotes_service/' in path or '/vfd_' in path)
         or host == 'www.cnyes.com' and path.startswith('/astock/quote/')
         or (host == 'investing.com' or host.endswith('.investing.com')) and path.startswith('/equities/')
         or host == 'stockanalysis.com' and path.startswith('/quote/')
-        or host == 'finance.yahoo.com' and path.startswith('/quote/')):
+        or (host == 'yahoo.com' or host.endswith('.yahoo.com')) and path.startswith('/quote/')
+        or (host == 'futunn.com' or host.endswith('.futunn.com')) and path.startswith('/stock/')
+        or (host == 'moomoo.com' or host.endswith('.moomoo.com')) and re.match(r'^/(?:[a-z]{2,8}/)?stock/', path)
+        or host == 'data.eastmoney.com' and path.startswith('/zjlx/')
+        or host.endswith('.finance.sina.com.cn') and '/vcb_allbulletin/' in path):
         return 'quote_page'
     return None
 

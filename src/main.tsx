@@ -4,5 +4,6 @@ import App from './App';
 import { AuthProvider } from './AuthContext';
 import './styles.css';
 import './finance.css';
+import './briefing.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><AuthProvider><App /></AuthProvider></React.StrictMode>);

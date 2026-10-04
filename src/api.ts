@@ -16,7 +16,7 @@ export async function api<T>(path: string, body?: unknown, signal?: AbortSignal)
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    throw new Error('本地服务无法连接，请检查后端是否正在运行。');
+    throw new Error('服务无法连接，请检查网络或后端是否正在运行。');
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

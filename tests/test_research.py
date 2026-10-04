@@ -173,7 +173,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_mail_and_wechat_adapters_report_results_without_live_sends(self):
         response = unittest.mock.Mock(is_success=True)
         response.json.return_value = {'code': 200}
-        with patch('backend.briefing.read_config', return_value={'notifications': {'smtp': {'host': 'smtp.example.com'}}}), patch('backend.briefing.smtp_send') as smtp, patch('httpx.AsyncClient.post', new=AsyncMock(return_value=response)):
+        with patch('backend.briefing.read_config', return_value={'notifications': {'smtp': {'host': 'smtp.example.com', 'username': 'test', 'password': 'test', 'from_email': 'test@example.com'}}}), patch('backend.briefing.smtp_send') as smtp, patch('httpx.AsyncClient.post', new=AsyncMock(return_value=response)):
             result = await deliver({'email': 'test@example.com', 'pushplus_token': 'test-token'}, {'html': '<p>Digest</p>'})
             self.assertEqual(result, {'email': 'sent', 'wechat': 'accepted'})
             smtp.assert_called_once()

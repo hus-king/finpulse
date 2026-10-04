@@ -2,6 +2,7 @@
 import json
 import os
 import time
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -40,9 +41,18 @@ class MySQLAuthStore(AuthStore):
     def __init__(self, config, clock=time.time):
         super().__init__(Path("."), clock)
         self.config = config
+        # Queue excess DB work rather than open twenty competing tunnel
+        # connections and time out on a contended rate-limit row.
+        self.connection_slots = threading.BoundedSemaphore(8)
 
     @contextmanager
     def connection(self):
+        with self.connection_slots:
+            with self._connection() as conn:
+                yield conn
+
+    @contextmanager
+    def _connection(self):
         # Retry only connection establishment, before any application statement
         # or transaction. Never replay writes after a connection drops mid-query.
         for attempt in range(3):
@@ -74,7 +84,10 @@ class MySQLAuthStore(AuthStore):
                 yield conn
                 conn.raw.commit()
             except BaseException:
-                conn.raw.rollback()
+                try:
+                    conn.raw.rollback()
+                except pymysql.MySQLError:
+                    pass  # Preserve the original failure on a broken connection.
                 raise
 
     def initialize(self):

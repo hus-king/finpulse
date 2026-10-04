@@ -1,4 +1,4 @@
-param([int]$Port = 8000, [switch]$Rebuild)
+param([int]$Port = 8000, [switch]$Rebuild, [switch]$Scheduler)
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $pythonPath = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
@@ -17,5 +17,6 @@ if ($Rebuild -or -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'dist\ind
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
 }
 Write-Host "FinPulse Demo: http://localhost:$Port"
+if ($Scheduler) { $env:FINPULSE_SCHEDULER_ENABLED = '1' }
 & $pythonPath -m uvicorn backend.app:app --host 127.0.0.1 --port $Port
 exit $LASTEXITCODE

@@ -6,7 +6,10 @@
   "tavily_base_url": "https://api.tavily.com",
   "scheduler": {
     "enabled": false,
-    "morning_time": "08:30"
+    "morning_time": "08:30",
+    "every_day": true,
+    "lookback_days": 7,
+    "max_articles": 3
   },
   "notifications": {
     "smtp": {
