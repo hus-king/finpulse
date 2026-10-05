@@ -41,11 +41,24 @@ function rsi(values: number[], period = 14) {
 
 export default function PriceChart({ candles: daily, news, mode, period, indicator, onEvent }: { candles: Candle[]; news: News[]; mode: string; period: string; indicator: string; onEvent: (id: string) => void }) {
   const root = useRef<HTMLDivElement>(null);
+  const instance = useRef<ReturnType<typeof echarts.init> | null>(null);
+  const lastView = useRef('');
+  const eventHandler = useRef(onEvent);
+  eventHandler.current = onEvent;
   useEffect(() => {
     if (!root.current) return;
+    const chart = echarts.init(root.current);
+    instance.current = chart;
+    chart.on('click', params => { if (params.componentType === 'markPoint') { const point = params.data as { newsId?: string }; if (point.newsId) eventHandler.current(point.newsId); } });
+    const observer = new ResizeObserver(() => chart.resize());
+    observer.observe(root.current);
+    return () => { observer.disconnect(); chart.dispose(); instance.current = null; lastView.current = ''; };
+  }, []);
+  useEffect(() => {
+    const chart = instance.current;
+    if (!chart) return;
     const candles = period === '周 K' ? weekly(daily) : daily;
     if (!candles.length) return;
-    const chart = echarts.init(root.current);
     const close = candles.map(row => row.close);
     const fast = ema(close, 12), slow = ema(close, 26);
     const dif = close.map((_, i) => fast[i] - slow[i]);
@@ -62,6 +75,9 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
     const cutoff = new Date(candles.at(-1)!.date + 'T00:00:00Z');
     cutoff.setUTCMonth(cutoff.getUTCMonth() - (mode === '近 1 月' ? 1 : 3));
     const firstVisible = mode === '全部' ? 0 : Math.max(0, candles.findIndex(row => row.date >= cutoff.toISOString().slice(0, 10)));
+    const view = `${mode}:${period}`;
+    const resetZoom = lastView.current !== view;
+    lastView.current = view;
     chart.setOption({
       backgroundColor: 'transparent', animation: false,
       textStyle: { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif' },
@@ -76,7 +92,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
         { scale: true, splitNumber: 4, axisLabel: { color: '#748399', fontSize: 10, formatter: (v: number) => v.toFixed(v > 100 ? 0 : 2) }, splitLine: { lineStyle: { color: '#e8edf3', type: 'dashed' } }, axisLine: { show: false } },
         { scale: indicator !== 'RSI', min: indicator === 'RSI' ? 0 : undefined, max: indicator === 'RSI' ? 100 : undefined, gridIndex: 1, splitNumber: 1, axisLabel: { color: '#6d7c90', fontSize: 9, formatter: (v: number) => indicator === 'MACD' || indicator === 'RSI' ? v.toFixed(1) : `${(v / 10000).toFixed(1)}万` }, splitLine: { show: false } },
       ],
-      dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], startValue: firstVisible, endValue: candles.length - 1, zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, preventDefaultMouseMove: false }],
+      dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], ...(resetZoom ? { startValue: firstVisible, endValue: candles.length - 1 } : {}), zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, preventDefaultMouseMove: false }],
       series: [
         { name: period, type: 'candlestick', data: rows, itemStyle: { color: '#d8596d', color0: '#23a18a', borderColor: '#d8596d', borderColor0: '#23a18a' }, markPoint: { symbol: 'circle', symbolSize: 20, label: { formatter: 'N', color: '#ffffff', fontSize: 8, fontWeight: 'bold' }, data: markers } },
         { name: 'MA5', type: 'line', data: average(candles, 5), showSymbol: false, lineStyle: { width: 1.4, color: '#e8c681' } },
@@ -85,11 +101,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
         ...(indicator === 'RSI' ? [{ name: 'RSI14', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: rsi(close), showSymbol: false, lineStyle: { width: 1.5, color: '#8a69c9' } }] : [{ name: indicator, type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: (indicator === 'MACD' ? macd : candles.map(row => row.volume)).map((value, i) => ({ value, itemStyle: { color: (indicator === 'MACD' ? value >= 0 : candles[i].close >= candles[i].open) ? '#d56676' : '#3a9b83', opacity: 0.7 } })) }]),
         ...(indicator === 'MACD' ? [{ name: 'DIF', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dif, showSymbol: false, lineStyle: { width: 1, color: '#e8c681' } }, { name: 'DEA', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dea, showSymbol: false, lineStyle: { width: 1, color: '#7b9cf3' } }] : []),
       ],
-    });
-    chart.on('click', params => { if (params.componentType === 'markPoint') { const point = params.data as { newsId?: string }; if (point.newsId) onEvent(point.newsId); } });
-    const observer = new ResizeObserver(() => chart.resize());
-    observer.observe(root.current);
-    return () => { observer.disconnect(); chart.dispose(); };
-  }, [daily, news, mode, period, indicator, onEvent]);
+    }, { replaceMerge: ['series'] });
+  }, [daily, news, mode, period, indicator]);
   return <div className="price-chart" ref={root} role="img" aria-label="真实历史K线、移动均线与技术指标，Ctrl 加滚轮缩放，普通滚轮滚动页面" />;
 }

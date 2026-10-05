@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import threading
 import time
 import unittest
 from datetime import datetime
@@ -102,6 +103,74 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(model.await_count, 1)
         self.assertEqual(ResearchStore(self.auth).get('dashboard', '600519')['news'][0]['score'], 1)
 
+    def test_market_news_and_individual_analyses_are_visible_before_job_finishes(self):
+        headers = self.register()
+        search_gate = threading.Event()
+        titles = ['贵州茅台宣布海外市场渠道建设计划', '贵州茅台公告新任董事人事任命', '贵州茅台发布产品质量召回风险提示']
+        model_gates = {title: threading.Event() for title in titles}
+        day = datetime.now(SHANGHAI).date().isoformat()
+        market = {'status': 'ok', 'price': 101, 'change': 1, 'as_of_date': day, 'is_realtime': False, 'candles': [{'date': day, 'open': 100, 'close': 101, 'low': 99, 'high': 102, 'volume': 10000}]}
+        sample = {'results': [{'title': title, 'content': f'{day}\n{title}。公司已披露相关事项，具体实施安排及业务影响仍需结合后续公告核验。', 'published_date': day, 'url': f'https://example.com/news/{index}'} for index, title in enumerate(titles)]}
+        started = []
+
+        async def slow_search(*args):
+            await asyncio.to_thread(search_gate.wait, 10)
+            return sample
+
+        async def slow_model(messages, max_tokens):
+            title = json.loads(messages[1]['content'])['title']
+            started.append(title)
+            await asyncio.to_thread(model_gates[title].wait, 10)
+            return REPLY
+
+        def wait_for(read, predicate):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                value = read()
+                if predicate(value):
+                    return value
+                time.sleep(.02)
+            self.fail('Expected staged result was not visible')
+
+        with patch('backend.providers.search_news', side_effect=slow_search), patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), patch('backend.providers.daily_market', new=AsyncMock(return_value=market)), patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), patch('backend.app.completion', side_effect=slow_model):
+            try:
+                job = self.client.post('/api/research/600519/refresh', headers=headers, json={}).json()
+                read_dashboard = lambda: self.client.get('/api/dashboard/600519').json()
+                first = wait_for(read_dashboard, lambda value: len(value['candles']) == 1)
+                self.assertEqual(first['pipeline']['stages']['news'], 'pending')
+                self.assertEqual(first['news'], [])
+                running = self.client.get('/api/research/jobs/' + job['id']).json()
+                self.assertEqual(running['status'], 'running')
+                self.assertTrue(running['data_revision'])
+                other = TestClient(app, base_url='http://localhost')
+                try:
+                    other.post('/api/auth/register', headers=ORIGIN, json={'username': 'other_live_viewer', 'nickname': 'Other', 'password': 'Research-test-2026!'})
+                    self.assertEqual(other.get('/api/research/jobs/' + job['id']).status_code, 404)
+                finally:
+                    other.close()
+                search_gate.set()
+                cleaned = wait_for(read_dashboard, lambda value: value['pipeline']['stages']['news'] == 'ready')
+                self.assertEqual(len(cleaned['news']), 3)
+                self.assertTrue(all(article['score'] is None for article in cleaned['news']))
+                self.assertNotEqual(first['revision'], cleaned['revision'])
+                self.assertEqual(self.client.get('/api/research/600519/audit').json()['summary']['retained'], 3)
+                wait_for(lambda: list(started), lambda value: len(value) == 3)
+                # All three requests have started before any model is allowed
+                # to respond. One response must appear without the other two.
+                model_gates[titles[0]].set()
+                partial = wait_for(read_dashboard, lambda value: value['pipeline']['counts'].get('analyzed') == 1)
+                self.assertEqual(sum(article['analysis_status'] == 'running' for article in partial['news']), 2)
+                self.assertEqual(partial['candles'], market['candles'])
+                self.assertEqual(self.client.get('/api/research/jobs/' + job['id']).json()['status'], 'running')
+            finally:
+                search_gate.set()
+                for gate in model_gates.values():
+                    gate.set()
+            self.assertEqual(self.wait_job(job['id'])['status'], 'completed')
+            final = read_dashboard()
+            self.assertEqual(final['pipeline']['counts']['analyzed'], 3)
+            self.assertTrue(all(article['analysis_status'] == 'completed' for article in final['news']))
+
     def test_failed_sources_keep_saved_data_with_visible_stale_status(self):
         headers = self.register()
         self.store.put('dashboard', '600519', {'quote': {'price': 100, 'as_of_date': '2026-09-30'}, 'candles': [{'date': '2026-09-30', 'close': 100}], 'news': []})
@@ -167,6 +236,73 @@ class ResearchTests(unittest.TestCase):
         for score in (1.5, True, 3):
             with self.assertRaises(ValueError):
                 parse_json(json.dumps({**ANALYSIS, 'sentiment_score': score}), Analysis)
+
+
+class StagedCollectionTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        auth = AuthStore(Path(self.directory.name) / 'staged.db')
+        auth.initialize()
+        self.store = ResearchStore(auth)
+        self.store.initialize()
+        self.service = ResearchService(self.store, AsyncMock(return_value=REPLY))
+        self.market = {'status': 'ok', 'price': 101, 'change': 1, 'is_realtime': False, 'candles': [{'date': '2026-09-30', 'open': 100, 'close': 101, 'low': 99, 'high': 102, 'volume': 10000}]}
+
+    async def asyncTearDown(self):
+        await self.service.close()
+        self.directory.cleanup()
+
+    async def test_slow_market_does_not_block_news_or_drop_earlier_analysis(self):
+        gate, analyzed = asyncio.Event(), asyncio.Event()
+        async def slow_market(*args):
+            await gate.wait()
+            return self.market
+        def progress(stage):
+            if stage == 'AI 新闻研判已完成 1/1':
+                analyzed.set()
+        with patch('backend.providers.search_news', new=AsyncMock(return_value=news_sample())), patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), patch('backend.providers.daily_market', side_effect=slow_market):
+            task = asyncio.create_task(self.service.collect('600519', 30, 3, False, progress))
+            try:
+                await asyncio.wait_for(analyzed.wait(), 3)
+                early = self.store.get('dashboard', '600519')
+                self.assertEqual(early['candles'], [])
+                self.assertEqual(early['pipeline']['stages']['market'], 'pending')
+                self.assertEqual(early['news'][0]['score'], 1)
+                self.assertFalse(task.done())
+                gate.set()
+                final = await asyncio.wait_for(task, 3)
+                self.assertEqual(final['candles'], self.market['candles'])
+                self.assertEqual(final['news'][0]['score'], 1)
+                self.assertNotEqual(early['revision'], final['revision'])
+                self.service.completion.assert_awaited_once()
+            finally:
+                gate.set()
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    async def test_cancellation_keeps_visible_results_and_stops_model_workers(self):
+        started, stopped = asyncio.Event(), asyncio.Event()
+        async def blocked_model(*args, **kwargs):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+        self.service.completion = blocked_model
+        with patch('backend.providers.search_news', new=AsyncMock(return_value=news_sample())), patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), patch('backend.providers.daily_market', new=AsyncMock(return_value=self.market)):
+            task = asyncio.create_task(self.service.collect('600519', 30, 3, False))
+            await asyncio.wait_for(started.wait(), 3)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(stopped.is_set())
+            saved = self.store.get('dashboard', '600519')
+            self.assertEqual(saved['candles'], self.market['candles'])
+            self.assertEqual(len(saved['news']), 1)
+            self.assertEqual(saved['pipeline']['job_status'], 'failed')
+            self.assertEqual(saved['news'][0]['analysis_status'], 'failed')
+            self.assertIsNone(saved['news'][0]['score'])
 
 
 class DeliveryTests(unittest.IsolatedAsyncioTestCase):

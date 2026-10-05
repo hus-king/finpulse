@@ -14,6 +14,9 @@ import { number, percent, tone } from './format';
 
 const defaults = ['600519', '300750', '688981'];
 
+// A slow initial/cache read must not replace a newer staged result.
+const newerSnapshot = (previous: Dashboard | null | undefined, next: Dashboard) => previous?.stock.code === next.stock.code && previous.as_of && (!next.as_of || previous.as_of > next.as_of) ? previous : next;
+
 function Dialog({ title, children, close }: { title: string; children: React.ReactNode; close: () => void }) {
   useDialogScroll();
   useEffect(() => {
@@ -48,6 +51,8 @@ export default function App() {
   const [auditLoading, setAuditLoading] = useState(false);
   const userId = useRef(user?.id);
   const controller = useRef<AbortController | null>(null);
+  const snapshotsRef = useRef(snapshots);
+  snapshotsRef.current = snapshots;
   userId.current = user?.id;
   const mergeCatalog = useCallback((items: Stock[]) => setCatalog(previous => Array.from(new Map([...previous, ...items].map(stock => [stock.code, stock])).values())), []);
 
@@ -73,21 +78,22 @@ export default function App() {
   useEffect(() => {
     const abort = new AbortController();
     Promise.all(watchlist.map(target => api<Dashboard>(`/api/dashboard/${target}`, undefined, abort.signal)))
-      .then(results => { if (!abort.signal.aborted) { mergeCatalog(results.map(item => item.stock)); setSnapshots(previous => ({ ...previous, ...Object.fromEntries(results.map(item => [item.stock.code, item])) })); } })
+      .then(results => { if (!abort.signal.aborted) { mergeCatalog(results.map(item => item.stock)); setSnapshots(previous => ({ ...previous, ...Object.fromEntries(results.map(item => [item.stock.code, newerSnapshot(previous[item.stock.code], item)])) })); } })
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
     return () => abort.abort();
   }, [watchlist, mergeCatalog]);
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setData(null); setError('');
-    api<Dashboard>(`/api/dashboard/${code}`, undefined, abort.signal).then(setData).catch(e => { if (e.name !== 'AbortError') setError(e.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    const cached = snapshotsRef.current[code];
+    setLoading(!cached); setData(cached ?? null); setError('');
+    api<Dashboard>(`/api/dashboard/${code}`, undefined, abort.signal).then(next => { if (!abort.signal.aborted) setData(previous => newerSnapshot(previous, next)); }).catch(e => { if (e.name !== 'AbortError') setError(e.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, [code]);
 
   const loadSnapshot = useCallback(async (target: string, signal?: AbortSignal) => {
     const next = await api<Dashboard>(`/api/dashboard/${target}`, undefined, signal);
-    if (!signal?.aborted) { setSnapshots(previous => ({ ...previous, [target]: next })); if (code === target) setData(next); }
+    if (!signal?.aborted) { setSnapshots(previous => ({ ...previous, [target]: newerSnapshot(previous[target], next) })); if (code === target) { setData(previous => newerSnapshot(previous, next)); setLoading(false); } }
   }, [code]);
 
   useEffect(() => {
@@ -98,7 +104,7 @@ export default function App() {
       try {
         const latest = await Promise.all(active.map(job => api<Job>(`/api/research/jobs/${job.id}`, undefined, abort.signal)));
         if (abort.signal.aborted) return;
-        await Promise.all(latest.filter(job => !['queued', 'running'].includes(job.status)).map(job => loadSnapshot(job.code, abort.signal)));
+        await Promise.all(latest.filter(job => !['queued', 'running'].includes(job.status) || job.data_revision && job.data_revision !== jobs[job.code]?.data_revision).map(job => loadSnapshot(job.code, abort.signal)));
         if (!abort.signal.aborted) setJobs(previous => ({ ...previous, ...Object.fromEntries(latest.map(job => [job.code, job])) }));
       } catch (e) { if (!abort.signal.aborted) { setError((e as Error).message); setJobs(previous => ({ ...previous })); } }
     }, 2000);

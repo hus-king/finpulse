@@ -139,7 +139,13 @@ async def refresh(code: str, data: RefreshRequest, response: Response, user=Depe
 @router.get('/research/jobs/{job_id}')
 def get_job(job_id: str, response: Response, session=Depends(current_session), research=Depends(service)):
     private(response)
-    job = research.store.get('job', job_id, session['user']['id'])
+    owner = session['user']['id']
+    live = research.live_jobs.get(job_id)
+    # Live progress avoids an extra remote DB read on every polling request.
+    # Check the owner before exposing any live job or shared dashboard revision.
+    if live and research.active.get((owner, live['code'])) == job_id:
+        return {**live, 'data_revision': research.dashboard_revisions.get(live['code'])}
+    job = research.store.get('job', job_id, owner)
     if not job:
         raise HTTPException(404, '任务不存在。')
     return job
