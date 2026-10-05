@@ -486,12 +486,15 @@ Linux 部署时设置环境变量 `FINPULSE_SCHEDULER_ENABLED=1`，并由进程�
     "port": 465,
     "username": "your-sender-account",
     "password": "your-smtp-authorization-code",
-    "from_email": "your-sender@example.com"
+    "from_email": "your-sender@example.com",
+    "from_name": "funplus"
   }
 }
 ```
 
 465 使用 SMTP SSL，其他端口使用 STARTTLS；`password` 通常是邮箱提供的 SMTP 授权码。填写后在页面保存接收邮箱并启用邮件，点击「发送真实测试推送」。微信填写自己的 PushPlus token 并启用渠道。此按钮会真的发送；保存设置、生成/预览晨报不会发送。
+
+`from_name` 是邮件中显示的发件人名称，可以填写 `funplus`，中文名称也支持；留空显示邮箱地址。`from_email` 继续填写真实发件邮箱，SMTP 认证和实际发件地址不随显示名称变化。修改配置后，后续发送使用新的名称，已经发出的邮件不会改变。
 
 每日发送按用户/日期/渠道记录：已发送或被受理的渠道不重复发送。明确失败的渠道至少间隔 15 分钟重试，最多实际尝试 3 次；未配置 SMTP 不计实际尝试。网络超时等结果不确定、或进程在发送时中断的请求不会自动重发，以避免重复消息，页面提示用户核实。邮件“已发送”表示 SMTP 服务接受发送；PushPlus“渠道已受理”表示 API 返回接受，不保证已到达收件箱/微信。外部渠道无法做到数据库与第三方发送之间的严格原子性。参考 [PushPlus 消息接口](https://www.pushplus.plus/doc/guide/api.html)。
 
@@ -510,6 +513,6 @@ npm run build
 
 管理员保存合法调度时间、拒绝非法时间、手动每日更新返回 202、复用当日 3 只股票而无额外采集、重新生成 4 份私人晨报也已通过真实 HTTP 验证，报告在 `.runtime/morning-final-verification.json`。浏览器检查后补充过滤 moomoo 报价页、东方财富公告列表，刷新了个人晨报；保留具体公告详情页。
 
-推送适配和状态机已验证，但当前没有发信账号或 PushPlus 接收信息，尚未验证真实消息送达。AkShare 新闻 SSL 问题仍可能使每日更新为 partial，已由 Tavily 补充并在页面提示。网站本次没有部署到远程服务器。
+2026-10-04 验证时，推送适配和状态机已验证，发信账号和 PushPlus 接收信息尚未配置。2026-10-05 本机已配置 QQ 邮箱，向用户指定的收件人发送了一封测试邮件，QQ SMTP 返回接受；最终送达由收件端确认。PushPlus 真实发送仍未验收。AkShare 新闻 SSL 问题仍可能使每日更新为 partial，已由 Tavily 补充并在页面提示。网站本次没有部署到远程服务器。
 
 页面参考 [Yahoo Finance](https://finance.yahoo.com/) 的横向导航、行情卡片、主新闻栏与侧栏信息层级，保留 FinPulse 自己的内容和交互。API 实现参考 [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)、[AkShare 股票文档](https://akshare.akfamily.xyz/data/stock/stock.html)、[APScheduler](https://apscheduler.readthedocs.io/en/3.x/userguide.html)、[PushPlus 消息接口](https://www.pushplus.plus/doc/guide/api.html)。

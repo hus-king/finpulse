@@ -4,6 +4,7 @@ import smtplib
 import ssl
 from datetime import datetime
 from email.message import EmailMessage
+from email.headerregistry import Address
 
 import httpx
 from .providers import read_config
@@ -16,7 +17,8 @@ def build_briefing(store, owner):
 
 def smtp_send(config, recipient, title, content):
     message = EmailMessage()
-    message['Subject'], message['From'], message['To'] = title, config['from_email'], recipient
+    message['Subject'], message['To'] = title, recipient
+    message['From'] = Address(display_name=config.get('from_name', '').strip(), addr_spec=config['from_email'])
     message.set_content('FinPulse 自选股早报，请使用支持 HTML 的邮件客户端查看。')
     message.add_alternative(content, subtype='html')
     port = int(config.get('port', 465))
@@ -29,7 +31,7 @@ def smtp_send(config, recipient, title, content):
         if port != 465:
             client.starttls(context=context)
         client.login(config['username'], config['password'])
-        client.send_message(message)
+        client.send_message(message, from_addr=config['from_email'], to_addrs=[recipient])
 
 
 async def deliver(subscription, digest):

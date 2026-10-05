@@ -17,7 +17,8 @@
       "port": 465,
       "username": "",
       "password": "",
-      "from_email": ""
+      "from_email": "",
+      "from_name": "FinPulse"
     }
   },
   "database": {
