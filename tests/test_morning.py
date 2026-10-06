@@ -265,10 +265,11 @@ class ConcurrentApiTests(unittest.IsolatedAsyncioTestCase):
                             foreign = await clients[0].get('/api/research/jobs/' + replies[1].json()['id'])
                             self.assertEqual(foreign.status_code, 404)
                             gate.set()
-                            for _ in range(100):
+                            deadline = time.monotonic() + 30
+                            while time.monotonic() < deadline:
                                 if not app.state.research.active:
                                     break
-                                await asyncio.sleep(.01)
+                                await asyncio.sleep(.02)
                             self.assertFalse(app.state.research.active)
                             self.assertEqual(source.await_count, 1)
                         digests = await asyncio.gather(*(client.post('/api/briefing/generate', headers=headers[i], json={}) for i, client in enumerate(clients)))

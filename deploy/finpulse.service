@@ -1,0 +1,27 @@
+[Unit]
+Description=FinPulse website and research API
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=airhust
+Group=airhust
+WorkingDirectory=/home/airhust/finpulse-deploy/current
+EnvironmentFile=/home/airhust/finpulse-deploy/shared/service.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/airhust/finpulse-deploy/shared/.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 8001 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/airhust/finpulse-deploy/shared
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

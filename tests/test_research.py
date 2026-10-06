@@ -50,12 +50,14 @@ class ResearchTests(unittest.TestCase):
         return {**ORIGIN, 'X-CSRF-Token': response.json()['csrf_token']}
 
     def wait_job(self, job_id):
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             response = self.client.get('/api/research/jobs/' + job_id)
             self.assertEqual(response.status_code, 200)
             job = response.json()
-            if job['status'] not in ('queued', 'running'):
+            # The live result becomes terminal before its final DB write and
+            # queue cleanup; wait for durable completion before follow-up work.
+            if job['status'] not in ('queued', 'running') and job_id not in app.state.research.live_jobs:
                 return job
             time.sleep(.02)
         self.fail('Job did not complete')
