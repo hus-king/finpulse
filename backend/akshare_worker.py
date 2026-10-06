@@ -16,6 +16,19 @@ def main():
                 frame = ak.stock_info_sz_name_code(symbol='A股列表').rename(columns={'A股代码': 'code', 'A股简称': 'name', '所属行业': 'industry'})
             elif kind in ('catalog_sh', 'catalog_star'):
                 frame = ak.stock_info_sh_name_code(symbol='主板A股' if kind == 'catalog_sh' else '科创板').rename(columns={'证券代码': 'code', '证券简称': 'name'})
+            elif kind.startswith('minute_'):
+                period = kind.split('_', 1)[1]
+                if period not in {'1', '5', '15', '30', '60'}:
+                    raise ValueError('Invalid minute period')
+                # Bound every request in this disposable process, without
+                # changing requests state in the long-running web server.
+                import requests
+                original = requests.sessions.Session.request
+                def bounded(self, method, url, **kwargs):
+                    kwargs['timeout'] = (5, 12)
+                    return original(self, method, url, **kwargs)
+                requests.sessions.Session.request = bounded
+                frame = ak.stock_zh_a_minute(symbol=symbol, period=period, adjust='')
             else:
                 frame = ak.stock_zh_a_hist_tx(symbol=symbol, start_date=start.replace('-', ''), end_date=end.replace('-', ''), adjust='', timeout=12)
         print(json.dumps({'rows': json.loads(frame.to_json(orient='records', force_ascii=False, date_format='iso'))}, ensure_ascii=False))

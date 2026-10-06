@@ -3,6 +3,13 @@ export interface Stock {
   industry: string; price: number | null; change: number | null;
 }
 export interface Candle { date: string; open: number; close: number; low: number; high: number; volume: number }
+export interface MinuteMarket {
+  code: string; period: number; candles: Candle[]; as_of: string | null; fetched_at: string | null;
+  source: string; status: 'ok' | 'stale' | 'unavailable'; refreshing: boolean; forming: boolean;
+  is_realtime: boolean; error: string | null; next_poll_seconds: number; note: string;
+  quote: { price: number | null; change: number | null; open: number | null; high: number | null; low: number | null; volume: number | null };
+  market: { state: string; label: string; is_trading: boolean; server_time: string; calendar_year: number | null };
+}
 export interface Analysis { sentiment_score: number; summary: string; causal_chain: string[]; uncertainty: string }
 export interface News {
   id: string; title: string; source: string; url: string; content: string; score: number | null; tag: string; time: string;

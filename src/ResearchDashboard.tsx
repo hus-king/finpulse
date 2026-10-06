@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, ArrowRight, Bell, BookOpen, ChevronRight, Download, ExternalLink, LoaderCircle, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
-import PriceChart from './PriceChart';
+import { ArrowRight, Bell, BookOpen, ChevronRight, Download, ExternalLink, LoaderCircle, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
+import QuotePanel from './QuotePanel';
 import CommunityCard from './CommunityCard';
 import { dateTime, number, percent, tone } from './format';
 import type { Dashboard, Job, News, Stock } from './types';
@@ -14,15 +14,11 @@ interface Props {
 
 export default function ResearchDashboard(props: Props) {
   const { data, loading, catalog, snapshots, watchlist, savingWatch, code, setCode, userSignedIn, add, remove, running, job, collect, audit, auditLoading, openAssistant, briefing } = props;
-  const [mode, setMode] = useState('近 3 月');
-  const [indicator, setIndicator] = useState('成交量');
-  const [period, setPeriod] = useState('日 K');
   const [includeCommunity, setIncludeCommunity] = useState(false);
   const [days, setDays] = useState(30);
   const [filter, setFilter] = useState('全部');
   const stages = data?.pipeline?.stages;
   useEffect(() => setFilter('全部'), [code]);
-  const currentBar = data?.candles.at(-1);
   const analyzed = data?.news.filter(row => row.score != null) ?? [];
   const mean = analyzed.length ? analyzed.reduce((sum, row) => sum + row.score!, 0) / analyzed.length : null;
   const visible = data?.news.filter(row => filter === '全部' || (filter === '利好' ? (row.score ?? 0) > 0 : filter === '利空' ? (row.score ?? 0) < 0 : filter === '待研判' ? row.score == null : row.score === 0)) ?? [];
@@ -37,7 +33,7 @@ export default function ResearchDashboard(props: Props) {
     <div className="research-main-column">
       {loading && <div className="panel empty-card"><LoaderCircle className="spin" size={25} /><p>正在读取已保存的数据…</p></div>}
       {data && <>
-        <section className="panel live-quote"><header><div><span className="industry-tag">{data.stock.industry}</span><h2>{data.stock.name}<small>{data.stock.exchange}:{data.stock.code}</small></h2><p>{data.quote.source ?? '尚未采集行情'} · {data.quote.as_of_date ?? '—'} · {data.quote.status === 'stale' ? '上次保存的日线，本次更新失败' : '非实时价格'}</p></div><button className="subtle-button" onClick={add}>切换标的<ChevronRight size={14} /></button></header><div className="live-price-row"><div><strong className={`mono ${tone(data.stock.change)}`}>{number(data.stock.price)}</strong><span className={tone(data.stock.change)}>{percent(data.stock.change)}<small>较前一返回交易日</small></span></div><dl><div><dt>开盘</dt><dd>{number(currentBar?.open)}</dd></div><div><dt>最高</dt><dd>{number(currentBar?.high)}</dd></div><div><dt>最低</dt><dd>{number(currentBar?.low)}</dd></div><div><dt>成交量</dt><dd>{currentBar ? `${(currentBar.volume / 10000).toFixed(1)} 万股` : '—'}</dd></div></dl></div><div className="live-chart-toolbar"><div className="segmented">{['近 1 月', '近 3 月', '全部'].map(item => <button key={item} className={mode === item ? 'active' : ''} onClick={() => setMode(item)}>{item}</button>)}</div><select aria-label="K线周期" value={period} onChange={e => setPeriod(e.target.value)}><option>日 K</option><option>周 K</option></select><span>MA5 / MA10 / MA20</span></div>{data.candles.length ? <PriceChart candles={data.candles} news={data.news} mode={mode} period={period} indicator={indicator} onEvent={openEvent} /> : <div className="chart-empty"><Activity size={32} /><h3>让真实行情进入你的看板</h3><p>{running ? '正在获取历史日线，返回后立即显示；新闻和 AI 研判会继续更新。' : '点击下方「采集并分析」，获取历史日线与近期新闻。'}</p></div>}<footer className="chart-footer"><div className="indicator-switch">{['成交量', 'MACD', 'RSI'].map(item => <button key={item} className={indicator === item ? 'active' : ''} onClick={() => setIndicator(item)}>{item}</button>)}</div><span>新闻日期标记 · 点击查看原文与研判</span></footer></section>
+        <QuotePanel data={data} add={add} running={running} onEvent={openEvent} />
         <section className="pipeline-bar"><div><span className={`status-dot ${running ? 'pending' : ''}`} /><strong>{running ? job?.stage ?? '正在提交任务…' : job?.status === 'failed' ? '本次任务失败' : '真实新闻研究'}</strong><small>{running ? '结果分阶段更新，可先看行情和新闻' : `最近保存：${dateTime(data.as_of)}`}</small></div><div className="pipeline-options"><select aria-label="新闻检索区间" value={days} onChange={e => setDays(+e.target.value)} disabled={running}><option value={7}>近 7 天</option><option value={30}>近 30 天</option><option value={90}>近 90 天</option></select><label><input type="checkbox" checked={includeCommunity} onChange={e => setIncludeCommunity(e.target.checked)} disabled={running} />含社区样本</label><button className="primary-button" disabled={running} onClick={() => collect(days, includeCommunity)}>{running ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{running ? '正在处理' : '采集并分析'}</button></div></section>
         {stages && <div className="collection-stages" role="status" aria-live="polite">{[{ key: 'market', label: 'K 线行情' }, { key: 'news', label: '清洗新闻' }, { key: 'analysis', label: 'AI 研判' }].filter(section => stages[section.key]).map(section => <span key={section.key} className={`collection-stage ${stages[section.key]}`}><span className="status-dot" />{section.label}<strong>{stages[section.key] === 'ready' || stages[section.key] === 'completed' ? '已就绪' : stages[section.key] === 'failed' ? '更新失败' : stages[section.key] === 'running' ? '生成中' : '获取中'}</strong>{section.key === 'analysis' && !!data.pipeline?.counts.analysis_total && <small>{data.pipeline.counts.analysis_finished ?? 0}/{data.pipeline.counts.analysis_total}</small>}</span>)}</div>}
         {job?.warnings.length ? <div className="pipeline-warning" role="status">本次任务：{job.warnings.join('；')}</div> : null}

@@ -1,7 +1,7 @@
 import asyncio
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .auth import authorize_model_request, current_session, token_hash, require_admin, authorize_admin_write
@@ -19,6 +19,19 @@ def service(request: Request):
 
 def private(response):
     response.headers['Cache-Control'] = 'no-store'
+
+
+@router.get('/market/{code}/minutes')
+async def minute_market(code: str, request: Request, response: Response,
+                        period: int = Query(default=1, ge=1, le=60),
+                        refresh: bool = False, research=Depends(service)):
+    private(response)
+    if period not in {1, 5, 15, 30, 60}:
+        raise HTTPException(422, '分钟周期只支持 1、5、15、30、60。')
+    stock = research.catalog.get(code)
+    if not stock:
+        raise HTTPException(404, '未找到已核验的股票，请先搜索该股票。')
+    return await request.app.state.minute_market.snapshot(stock, period, force=refresh)
 
 
 class RefreshRequest(BaseModel):

@@ -58,6 +58,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
     const chart = instance.current;
     if (!chart) return;
     const candles = period === '周 K' ? weekly(daily) : daily;
+    const minute = period.endsWith('分钟');
     if (!candles.length) return;
     const close = candles.map(row => row.close);
     const fast = ema(close, 12), slow = ema(close, 26);
@@ -66,15 +67,17 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
     const macd = dif.map((value, i) => (value - dea[i]) * 2);
     const rows = candles.map(row => [row.open, row.close, row.low, row.high]);
     const dates = candles.map(row => row.date);
-    const markers = news.flatMap(article => {
+    const markers = (minute ? [] : news).flatMap(article => {
       let index = candles.findIndex(row => row.date >= article.time);
       if (period === '周 K') index = candles.findIndex((row, i) => row.date <= article.time && (i === candles.length - 1 ? daily.at(-1)!.date >= article.time : candles[i + 1].date > article.time));
       if (index < 0) return [];
       return [{ name: article.title, newsId: article.id, coord: [dates[index], candles[index].high * 1.007], itemStyle: { color: article.score == null ? '#8896aa' : article.score > 0 ? '#d64a61' : article.score < 0 ? '#188475' : '#6575c5' } }];
     });
-    const cutoff = new Date(candles.at(-1)!.date + 'T00:00:00Z');
+    const cutoff = new Date(candles.at(-1)!.date.slice(0, 10) + 'T00:00:00Z');
     cutoff.setUTCMonth(cutoff.getUTCMonth() - (mode === '近 1 月' ? 1 : 3));
-    const firstVisible = mode === '全部' ? 0 : Math.max(0, candles.findIndex(row => row.date >= cutoff.toISOString().slice(0, 10)));
+    const days = [...new Set(candles.map(row => row.date.slice(0, 10)))];
+    const from = minute ? mode === '当日' ? days.at(-1)! : days.slice(-5)[0] : cutoff.toISOString().slice(0, 10);
+    const firstVisible = mode === '全部' ? 0 : Math.max(0, candles.findIndex(row => row.date >= from));
     const view = `${mode}:${period}`;
     const resetZoom = lastView.current !== view;
     lastView.current = view;
@@ -86,7 +89,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
       grid: [{ left: 58, right: 22, top: 22, bottom: 112 }, { left: 58, right: 22, height: 58, bottom: 30 }],
       xAxis: [
         { type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: '#dce4ed' } }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
-        { type: 'category', gridIndex: 1, data: dates, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6d7c90', fontSize: 10, formatter: (value: string) => value.slice(5) }, splitLine: { show: false } },
+        { type: 'category', gridIndex: 1, data: dates, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6d7c90', fontSize: 10, formatter: (value: string) => minute ? value.slice(5, 16).replace(' ', '\n') : value.slice(5) }, splitLine: { show: false } },
       ],
       yAxis: [
         { scale: true, splitNumber: 4, axisLabel: { color: '#748399', fontSize: 10, formatter: (v: number) => v.toFixed(v > 100 ? 0 : 2) }, splitLine: { lineStyle: { color: '#e8edf3', type: 'dashed' } }, axisLine: { show: false } },
