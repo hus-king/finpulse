@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
-import type { Dashboard } from './types';
+import type { Dashboard, MarketBundle } from './types';
 
-export default function useDailyMarket(code: string, onSnapshot: (data: Dashboard) => void) {
+export default function useMarketBundle(code: string, onSnapshot: (data: Dashboard) => void) {
+  const [data, setData] = useState<MarketBundle | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const cache = useRef(new Map<string, MarketBundle>());
   const force = useRef(false);
   const refresh = useCallback(() => { force.current = true; setRevision(value => value + 1); }, []);
 
   useEffect(() => {
+    setData(cache.current.get(code) ?? null); setError('');
     let stopped = false, generation = 0, timer: number | undefined;
     let abort: AbortController | null = null;
     let forceOnce = force.current;
     force.current = false;
-    setError('');
     const poll = async () => {
       if (stopped || document.hidden) return;
       const current = ++generation;
@@ -23,11 +25,13 @@ export default function useDailyMarket(code: string, onSnapshot: (data: Dashboar
       setLoading(true);
       let delay = 30;
       try {
-        const next = await api<Dashboard>(`/api/market/${code}/daily${forceOnce ? '?refresh=true' : ''}`, undefined, request.signal);
+        const next = await api<MarketBundle>(`/api/market/${code}/bundle${forceOnce ? '?refresh=true' : ''}`, undefined, request.signal);
         forceOnce = false;
         if (stopped || request.signal.aborted || current !== generation) return;
-        onSnapshot(next); setError('');
-        delay = Math.max(2, next.daily_request?.next_poll_seconds ?? 30);
+        cache.current.set(code, next);
+        if (cache.current.size > 15) cache.current.delete(cache.current.keys().next().value!);
+        setData(next); onSnapshot(next.dashboard); setError('');
+        delay = Math.max(30, next.next_poll_seconds);
       } catch (e) {
         if (!stopped && !request.signal.aborted && current === generation) setError((e as Error).message);
       } finally {
@@ -39,11 +43,12 @@ export default function useDailyMarket(code: string, onSnapshot: (data: Dashboar
     };
     const visibility = () => {
       window.clearTimeout(timer); generation++; abort?.abort();
-      if (!document.hidden) void poll();
+      if (document.hidden) setLoading(false);
+      else void poll();
     };
     document.addEventListener('visibilitychange', visibility);
     void poll();
     return () => { stopped = true; abort?.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', visibility); };
   }, [code, revision, onSnapshot]);
-  return { error, loading, refresh };
+  return { data: data?.dashboard.stock.code === code ? data : null, error, loading, refresh };
 }

@@ -2,13 +2,18 @@ export interface Stock {
   code: string; name: string; initials: string; exchange: string;
   industry: string; price: number | null; change: number | null;
 }
-export interface Candle { date: string; open: number; close: number; low: number; high: number; volume: number }
+export interface Candle { date: string; open: number; close: number; low: number; high: number; volume: number; partial?: boolean }
 export interface MinuteMarket {
   code: string; period: number; candles: Candle[]; as_of: string | null; fetched_at: string | null;
   source: string; status: 'ok' | 'stale' | 'unavailable'; refreshing: boolean; forming: boolean;
   is_realtime: boolean; error: string | null; next_poll_seconds: number; note: string;
+  derived_from?: string; partial_bars?: number;
   quote: { price: number | null; change: number | null; open: number | null; high: number | null; low: number | null; volume: number | null };
   market: { state: string; label: string; is_trading: boolean; server_time: string; calendar_year: number | null };
+}
+export interface MarketBundle {
+  dashboard: Dashboard; minutes: Record<string, MinuteMarket>; status: 'ok' | 'partial';
+  errors: Record<string, string>; next_poll_seconds: number; fetched_at: string;
 }
 export interface Analysis { sentiment_score: number; summary: string; causal_chain: string[]; uncertainty: string }
 export interface News {

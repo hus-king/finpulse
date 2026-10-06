@@ -46,11 +46,11 @@ class DailyMarketService:
         # after the expected final close even when its date already matches.
         return bool(state['expected_data_time'] and latest == expected and fetched < datetime.fromisoformat(state['expected_data_time']).timestamp())
 
-    async def snapshot(self, stock, force=False):
+    async def snapshot(self, stock, force=False, schedule=True):
         record = await asyncio.to_thread(self.cached, stock['code'])
         state = market_state(self.clock())
         busy = False
-        if not self.closed and self._due(record, state, force) and stock['code'] not in self.tasks:
+        if schedule and not self.closed and self._due(record, state, force) and stock['code'] not in self.tasks:
             if len(self.tasks) < 32:
                 self.tasks[stock['code']] = asyncio.create_task(self._refresh(stock, force))
             else:

@@ -68,12 +68,12 @@ class MinuteMarketService:
         # A stale closed-session snapshot is retried infrequently, not every viewer poll.
         return bool(expected and latest < datetime.fromisoformat(expected) and now - attempted >= 300)
 
-    async def snapshot(self, stock, period, force=False):
+    async def snapshot(self, stock, period, force=False, schedule=True):
         key = f"{stock['code']}:{period}"
         cached = await asyncio.to_thread(self.store.get, 'minute_market', key, default={})
         state = market_state(self.clock())
         busy = False
-        if not self.closed and self._due(cached, state, force) and key not in self.tasks:
+        if schedule and not self.closed and self._due(cached, state, force) and key not in self.tasks:
             if len(self.tasks) < 32:
                 self.tasks[key] = asyncio.create_task(self._refresh(stock, period, key, force))
             else:

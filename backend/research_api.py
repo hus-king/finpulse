@@ -21,6 +21,16 @@ def private(response):
     response.headers['Cache-Control'] = 'no-store'
 
 
+@router.get('/market/{code}/bundle')
+async def market_bundle(code: str, request: Request, response: Response,
+                        refresh: bool = False, research=Depends(service)):
+    private(response)
+    stock = research.catalog.get(code)
+    if not stock:
+        raise HTTPException(404, '未找到已核验的股票，请先搜索该股票。')
+    return await request.app.state.market_bundle.get(stock, force=refresh)
+
+
 @router.get('/market/{code}/daily')
 async def daily_market(code: str, response: Response, refresh: bool = False, research=Depends(service)):
     private(response)

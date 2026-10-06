@@ -29,6 +29,7 @@ from .providers import read_config
 from .auth import AuthError, auth_error_handler, authorize_model_request, router as auth_router, admin_router
 from .database import create_auth_store
 from .minute_market import MinuteMarketService
+from .market_bundle import MarketBundleService
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.local.json"
@@ -47,11 +48,13 @@ async def lifespan(application):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)
     application.state.minute_market = MinuteMarketService(research_store)
+    application.state.market_bundle = MarketBundleService(application.state.research, application.state.minute_market)
     application.state.research.briefing = MorningService(application.state.research)
     application.state.scheduler = start_scheduler(application.state.research)
     try:
         yield
     finally:
+        await application.state.market_bundle.close()
         await application.state.minute_market.close()
         await application.state.research.briefing.close()
         await application.state.research.close()
