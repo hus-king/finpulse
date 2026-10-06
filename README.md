@@ -1,12 +1,29 @@
 # FinPulse 智能股票舆情平台
 
-FinPulse 是软件工程课程项目，目前提供本机可运行的真实新闻研究流程：React + TypeScript + ECharts 前端、FastAPI 后端、MySQL / SQLite 账号与研究记录、Tavily 检索、AkShare 数据接入，以及兼容 Chat Completions 的大模型分析。
+FinPulse 是软件工程课程项目，支持本机开发和服务器完整部署：React + TypeScript + ECharts 前端、FastAPI 后端、MySQL / SQLite 账号与研究记录、Tavily 新闻检索、AkShare 行情，以及兼容 Chat Completions 的大模型分析。当前主网站使用真实来源数据，采集失败时展示缺失或缓存状态。
 
-**团队共享 MySQL 与四个管理员的操作说明见 [数据库与管理员登录说明](数据库与管理员登录说明.md)。** 当前开发机已连接服务器 `finpulse_dev`；配置模板默认 SQLite，方便独立试运行。新成员共享服务器数据时，需要填写 MySQL 配置并具有 SSH 访问权限。
+**团队共享 MySQL 与四个管理员的操作说明见 [数据库与管理员登录说明](docs/数据库与管理员登录说明.md)。** 当前开发机已连接服务器 `finpulse_dev`；配置模板默认 SQLite，方便独立试运行。新成员共享服务器数据时，需要填写 MySQL 配置并具有 SSH 访问权限。
 
-**服务器网站已部署：同网段访问 `http://202.114.212.116:8000/`，SSH 成员转发后访问 `http://localhost:18000/`。** 使用方法、来源限制、目录和维护命令见 [服务器部署与访问说明](服务器部署与访问说明.md)。部署快照与服务器原 Git 仓库分开，API 密钥只保存在服务器私有配置中。
+**服务器网站已部署，访问有来源限制，并非所有校园网设备都能直接打开。** 完整说明见 [服务器部署与访问说明](docs/服务器部署与访问说明.md)，团队工作流见 [服务器部署与开发流程](docs/服务器部署与开发流程.md)。
 
-正式运行时，前端和后端共用 **http://localhost:8000/**。浏览器只访问本地后端，模型 API 密钥由后端读取。
+### 先选择运行方式
+
+| 方式 | 运行位置 | 浏览器地址 | 使用前提 |
+| --- | --- | --- | --- |
+| 本机完整运行 | 本机 FastAPI 提供 API 和构建后的 React 网页 | `http://localhost:8000/` | 按第 2 节安装依赖、填写本地配置并启动 |
+| 本机前后端开发 | 本机 Vite + FastAPI | `http://localhost:5173/`，API 代理到本机 8000 | 按第 3 节分别启动两个终端，前端热更新、后端 reload |
+| 服务器直接访问 | 服务器 Nginx + FastAPI + MySQL | `http://202.114.212.116:8000/` | 网络能路由到服务器，且服务器看到的来源 IP 在白名单内 |
+| SSH 访问服务器 | 服务仍在服务器，本机只做端口转发 | `http://localhost:18000/` | 能通过 SSH 登录服务器，并保持下方隧道连接 |
+
+只体验服务器网站，不需要安装项目依赖或复制 API 密钥。在自己的电脑执行：
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 127.0.0.1:18000:127.0.0.1:8000 airhust@airhust.cn -p 11622
+```
+
+随后打开 `http://localhost:18000/`，按 Ctrl+C 关闭隧道。SSH 登录与网页登录是两套认证，网站仍需使用自己的账号登录。Windows 也可在仓库根目录执行 `.\scripts\web-tunnel.ps1`；端口占用时使用 `-LocalPort 18001`，并打开对应网址。
+
+两套部署可以同时运行，各自电脑上的 8000 端口不冲突。当前开发机与服务器版本均连接 `finpulse_dev`，共享账号、自选股、新闻和晨报；本机操作也会改变共享数据。模板默认 SQLite，独立试运行不会自动拥有服务器数据。本机代码修改不会自动同步到服务器，GitHub 推送也不触发自动部署。每日晨报调度仅在服务器开启，本机开发保持关闭。密钥由各自后端读取，不下发给前端。
 
 ## 1. 当前能做什么
 
@@ -139,6 +156,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1 -Rebuild
 终端一启动后端：
 
 ```powershell
+$env:FINPULSE_SCHEDULER_ENABLED = '0'
 .\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
@@ -148,7 +166,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1 -Rebuild
 npm run dev
 ```
 
-使用 Vite 输出的地址，通常为 `http://127.0.0.1:5173/`。Vite 把 `/api` 请求代理到 8000 端口后端。若 Vite 使用其他端口，需要把实际来源加入 `FINPULSE_ALLOWED_ORIGINS` 并重启后端。
+使用 Vite 输出的地址，通常为 `http://localhost:5173/`。Vite 把 `/api` 请求代理到 8000 端口后端。若 Vite 使用其他端口，需要把实际来源加入 `FINPULSE_ALLOWED_ORIGINS` 并重启后端。共享 MySQL 开发时，先运行 `.\scripts\mysql-tunnel.ps1 -Background` 建立数据库隧道；SQLite 模式不需要这一步。
 
 访问 8000 端口时，使用的是 `dist` 中的构建结果；更新前端后需要重新执行 `npm run build` 并重启后端。开发时，5173 端口显示源码的即时更新。
 
@@ -204,8 +222,10 @@ npm run build
 backend/               FastAPI、账号鉴权、模型调用与数据适配
 src/                   React 前端与 ECharts 图表
 public/                公共图标
-scripts/               独立新闻清洗和预览脚本
-tests/                 账号鉴权与新闻规则测试
+scripts/               数据库管理、SSH 隧道、新闻实验与验证脚本
+deploy/                Nginx、systemd、环境模板与服务器依赖锁文件
+docs/                  部署、团队分工、数据库操作与课程方案
+tests/                 鉴权、采集分析、社区与晨报自动化测试
 config.example.json    可提交的配置模板
 config.local.json      本机密钥配置，不提交
 data/                  SQLite 数据库，不提交
@@ -218,7 +238,7 @@ package-lock.json      前端依赖锁文件
 | 文件 | 主要用途 |
 | --- | --- |
 | `backend/app.py` | HTTP 接口、模型代理、Prompt 与 JSON 输出校验 |
-| `backend/auth.py` | SQLite 账号、密码哈希、会话、鉴权与登录限流 |
+| `backend/auth.py` | MySQL / SQLite 账号、密码哈希、会话、鉴权与登录限流 |
 | `backend/demo_data.py` | 保留的早期演示样例；当前主看板不再引用 |
 | `backend/news_cleaning.py` / `backend/market_data.py` | 新闻清洗规则与 AkShare 适配 |
 | `src/App.tsx` / `src/PriceChart.tsx` | 看板、请求实验室、K 线与技术指标 |
@@ -262,39 +282,36 @@ Tavily 正文提取需要配置 `tavily_api_key`。已有缓存默认复用；`-
 
 输出包括 `.runtime/news-cleaned-akshare-<日期>.json` 与 `.runtime/tavily-preview/cleaned.html`。行情和正文可因网络、源站限制而获取失败，查看记录中的状态及来源。参考 [AkShare 股票文档](https://akshare.akfamily.xyz/data/stock/stock.html)。
 
-## 7. 后续独立服务器部署
+## 7. 当前服务器部署与访问限制
 
-当前仓库提供源码和本机启动方式，尚未配置目标服务器。后续可以使用 Linux 服务器运行一个后端实例，由 FastAPI 同时提供前端构建文件和 API。
+本项目使用“本地开发 → Git 分支/评审/合并 → 发布服务器”的工作流。当前服务器使用 Nginx + systemd 常驻运行，配置源文件在 `deploy/`，详细目录、维护步骤与访问原理见 [服务器部署与访问说明](docs/服务器部署与访问说明.md)。
 
-服务器上的首次安装与本地类似，预先安装 Git、Node.js 22 与 Python 3.12，然后执行：
+| 组件 | 当前部署 |
+| --- | --- |
+| 网站入口 | Nginx，监听 `202.114.212.116:8000` 和 `127.0.0.1:8000` |
+| FastAPI | systemd 的 `finpulse.service`，单 worker，监听 `127.0.0.1:8001` |
+| React | 已构建的 `dist/` 静态文件，由 Nginx 提供 |
+| MySQL | 服务器本机 `127.0.0.1:3306`，继续使用已有 `finpulse_dev` |
+| 发布目录 | `/home/airhust/finpulse-deploy/current` 指向版本快照；原 `/home/airhust/finpulse` Git 工作区保留 |
+| 私有配置及环境 | `/home/airhust/finpulse-deploy/shared/`，不提交仓库 |
+| 调度 | 服务器开启，本机关闭；按共享数据库中的调度时间执行 |
+
+截至 2026-10-06，网站端口放行：`202.114.212.0/25`、`10.17.214.75`、`10.14.152.145`；本机 `127.0.0.1` 用于 SSH 隧道。防火墙和 Nginx 均限制来源。两个单独地址来自被拦截请求日志，尚未确认对应人员/设备，作为临时排障规则记录；不能据此认定已放行整个校园网。其他地址须先确认归属和授权范围，再更新规则。
+
+同一校园网可能包含不同子网。连接超时需检查路由和防火墙；HTTP 403 需检查 Nginx 来源限制或后端鉴权。不能只看设备连了学校 Wi-Fi 就认定属于服务器的直连网段。原部署只放行服务器网段，日志确认两个校园来源被 UFW 拦截后已追加上述单独规则；尚未完成这两台设备的真实访问验收。
+
+服务器检查命令：
 
 ```bash
-git clone https://github.com/hus-king/finpulse.git
-cd finpulse
-npm ci
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-npm run build
+sudo systemctl status finpulse nginx mysql --no-pager
+sudo journalctl -u finpulse -n 50 --no-pager
+sudo nginx -t
+curl --noproxy '*' http://127.0.0.1:8000/api/health
 ```
 
-单独创建 `config.local.json` 并填写服务器使用的密钥，已有配置时保留它。可以先在服务器内部验证：
+当前网站已验证 SSH 隧道访问、登录与会话恢复、自选股/晨报读取、服务重启、真实模型/Tavily/AkShare 调用，以及 Linux 环境 90 项自动化测试。服务器网卡地址 HTTP 200，非允许来源 HTTP 403；服务器自行访问不等于另一台局域网设备已验证。校园跨网段直连仍需按实际设备验证。
 
-```bash
-.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --workers 1
-```
-
-这个命令只监听服务器自身；客户端电脑的 `localhost` 指向客户端电脑，不能用它访问远程服务器。公网访问需要后续配置域名或服务器地址及反向代理。
-
-正式部署需要完成：
-
-1. 配置 Nginx 或 Caddy 反向代理与 HTTPS，由代理访问 `127.0.0.1:8000`，前端和 `/api` 保持同源。参见 [FastAPI HTTPS 文档](https://fastapi.tiangolo.com/deployment/https/)。
-2. 设置真实的 `FINPULSE_ALLOWED_HOSTS` 和 `FINPULSE_ALLOWED_ORIGINS`，设置 `FINPULSE_COOKIE_SECURE=1`。代理保留原始 Host，并传递实际协议；Uvicorn 只信任指定代理地址的转发头。
-3. 用 systemd 或其他进程管理器保证服务启动及自动恢复，初期使用一个 worker，并为进程设置正确的项目工作目录。
-4. 为数据库设置独立的持久化目录、部署用户的读写权限和备份方式；更新源码、重建前端不应删除数据库。
-5. 新建服务器账号库，或按停服备份方式迁移已有数据库；配置文件和数据库通过单独的安全渠道提供，不放入 Git。
-6. 验证注册、登录、退出、未登录拦截和真实数据采集；MySQL 部署必须先建立 `research_records`。只在一个后端实例开启早报调度，团队成员的本地配置保持关闭。
-
-服务器域名、系统版本、部署路径和进程管理方式确定后，再补充可直接执行的部署配置。
+后续公网发布需另外配置域名或公网入口、HTTPS、Cookie Secure、准确的主机/来源白名单及数据库备份。当前局域网入口是 HTTP，SSH 通道提供加密转发；没有配置面向全部公网的开放规则。本次不新建数据库、不重新初始化既有账号或业务数据。
 
 ## 8. 常见启动问题
 
@@ -308,16 +325,18 @@ npm run build
 | 模型未配置或请求失败 | 检查 JSON 格式、地址、密钥、模型名称及服务商额度；先在请求实验室测试 |
 | AI 请求返回 401 | 先登录；会话超时或退出后需要重新登录 |
 | 请求返回 403 或 Invalid host header | 检查访问主机名、前端来源、代理协议与环境变量，修改后重启 |
-| 换电脑后没有原来的用户 | 数据库不在 Git 中，需另行迁移数据库或重新注册 |
+| 换电脑后没有原来的用户 | 检查是否连接同一 MySQL 数据库；独立 SQLite 数据不随 Git 同步，需备份迁移或重新注册 |
 | 新闻实验提示样本文件不存在 | 查看第 6 节；独立实验样本没有随仓库分发 |
 
 ## 9. 课程文档
 
-- [软件功能与实现方案](股票智能舆情分析平台_软件功能与实现方案.md)
+- [服务器部署与开发流程](docs/服务器部署与开发流程.md)
+- [服务器部署与访问说明](docs/服务器部署与访问说明.md)
+- [软件功能与实现方案](docs/股票智能舆情分析平台_软件功能与实现方案.md)
 - [软件功能与实现方案 PDF](股票智能舆情分析平台_软件功能与实现方案.pdf)
-- [选题与立项报告](股票智能舆情分析系统_选题与立项报告.md)
-- [团队分工与工作量难点](团队分工与工作量难点说明.md)
-- [团队分工与工作流规划](项目团队分工与工作流规划.md)
+- [选题与立项报告](docs/股票智能舆情分析系统_选题与立项报告.md)
+- [团队分工与工作量难点](docs/团队分工与工作量难点说明.md)
+- [团队分工与工作流规划](docs/项目团队分工与工作流规划.md)
 - [软件工程实践](软件工程实践.docx)
 
 `.gitignore` 排除了本地密钥、数据库、依赖、构建结果和运行缓存。仓库用于共享源码与课程资料；配置模板可以提交，真实密钥和用户数据保留在运行环境。
@@ -521,7 +540,7 @@ npm run build
 
 管理员保存合法调度时间、拒绝非法时间、手动每日更新返回 202、复用当日 3 只股票而无额外采集、重新生成 4 份私人晨报也已通过真实 HTTP 验证，报告在 `.runtime/morning-final-verification.json`。浏览器检查后补充过滤 moomoo 报价页、东方财富公告列表，刷新了个人晨报；保留具体公告详情页。
 
-2026-10-04 验证时，推送适配和状态机已验证，发信账号和 PushPlus 接收信息尚未配置。2026-10-05 本机已配置 QQ 邮箱，向用户指定的收件人发送了一封测试邮件，QQ SMTP 返回接受；最终送达由收件端确认。PushPlus 真实发送仍未验收。AkShare 新闻 SSL 问题仍可能使每日更新为 partial，已由 Tavily 补充并在页面提示。网站本次没有部署到远程服务器。
+2026-10-04 验证时，推送适配和状态机已验证，发信账号和 PushPlus 接收信息尚未配置。2026-10-05 本机已配置 QQ 邮箱，向用户指定的收件人发送了一封测试邮件，QQ SMTP 返回接受；最终送达由收件端确认。PushPlus 真实发送仍未验收。AkShare 新闻 SSL 问题仍可能使每日更新为 partial，已由 Tavily 补充并在页面提示。2026-10-04 验证时网站尚未部署；2026-10-06 已完成服务器部署，当前方式以第 7 节为准。
 
 页面参考 [Yahoo Finance](https://finance.yahoo.com/) 的横向导航、行情卡片、主新闻栏与侧栏信息层级，保留 FinPulse 自己的内容和交互。API 实现参考 [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)、[AkShare 股票文档](https://akshare.akfamily.xyz/data/stock/stock.html)、[APScheduler](https://apscheduler.readthedocs.io/en/3.x/userguide.html)、[PushPlus 消息接口](https://www.pushplus.plus/doc/guide/api.html)。
 
