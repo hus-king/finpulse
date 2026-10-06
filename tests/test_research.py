@@ -318,6 +318,13 @@ class StagedCollectionTests(unittest.IsolatedAsyncioTestCase):
         with patch('backend.providers.search_news', new=AsyncMock(return_value=news_sample())), patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), patch('backend.providers.daily_market', new=AsyncMock(return_value=self.market)):
             task = asyncio.create_task(self.service.collect('600519', 30, 3, False))
             await asyncio.wait_for(started.wait(), 3)
+            # Independent daily caching adds async persistence; cancel after
+            # the market stage has actually become visible to the user.
+            deadline = asyncio.get_running_loop().time() + 5
+            while not (self.store.get('dashboard', '600519') or {}).get('candles'):
+                if asyncio.get_running_loop().time() >= deadline:
+                    self.fail('Daily market stage did not become visible')
+                await asyncio.sleep(.01)
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await task

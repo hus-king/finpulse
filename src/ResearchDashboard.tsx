@@ -10,6 +10,7 @@ interface Props {
   savingWatch: boolean; code: string; setCode: (code: string) => void; userSignedIn: boolean; add: () => void; remove: (code: string) => void;
   running: boolean; job: Job | null; collect: (days: number, community: boolean, communityOnly?: boolean) => void; audit: () => void; auditLoading: boolean;
   openAssistant: (news?: News) => void; briefing: () => void;
+  onMarket: (data: Dashboard) => void;
 }
 
 export default function ResearchDashboard(props: Props) {
@@ -33,7 +34,7 @@ export default function ResearchDashboard(props: Props) {
     <div className="research-main-column">
       {loading && <div className="panel empty-card"><LoaderCircle className="spin" size={25} /><p>正在读取已保存的数据…</p></div>}
       {data && <>
-        <QuotePanel data={data} add={add} running={running} onEvent={openEvent} />
+        <QuotePanel data={data} add={add} running={running} onEvent={openEvent} onMarket={props.onMarket} />
         <section className="pipeline-bar"><div><span className={`status-dot ${running ? 'pending' : ''}`} /><strong>{running ? job?.stage ?? '正在提交任务…' : job?.status === 'failed' ? '本次任务失败' : '真实新闻研究'}</strong><small>{running ? '结果分阶段更新，可先看行情和新闻' : `最近保存：${dateTime(data.as_of)}`}</small></div><div className="pipeline-options"><select aria-label="新闻检索区间" value={days} onChange={e => setDays(+e.target.value)} disabled={running}><option value={7}>近 7 天</option><option value={30}>近 30 天</option><option value={90}>近 90 天</option></select><label><input type="checkbox" checked={includeCommunity} onChange={e => setIncludeCommunity(e.target.checked)} disabled={running} />含社区样本</label><button className="primary-button" disabled={running} onClick={() => collect(days, includeCommunity)}>{running ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{running ? '正在处理' : '采集并分析'}</button></div></section>
         {stages && <div className="collection-stages" role="status" aria-live="polite">{[{ key: 'market', label: 'K 线行情' }, { key: 'news', label: '清洗新闻' }, { key: 'analysis', label: 'AI 研判' }].filter(section => stages[section.key]).map(section => <span key={section.key} className={`collection-stage ${stages[section.key]}`}><span className="status-dot" />{section.label}<strong>{stages[section.key] === 'ready' || stages[section.key] === 'completed' ? '已就绪' : stages[section.key] === 'failed' ? '更新失败' : stages[section.key] === 'running' ? '生成中' : '获取中'}</strong>{section.key === 'analysis' && !!data.pipeline?.counts.analysis_total && <small>{data.pipeline.counts.analysis_finished ?? 0}/{data.pipeline.counts.analysis_total}</small>}</span>)}</div>}
         {job?.warnings.length ? <div className="pipeline-warning" role="status">本次任务：{job.warnings.join('；')}</div> : null}

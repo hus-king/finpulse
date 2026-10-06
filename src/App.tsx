@@ -15,7 +15,17 @@ import { number, percent, tone } from './format';
 const defaults = ['600519', '300750', '688981'];
 
 // A slow initial/cache read must not replace a newer staged result.
-const newerSnapshot = (previous: Dashboard | null | undefined, next: Dashboard) => previous?.stock.code === next.stock.code && previous.as_of && (!next.as_of || previous.as_of > next.as_of) ? previous : next;
+const newerSnapshot = (previous: Dashboard | null | undefined, next: Dashboard) => {
+  if (!previous || previous.stock.code !== next.stock.code) return next;
+  const base = previous.as_of && (!next.as_of || previous.as_of > next.as_of) ? previous : next;
+  const previousDate = previous.quote.as_of_date ?? '';
+  const nextDate = next.quote.as_of_date ?? '';
+  const previousPricesNewer = previousDate > nextDate || previousDate === nextDate && (previous.quote.collected_at ?? '') > (next.quote.collected_at ?? '');
+  const prices = previous.candles.length && (!next.candles.length || previousPricesNewer) ? previous : next;
+  return { ...base, quote: prices.quote, candles: prices.candles, stock: { ...base.stock, price: prices.stock.price, change: prices.stock.change },
+    backtest: prices.as_of === base.as_of ? prices.backtest : base.backtest,
+    daily_request: next.daily_request ?? previous.daily_request };
+};
 
 function Dialog({ title, children, close }: { title: string; children: React.ReactNode; close: () => void }) {
   useDialogScroll();
@@ -55,6 +65,10 @@ export default function App() {
   snapshotsRef.current = snapshots;
   userId.current = user?.id;
   const mergeCatalog = useCallback((items: Stock[]) => setCatalog(previous => Array.from(new Map([...previous, ...items].map(stock => [stock.code, stock])).values())), []);
+  const marketSnapshot = useCallback((next: Dashboard) => {
+    setSnapshots(previous => ({ ...previous, [next.stock.code]: newerSnapshot(previous[next.stock.code], next) }));
+    setData(previous => previous?.stock.code === next.stock.code ? newerSnapshot(previous, next) : previous);
+  }, []);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -179,7 +193,7 @@ export default function App() {
       {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
       {view === 'briefing' && <BriefingPanel key={user?.id ?? 'guest'} />}
       {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯日线 / 新浪分钟行情</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
-      {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} />}
+      {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
       <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>分钟行情按需更新 · AI 研判需要结合原文核验</span></footer>
     </main>
     {drawer && <AiDrawer key={`${user?.id}-${drawer.stock.code}-${drawer.news?.id ?? 'chat'}`} stock={drawer.stock} news={drawer.news} onClose={() => setDrawer(null)} onResult={reply => { setLastReply(reply); void loadSnapshot(code).catch(e => setError(e.message)); }} />}

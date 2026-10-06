@@ -2,17 +2,23 @@ import { useState } from 'react';
 import { Activity, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react';
 import PriceChart from './PriceChart';
 import useMinuteMarket from './useMinuteMarket';
+import useDailyMarket from './useDailyMarket';
 import { dateTime, number, percent, tone } from './format';
 import type { Dashboard } from './types';
 
-export default function QuotePanel({ data, add, running, onEvent }: {
+export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
   data: Dashboard; add: () => void; running: boolean; onEvent: (id: string) => void;
+  onMarket: (data: Dashboard) => void;
 }) {
   const [mode, setMode] = useState('近 3 月');
   const [period, setPeriod] = useState('日 K');
   const [indicator, setIndicator] = useState('成交量');
   const minutePeriod = period.endsWith('分钟') ? parseInt(period) : null;
   const minute = useMinuteMarket(data.stock.code, minutePeriod);
+  // Daily history loads when the stock is opened, including in minute mode.
+  const daily = useDailyMarket(data.stock.code, onMarket);
+  const dailyBusy = daily.loading || data.daily_request?.refreshing;
+  const dailyError = daily.error || data.daily_request?.error;
   const candles = minutePeriod ? minute.data?.candles ?? [] : data.candles;
   const dailyBar = data.candles.at(-1);
   const quote = minutePeriod ? minute.data?.quote : null;
@@ -41,8 +47,10 @@ export default function QuotePanel({ data, add, running, onEvent }: {
       <span>{minute.data?.status === 'stale' ? '数据延迟 / 更新失败' : minute.data?.forming ? '最新一根尚未完成' : minute.data?.is_realtime ? '分钟行情已更新' : '历史分钟快照'}</span>
       <button className="subtle-button" disabled={busy} onClick={minute.refresh}>{busy ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />}{busy ? '获取中' : '刷新行情'}</button>
     </div>}
+    {!minutePeriod && <div className="minute-status" role="status"><span className="minute-market-state"><span className={`status-dot ${dailyBusy ? 'pending' : ''}`} />{dailyBusy ? '正在获取日线行情' : dailyError ? '日线更新失败' : '日线行情已就绪'}</span><span>自动获取股价与历史 K 线</span><button className="subtle-button" disabled={dailyBusy} onClick={daily.refresh}>{dailyBusy ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />}{dailyBusy ? '获取中' : '刷新行情'}</button></div>}
+    {!minutePeriod && dailyError && <div className="minute-warning" role="alert">{dailyError}{candles.length ? '；保留已获取的日线。' : '；可点击刷新行情重试。'}</div>}
     {(minute.error || minute.data?.error) && minutePeriod && <div className="minute-warning" role="alert">{minute.error || minute.data?.error}{candles.length ? '；保留已获取的分钟数据。' : ''}</div>}
-    {candles.length ? <PriceChart key={`${data.stock.code}:${period}`} candles={candles} news={data.news} mode={mode} period={period} indicator={indicator} onEvent={onEvent} /> : <div className="chart-empty">{minutePeriod && busy ? <LoaderCircle size={32} className="spin" /> : <Activity size={32} />}<h3>{minutePeriod ? '正在准备分钟 K 线' : '让真实行情进入你的看板'}</h3><p>{minutePeriod ? minute.error || minute.data?.error ? '暂无可用行情，请稍后点击刷新重试。' : '独立获取真实分钟数据，新闻和 AI 研判无需重新采集。' : running ? '正在获取历史日线，返回后立即显示；新闻和 AI 研判会继续更新。' : '点击下方「采集并分析」，获取历史日线与近期新闻。'}</p></div>}
+    {candles.length ? <PriceChart key={`${data.stock.code}:${period}`} candles={candles} news={data.news} mode={mode} period={period} indicator={indicator} onEvent={onEvent} /> : <div className="chart-empty">{(minutePeriod ? busy : dailyBusy) ? <LoaderCircle size={32} className="spin" /> : <Activity size={32} />}<h3>{minutePeriod ? '正在准备分钟 K 线' : dailyError ? '暂未取得日线行情' : '正在准备日 K 线'}</h3><p>{minutePeriod ? minute.error || minute.data?.error ? '暂无可用行情，请稍后点击刷新重试。' : '独立获取真实分钟数据，新闻和 AI 研判无需重新采集。' : dailyError ? '行情源请求失败，可独立刷新重试。' : '打开股票后自动获取真实价格与历史日线，新闻和 AI 研判无需重新采集。'}</p></div>}
     <footer className="chart-footer"><div className="indicator-switch">{['成交量', 'MACD', 'RSI'].map(item => <button key={item} className={indicator === item ? 'active' : ''} onClick={() => setIndicator(item)}>{item}</button>)}</div><span>{minutePeriod ? '切换日 / 周 K 查看新闻标记' : '新闻日期标记 · 点击查看原文与研判'}</span></footer>
     {minutePeriod && <div className="minute-caption"><span>数据时间：{minute.data?.as_of ?? '—'}</span><span>获取时间：{minute.data?.fetched_at ? dateTime(minute.data.fetched_at) : '—'}</span><p>休市不补造 K 线；30 秒为请求间隔，行情源更新可能延迟。Ctrl + 滚轮缩放。</p></div>}
   </section>;

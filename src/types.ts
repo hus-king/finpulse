@@ -19,6 +19,7 @@ export interface News {
 }
 export interface Pipeline { date_range: string[]; statuses: Record<string, string>; counts: Record<string, number>; warnings: string[]; collection_id?: string; job_status?: string; stages?: Record<string, string> }
 export interface Dashboard {
+  daily_request?: { refreshing: boolean; error: string | null; next_poll_seconds: number; market: { label: string } };
   stock: Stock; candles: Candle[]; news: News[]; as_of: string | null; revision?: string; pipeline: Pipeline | null;
   quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string };
   sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; note?: string; error?: string; source?: string; collected_at?: string; warnings?: string[]; diagnostics?: { direct?: { status?: string; listed?: number; eligible?: number; retained?: number; detail_failed?: number }; tavily?: { status?: string; listed?: number; retained?: number } }; posts: { id: string; title: string; url: string; date: string; stance?: string; content?: string; text_source?: string; views?: number | null; replies?: number | null }[] };

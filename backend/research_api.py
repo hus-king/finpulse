@@ -21,6 +21,17 @@ def private(response):
     response.headers['Cache-Control'] = 'no-store'
 
 
+@router.get('/market/{code}/daily')
+async def daily_market(code: str, response: Response, refresh: bool = False, research=Depends(service)):
+    private(response)
+    stock = research.catalog.get(code)
+    if not stock:
+        raise HTTPException(404, '未找到已核验的股票，请先搜索该股票。')
+    request_state = await research.daily_market.snapshot(stock, force=refresh)
+    dashboard = await asyncio.to_thread(research.dashboard, code)
+    return {**dashboard, 'daily_request': request_state}
+
+
 @router.get('/market/{code}/minutes')
 async def minute_market(code: str, request: Request, response: Response,
                         period: int = Query(default=1, ge=1, le=60),

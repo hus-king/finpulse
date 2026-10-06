@@ -42,6 +42,6 @@ export default function StockSearch({ watchlist, disabled, select, add, remove }
     {error && <p className="search-error" role="alert">{error}</p>}
     {!!result?.warnings.length && <details className="search-source-warning"><summary>部分股票列表源暂不可用，正在使用已缓存列表</summary>{result.warnings.map(warning => <p key={warning}>{warning}</p>)}</details>}
     {loading ? <div className="stock-search-loading" role="status"><LoaderCircle size={18} className="spin" />正在搜索真实股票…</div> : <div className="catalog-list">{result?.items.map(stock => <div key={stock.code}><button onClick={() => select(stock)}><strong>{stock.name}</strong><small>{stock.exchange} {stock.code} · {stock.industry}</small></button><button disabled={disabled || !!pending} onClick={() => void toggle(stock)}>{pending === stock.code ? <LoaderCircle size={15} className="spin" /> : watchlist.includes(stock.code) ? <CheckCircle2 size={15} /> : <Plus size={15} />}{pending === stock.code ? '正在添加…' : watchlist.includes(stock.code) ? '已关注 · 移除' : '添加并采集'}</button></div>)}{result && !result.items.length && <p className="rail-empty">未找到匹配的沪深 A 股，试试完整名称或 6 位代码。</p>}</div>}
-    <p className="supported-caption">点击股票名称只切换查看。每个账号最多关注 20 只；数据源失败会显示原因，可稍后重试采集。</p>
+    <p className="supported-caption">点击股票名称即可查看并自动获取价格与日 K，不触发新闻或 AI 采集。每个账号最多关注 20 只；行情失败可单独刷新重试。</p>
   </>;
 }

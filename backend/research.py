@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from . import providers
 from .community import collect_posts, MIN_POSTS
 from .stock_catalog import StockCatalog
+from .daily_market import DailyMarketService, quote_order
 from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url
 from .prompts import Analysis, CommunityAnalysis, COMMUNITY_SYSTEM, NEWS_SYSTEM, PROMPT_VERSION, parse_json
 
@@ -56,8 +57,11 @@ class ResearchService:
         self.live_jobs = {}
         self.job_starts = {}
         self.dashboard_revisions = {}
+        self.daily_market = DailyMarketService(store) if store is not None else None
 
     async def close(self):
+        if self.daily_market:
+            await self.daily_market.close()
         for task in list(self.tasks):
             task.cancel()
         if self.tasks:
@@ -210,7 +214,7 @@ class ResearchService:
 
         async def market_update():
             try:
-                market = await providers.daily_market(stock, str(end))
+                market = await self.daily_market.get(stock)
                 result['quote'] = {key: value for key, value in market.items() if key != 'candles'}
                 result['candles'] = market['candles']
                 stages['market'], statuses['market'] = 'ready', 'ok'
@@ -369,4 +373,10 @@ class ResearchService:
         stock = self.catalog.get(code)
         if not stock:
             raise HTTPException(404, '暂不支持该股票。')
-        return self.store.get('dashboard', code, default={'stock': {**stock, 'price': None, 'change': None}, 'quote': {'status': 'not_collected', 'is_realtime': False}, 'candles': [], 'news': [], 'sentiment': {'status': 'not_collected', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': []}, 'as_of': None, 'data_source': 'live', 'pipeline': None, 'backtest': forward_returns([], [])})
+        result = self.store.get('dashboard', code, default={'stock': {**stock, 'price': None, 'change': None}, 'quote': {'status': 'not_collected', 'is_realtime': False}, 'candles': [], 'news': [], 'sentiment': {'status': 'not_collected', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': []}, 'as_of': None, 'data_source': 'live', 'pipeline': None, 'backtest': forward_returns([], [])})
+        daily = self.store.get('daily_market', code, default={})
+        if daily.get('candles') and (not result.get('candles') or quote_order(daily.get('quote', {})) >= quote_order(result.get('quote', {}))):
+            result['quote'], result['candles'] = daily['quote'], daily['candles']
+            result['stock'] = {**result.get('stock', stock), 'price': daily['quote'].get('price'), 'change': daily['quote'].get('change')}
+            result['backtest'] = forward_returns(result.get('news', []), daily['candles'])
+        return result
