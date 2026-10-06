@@ -151,6 +151,20 @@ def get_job(job_id: str, response: Response, session=Depends(current_session), r
     return job
 
 
+class CommunityRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    days: int = Field(default=30, ge=1, le=90)
+
+
+@router.post('/research/{code}/community', status_code=202)
+async def refresh_community(code: str, data: CommunityRequest, response: Response, user=Depends(authorize_model_request), research=Depends(service)):
+    private(response)
+    if not research.catalog.get(code):
+        raise HTTPException(404, '暂不支持该股票。')
+    await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('research:' + user['id']), 12)])
+    return await research.launch(code, user, days=data.days, max_articles=0, community=True, community_only=True)
+
+
 @router.get('/research/{code}/audit')
 def cleaning_audit(code: str, response: Response, session=Depends(current_session), research=Depends(service)):
     private(response)

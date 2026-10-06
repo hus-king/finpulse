@@ -14,7 +14,7 @@ export interface Pipeline { date_range: string[]; statuses: Record<string, strin
 export interface Dashboard {
   stock: Stock; candles: Candle[]; news: News[]; as_of: string | null; revision?: string; pipeline: Pipeline | null;
   quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string };
-  sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; note?: string; error?: string; posts: { id: string; title: string; url: string; date: string; stance?: string }[] };
+  sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; note?: string; error?: string; source?: string; collected_at?: string; warnings?: string[]; diagnostics?: { direct?: { status?: string; listed?: number; eligible?: number; retained?: number; detail_failed?: number }; tavily?: { status?: string; listed?: number; retained?: number } }; posts: { id: string; title: string; url: string; date: string; stance?: string; content?: string; text_source?: string; views?: number | null; replies?: number | null }[] };
   backtest: { items: { news_id: string; title: string; score: number | null; publication_date: string; base_date: string | null; return_3d: number | null; return_5d: number | null }[]; note: string };
 }
 export interface Job { id: string; code: string; status: string; stage: string; warnings: string[]; counts: Record<string, number>; data_revision?: string }

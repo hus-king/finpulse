@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException
 
 from . import providers
+from .community import collect_posts, MIN_POSTS
 from .stock_catalog import StockCatalog
 from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url
 from .prompts import Analysis, CommunityAnalysis, COMMUNITY_SYSTEM, NEWS_SYSTEM, PROMPT_VERSION, parse_json
@@ -62,14 +63,14 @@ class ResearchService:
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    async def launch(self, code, user, days=30, max_articles=3, community=False, start=True):
+    async def launch(self, code, user, days=30, max_articles=3, community=False, start=True, community_only=False):
         # A single process is intentional; concurrent refreshes of a stock reuse a job.
         key = (user['id'], code)
         if key in self.active:
             return self.live_jobs[self.active[key]]
         if len(self.active) >= self.max_pending:
             raise HTTPException(429, '任务队列已满，请稍后重试。')
-        job = {'id': uuid.uuid4().hex, 'code': code, 'status': 'queued', 'stage': '等待处理', 'created_at': now_iso(), 'warnings': [], 'counts': {}}
+        job = {'id': uuid.uuid4().hex, 'code': code, 'kind': 'community' if community_only else 'research', 'status': 'queued', 'stage': '等待处理', 'created_at': now_iso(), 'warnings': [], 'counts': {}}
         self.active[key] = job['id']
         self.live_jobs[job['id']] = job
         try:
@@ -82,14 +83,14 @@ class ResearchService:
         self.job_starts[job['id']] = event
         if start:
             event.set()
-        task = asyncio.create_task(self._job(job, user['id'], days, max_articles, community))
+        task = asyncio.create_task(self._job(job, user['id'], days, max_articles, community, community_only))
         self.tasks.add(task)
         self.job_tasks[job['id']] = task
         task.add_done_callback(self.tasks.discard)
         task.add_done_callback(lambda finished: self.job_tasks.pop(job['id'], None))
         return job
 
-    async def _job(self, job, owner, days, maximum, community):
+    async def _job(self, job, owner, days, maximum, community, community_only=False):
         updates = asyncio.Queue()
         async def persist_progress():
             while True:
@@ -107,7 +108,7 @@ class ResearchService:
                 job.update(status='running', stage=stage)
                 job['data_revision'] = self.dashboard_revisions.get(job['code'])
                 updates.put_nowait(dict(job))
-            result = await self.refresh_shared(job['code'], days, maximum, community, progress)
+            result = await self.refresh_shared(job['code'], days, maximum, community, progress, community_only=community_only)
             job.update(status='partial' if result['pipeline']['warnings'] else 'completed', stage='处理完成', counts=result['pipeline']['counts'], warnings=result['pipeline']['warnings'])
         except asyncio.CancelledError:
             job.update(status='failed', stage='服务停止，任务已中断', warnings=['可重新发起采集'])
@@ -128,9 +129,9 @@ class ResearchService:
                 self.live_jobs.pop(job['id'], None)
                 self.job_starts.pop(job['id'], None)
 
-    async def refresh_shared(self, code, days=7, maximum=3, community=False, progress=lambda stage: None):
+    async def refresh_shared(self, code, days=7, maximum=3, community=False, progress=lambda stage: None, community_only=False):
         """Share identical concurrent work; each account keeps its own job record."""
-        key = (code, days, maximum, community)
+        key = (code, days, maximum, community, community_only)
         if key not in self.inflight:
             listeners = set()
             async def run():
@@ -143,7 +144,8 @@ class ResearchService:
                                     callback(stage)
                                 except Exception:
                                     logging.getLogger(__name__).warning('Could not persist job progress')
-                        return await asyncio.wait_for(self.collect(code, days, maximum, community, notify), 1800)
+                        work = self.collect_community(code, days, notify) if community_only else self.collect(code, days, maximum, community, notify)
+                        return await asyncio.wait_for(work, 1800)
             task = asyncio.create_task(run())
             self.inflight[key] = (task, listeners)
             self.tasks.add(task)
@@ -315,30 +317,40 @@ class ResearchService:
                 logging.getLogger(__name__).warning('Could not save interrupted research snapshot')
             raise
 
+    async def collect_community(self, code, days, progress=lambda stage: None):
+        """Refresh only community opinion, preserving quotes/news/model results."""
+        result = await asyncio.to_thread(self.dashboard, code)
+        end = datetime.now(SHANGHAI).date()
+        start = end - timedelta(days=days)
+        progress('直接获取股吧帖子与原始发布时间')
+        result['sentiment'] = await self.community(result['stock'], str(start), str(end))
+        pipeline = result.get('pipeline') or {'date_range': [str(start), str(end)], 'statuses': {}, 'counts': {'input': 0, 'retained': 0, 'merged': 0, 'analyzed': 0}, 'warnings': []}
+        result['pipeline'] = pipeline
+        pipeline.setdefault('stages', {})['community'] = 'ready' if result['sentiment']['status'] == 'ok' else 'failed'
+        pipeline['statuses']['community'] = result['sentiment']['status']
+        warnings = list(result['sentiment'].get('warnings', []))
+        if result['sentiment']['status'] != 'ok':
+            warnings.append(result['sentiment'].get('error') or result['sentiment']['note'])
+        pipeline['warnings'] = list(dict.fromkeys([*pipeline.get('warnings', []), *warnings]))
+        pipeline['job_status'] = 'partial' if pipeline['warnings'] else 'completed'
+        result['as_of'], result['revision'] = now_iso(), uuid.uuid4().hex
+        await asyncio.to_thread(self.store.put, 'dashboard', code, result)
+        self.dashboard_revisions[code] = result['revision']
+        progress('社区样本处理完成')
+        return result
+
     async def community(self, stock, start, end):
         posts = []
+        details = {}
         try:
-            response = await providers.tavily('search', {'query': f'{stock["name"]} {stock["code"]} 股吧 讨论', 'topic': 'general', 'search_depth': 'advanced', 'max_results': 20, 'start_date': start, 'end_date': end, 'include_published_date': True, 'include_domains': ['guba.eastmoney.com', 'xueqiu.com'], 'include_answer': False})
-            seen = set()
-            for raw in response['results']:
-                url = normalize_url(raw.get('url', ''))
-                published = metadata_date(raw.get('published_date'))
-                host = urlsplit(url).hostname or ''
-                if host not in ('guba.eastmoney.com', 'xueqiu.com') or not published or not start <= str(published) <= end or url in seen:
-                    continue
-                text, _ = clean_text(raw.get('content', ''), raw.get('title', ''))
-                if stock['name'] not in raw.get('title', '') + text and stock['code'] not in raw.get('title', '') + text:
-                    continue
-                # A board listing is not an individual post.
-                if host == 'guba.eastmoney.com' and '/news,' not in url:
-                    continue
-                if host == 'xueqiu.com' and not re.search(r'/\d+/\d+', url):
-                    continue
-                seen.add(url)
-                posts.append({'id': fingerprint(url)[:16], 'url': url, 'title': raw['title'], 'content': text[:1200], 'date': str(published), 'weight': 1})
-            if not posts:
-                return {'status': 'empty', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': [], 'note': '本次检索未取得日期可核验的独立社区帖子，不生成比例。'}
-            result = await self.completion([{'role': 'system', 'content': COMMUNITY_SYSTEM}, {'role': 'user', 'content': json.dumps({'stock': stock['name'], 'posts': posts}, ensure_ascii=False)}], max_tokens=2500)
+            collected = await collect_posts(stock, start, end)
+            posts = collected['posts']
+            details = {key: collected[key] for key in ('source', 'diagnostics', 'warnings')}
+            details['collected_at'] = now_iso()
+            if len(posts) < MIN_POSTS:
+                failed = not posts and all(value.get('status') == 'error' for key, value in collected['diagnostics'].items() if key in ('direct', 'tavily'))
+                return {**details, 'status': 'error' if failed else 'insufficient' if posts else 'empty', 'sample_count': len(posts), 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': posts, 'error': '公开社区数据源暂不可用' if failed else None, 'note': f'本次取得 {len(posts)} 条有效帖子，至少需要 {MIN_POSTS} 条才统计比例；没有把列表页或缺失日期的结果当作样本。'}
+            result = await self.completion([{'role': 'system', 'content': COMMUNITY_SYSTEM}, {'role': 'user', 'content': json.dumps({'stock': stock['name'], 'stock_code': stock['code'], 'posts': posts}, ensure_ascii=False)}], max_tokens=4096)
             parsed = parse_json(result['content'], CommunityAnalysis)
             ids = [row['id'] for row in parsed['items']]
             if len(set(ids)) != len(posts) or set(ids) != {row['id'] for row in posts}:
@@ -349,9 +361,9 @@ class ResearchService:
             ratios = {stance: round(sum(p['stance'] == stance for p in posts) / len(posts) * 100, 1) for stance in ('bull', 'bear')}
             ratios['neutral'] = round(100 - ratios['bull'] - ratios['bear'], 1)
             alert = '样本看多比例偏高，注意核验代表性' if ratios['bull'] > 85 else '样本看空比例偏高，注意核验代表性' if ratios['bear'] > 80 else '未触发样本极端情绪阈值'
-            return {'status': 'ok', 'sample_count': len(posts), **ratios, 'keywords': parsed['keywords'], 'posts': posts, 'alert': alert, 'collected_at': now_iso(), 'note': 'Tavily 检索到的有限社区帖子；无阅读/回复量，采用等权，不能代表全部股民。'}
+            return {**details, 'status': 'ok', 'sample_count': len(posts), **ratios, 'keywords': parsed['keywords'], 'posts': posts, 'alert': alert, 'note': '优先直接采集东方财富股吧公开帖子，Tavily 仅作备用；首页候选按发布时间取最近至多12条，按帖子等权统计，不能代表全部股民。'}
         except Exception as exc:
-            return {'status': 'error', 'sample_count': len(posts), 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': posts, 'error': str(exc) if isinstance(exc, providers.ProviderError) else '社区采集或结构化分类失败', 'note': '未生成有效情绪比例'}
+            return {**details, 'status': 'error', 'sample_count': len(posts), 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': posts, 'error': str(exc.detail) if isinstance(exc, HTTPException) else str(exc) if isinstance(exc, providers.ProviderError) else '社区采集或结构化分类失败', 'note': '已取得的帖子仍可查看，未生成有效情绪比例。'}
 
     def dashboard(self, code):
         stock = self.catalog.get(code)

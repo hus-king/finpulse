@@ -216,6 +216,29 @@ class ResearchTests(unittest.TestCase):
         with patch('backend.briefing.read_config', return_value={}):
             self.assertIsNone(start_scheduler(app.state.research))
 
+    def test_community_only_refresh_is_private_and_preserves_news_and_candles(self):
+        self.assertEqual(self.client.post('/api/research/600519/community', headers=ORIGIN, json={}).status_code, 401)
+        headers = self.register()
+        self.assertEqual(self.client.post('/api/research/600519/community', headers=ORIGIN, json={}).status_code, 403)
+        saved = self.client.get('/api/dashboard/600519').json()
+        saved['candles'] = [{'date': '2026-09-30', 'close': 100}]
+        saved['news'] = [{'id': 'saved-news', 'score': 1, 'analysis': ANALYSIS}]
+        self.store.put('dashboard', '600519', saved)
+        sample = [{'id': str(index), 'title': '看好公司', 'content': '继续关注', 'url': f'https://guba.eastmoney.com/news,600519,{index + 1}.html', 'date': '2026-10-05'} for index in range(5)]
+        classified = {'content': json.dumps({'items': [{'id': str(index), 'stance': 'bull' if index < 3 else 'neutral'} for index in range(5)], 'keywords': ['关注']})}
+        with patch('backend.research.collect_posts', new=AsyncMock(return_value={'posts': sample, 'source': 'eastmoney_direct', 'diagnostics': {}, 'warnings': []})), patch('backend.app.completion', new=AsyncMock(return_value=classified)), patch('backend.providers.search_news', new_callable=AsyncMock) as news, patch('backend.providers.daily_market', new_callable=AsyncMock) as market:
+            response = self.client.post('/api/research/600519/community', headers=headers, json={})
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(self.wait_job(response.json()['id'])['status'], 'completed')
+            news.assert_not_awaited()
+            market.assert_not_awaited()
+        result = self.client.get('/api/dashboard/600519').json()
+        self.assertEqual(result['candles'], saved['candles'])
+        self.assertEqual(result['news'], saved['news'])
+        self.assertEqual(result['sentiment']['sample_count'], 5)
+        self.assertEqual(result['sentiment']['bull'], 60)
+        self.assertEqual(sum(result['sentiment'][key] for key in ('bull', 'bear', 'neutral')), 100)
+
     def test_digest_escapes_source_text_and_preserves_original_link(self):
         owner = 'test-owner'
         self.store.put('watchlist', 'list', ['600519'], owner)
@@ -316,7 +339,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_community_dates_do_not_generate_ratios(self):
         service = ResearchService(None, AsyncMock())
-        with patch('backend.providers.tavily', new=AsyncMock(return_value={'results': [{'title': '贵州茅台讨论', 'url': 'https://guba.eastmoney.com/news,600519,123.html', 'content': '讨论'}]})):
+        with patch('backend.community.direct_posts', new=AsyncMock(return_value=([], {'retained': 0}))), patch('backend.providers.tavily', new=AsyncMock(return_value={'results': [{'title': '贵州茅台讨论', 'url': 'https://guba.eastmoney.com/news,600519,123.html', 'content': '讨论'}]})):
             result = await service.community(stock_by_code('600519'), '2026-09-01', '2026-10-03')
             self.assertEqual(result['status'], 'empty')
             self.assertIsNone(result['bull'])
