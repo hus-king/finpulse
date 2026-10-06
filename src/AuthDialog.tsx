@@ -63,7 +63,7 @@ export default function AuthDialog({ initialAdmin, reason, onClose, onSuccess }:
         {error && <div className="error-box auth-error" role="alert">{error}</div>}
         <button type="submit" className="primary-button auth-submit" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <LockKeyhole size={15} />}{busy ? '正在验证…' : mode === 'login' ? '登录并继续' : '创建账号并登录'}{!busy && <ArrowRight size={15} />}</button>
       </form>
-      <p className="auth-footnote">{admin ? '管理员账号由负责人创建，不开放管理员注册。' : mode === 'register' ? '注册成功后会自动登录。用户名不区分大小写。' : '普通用户账号只能通过用户入口登录。'}</p>
+      <p className="auth-footnote">{admin ? '管理员账号由负责人创建，不开放管理员注册。' : mode === 'register' ? '注册成功后会自动登录。用户名不区分大小写。' : '普通用户账号只能通过用户入口登录。'} 登录状态保留 7 天，可随时退出。</p>
     </section>
   </div>;
 }

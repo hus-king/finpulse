@@ -3,7 +3,7 @@ import { ChevronDown, LoaderCircle, LogIn, LogOut, UserRound, ShieldCheck, KeyRo
 import { useAuth } from './AuthContext';
 
 export default function AccountMenu({ open, setOpen, onAdmin }: { open: boolean; setOpen: (open: boolean) => void; onAdmin: () => void }) {
-  const { user, loading, requestLogin, requestAdminLogin, requestPasswordChange, logout } = useAuth();
+  const { user, loading, sessionError, refreshSession, requestLogin, requestAdminLogin, requestPasswordChange, logout } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const container = useRef<HTMLDivElement>(null);
@@ -23,10 +23,10 @@ export default function AccountMenu({ open, setOpen, onAdmin }: { open: boolean;
     finally { setBusy(false); }
   }
   return <div className="account-control" ref={container}>
-    {!user && <button className="admin-login-button" disabled={loading} onClick={requestAdminLogin}><ShieldCheck size={14} /><span>管理员登录</span></button>}
-    <button className={`account-button ${user ? 'signed-in' : ''}`} disabled={loading} aria-label={loading ? '正在确认登录状态' : user ? '打开账号菜单' : '用户登录'} aria-expanded={user ? open : undefined} onClick={() => user ? setOpen(!open) : requestLogin()}>
+    {!user && !sessionError && <button className="admin-login-button" disabled={loading} onClick={requestAdminLogin}><ShieldCheck size={14} /><span>管理员登录</span></button>}
+    <button className={`account-button ${user ? 'signed-in' : ''}`} disabled={loading} aria-label={loading ? '正在确认登录状态' : user ? '打开账号菜单' : sessionError ? '重新确认登录状态' : '用户登录'} aria-expanded={user ? open : undefined} onClick={() => user ? setOpen(!open) : sessionError ? void refreshSession() : requestLogin()}>
       {loading ? <LoaderCircle size={15} className="spin" /> : user ? <span className="account-avatar">{user.nickname.slice(0, 1).toUpperCase()}</span> : <LogIn size={15} />}
-      <span>{loading ? '确认中' : user ? user.nickname : '用户登录'}</span>{user && <ChevronDown size={12} />}
+      <span>{loading ? '确认中' : user ? user.nickname : sessionError ? '重试登录状态' : '用户登录'}</span>{user && <ChevronDown size={12} />}
     </button>
     {open && user && <section className="account-menu" aria-label="当前账号">
       <div className="account-menu-heading"><span className="icon-square mint"><UserRound size={20} /></span><div><strong>{user.nickname}</strong><span>@{user.username}</span></div></div>

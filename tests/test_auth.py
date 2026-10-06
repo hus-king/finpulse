@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from backend.app import app
-from backend.auth import AuthError, AuthStore, COOKIE_NAME, IDLE_SECONDS, SESSION_SECONDS
+from backend.auth import AuthError, AuthStore, COOKIE_NAME, SESSION_SECONDS
 
 ORIGIN = {"Origin": "http://localhost"}
 PASSWORD = "Local-test-password-2026!"
@@ -52,6 +52,7 @@ class AccountTests(unittest.TestCase):
         self.assertIn("HttpOnly", cookie)
         self.assertIn("SameSite=strict", cookie)
         self.assertIn("Path=/api", cookie)
+        self.assertIn(f"Max-Age={SESSION_SECONDS}", cookie)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertNotIn("password", json.dumps(response.json()))
         token = self.client.cookies.get(COOKIE_NAME)
@@ -118,10 +119,37 @@ class AccountTests(unittest.TestCase):
         with self.assertRaises(AuthError):
             self.store.get_session(old)
 
-    def test_idle_expiry_is_enforced_on_server(self):
+    def test_session_survives_two_days_idle_and_startup_cleanup(self):
+        response = self.register()
+        token = self.client.cookies.get(COOKIE_NAME)
+        self.now[0] += 2 * 24 * 60 * 60
+        recreated = AuthStore(self.store.path, clock=lambda: self.now[0])
+        recreated.initialize()
+        recreated.cleanup_expired()
+        app.state.auth_store = recreated
+        me = self.client.get("/api/auth/me")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["user"]["id"], response.json()["user"]["id"])
+        self.assertEqual(self.client.cookies.get(COOKIE_NAME), token)
+        # Recovery does not silently extend the fixed expiration date.
+        self.assertEqual(me.json()["expires_at"], response.json()["expires_at"])
+
+    def test_new_browser_client_restores_session_without_another_login(self):
+        response = self.register()
+        token = self.client.cookies.get(COOKIE_NAME)
+        with TestClient(app, base_url="http://localhost") as restored:
+            restored.cookies.set(COOKIE_NAME, token, path="/api")
+            me = restored.get("/api/auth/me")
+            self.assertEqual(me.status_code, 200)
+            self.assertEqual(me.json(), response.json())
+
+    def test_cleanup_removes_expired_sessions(self):
         self.register()
-        self.now[0] += IDLE_SECONDS+1
+        self.now[0] += SESSION_SECONDS
+        self.store.cleanup_expired()
         self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
+        with self.store.connection() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0], 0)
 
     def test_absolute_expiry_is_enforced_even_with_recent_activity(self):
         self.register()

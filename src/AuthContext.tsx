@@ -69,11 +69,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshSession, update]);
 
-  const requestLogin = (reason = '登录后即可使用 AI 问答、新闻研判和模型连接测试。') => setDialog({ reason });
-  const requestAdminLogin = () => setDialog({ reason: '使用项目负责人分配的管理员账号登录。', admin: true });
+  const requestLogin = (reason = '登录后即可使用 AI 问答、新闻研判和模型连接测试。') => {
+    if (loading) return;
+    if (sessionError) { void refreshSession(); return; }
+    setDialog({ reason });
+  };
+  const requestAdminLogin = () => {
+    if (loading) return;
+    if (sessionError) { void refreshSession(); return; }
+    setDialog({ reason: '使用项目负责人分配的管理员账号登录。', admin: true });
+  };
   const requireAuth = (reason: string) => {
-    if (loading) { requestLogin('正在确认登录状态，请稍候。'); return false; }
+    if (loading) return false;
     if (user) return true;
+    if (sessionError) { void refreshSession(); return false; }
     requestLogin(reason); return false;
   };
   const acceptSession = (session: AuthSession) => {

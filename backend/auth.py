@@ -20,8 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 COOKIE_NAME = "finpulse_session"
 COOKIE_PATH = "/api"
-SESSION_SECONDS = 24 * 60 * 60
-IDLE_SECONDS = 60 * 60
+# Persistent, fixed seven-day session; ordinary inactivity does not log out.
+SESSION_SECONDS = 7 * 24 * 60 * 60
 RATE_WINDOW_SECONDS = 15 * 60
 router = APIRouter(prefix="/api/auth", tags=["Accounts"])
 
@@ -158,7 +158,7 @@ class AuthStore:
         # concurrent session/bucket inserts in the same transaction.
         now = int(self.clock())
         with self.connection() as conn:
-            conn.execute('DELETE FROM sessions WHERE expires_at<=? OR last_seen_at<=?', (now, now-IDLE_SECONDS))
+            conn.execute('DELETE FROM sessions WHERE expires_at<=?', (now,))
             conn.execute('DELETE FROM auth_rate_limits WHERE window_start<=?', (now-RATE_WINDOW_SECONDS,))
 
     def register(self, username, nickname, password, old_token=None):
@@ -205,7 +205,7 @@ class AuthStore:
         hashed, now = token_hash(token), int(self.clock())
         with self.connection() as conn:
             row = conn.execute("SELECT users.*, sessions.expires_at, sessions.last_seen_at FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=?", (hashed,)).fetchone()
-        if not row or row["expires_at"] <= now or row["last_seen_at"] <= now-IDLE_SECONDS:
+        if not row or row["expires_at"] <= now:
             if row:
                 self.logout(token)
             raise AuthError(401, "登录状态已过期，请重新登录。", "AUTH_REQUIRED")
