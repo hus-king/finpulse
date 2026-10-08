@@ -31,12 +31,12 @@ class EvidenceServiceTests(unittest.IsolatedAsyncioTestCase):
         self.stock['business_profile']['main_business']='上游油气开采'
         await self.service.analyze_document(self.stock,self.item)
         self.assertEqual(self.model.await_count,2)
-    async def test_missing_profile_does_not_fail_analysis_and_insufficient_stays_null(self):
-        self.model.return_value={'content':json.dumps({**BASE,'assessment':'insufficient','sentiment_score':None,'positive_factors':[]}),'model':'test'}
+    async def test_missing_profile_allows_weak_direction_with_low_confidence(self):
+        self.model.return_value={'content':json.dumps({**BASE,'confidence':'low','sentiment_score':5}),'model':'test'}
         with patch('backend.providers.business_profile',new=AsyncMock(side_effect=RuntimeError('offline'))):
             reply=await self.service.analyze_document(self.stock,self.item)
-        self.assertIsNone(reply['analysis']['sentiment_score'])
-        self.assertEqual(reply['analysis'].get('assessment'),'insufficient')
+        self.assertEqual(reply['analysis']['sentiment_score'],5)
+        self.assertEqual(reply['analysis'].get('confidence'),'low')
 
     async def test_briefing_importance_uses_new_scale_and_labels_insufficient(self):
         from datetime import datetime
@@ -45,13 +45,13 @@ class EvidenceServiceTests(unittest.IsolatedAsyncioTestCase):
         from backend.recommendations import build_digest
         self.store.put('watchlist','list',['600028'],'reader')
         self.store.put('dashboard','600028',{'stock':self.stock,'as_of':'2026-10-08T10:00:00+08:00','news':[
-            {**self.item,'id':'impact','score':75,'analysis':{**BASE,'sentiment_score':75,'version':PROMPT_VERSION}},
-            {**self.item,'id':'missing','url':'https://example.com/missing','title':'供应链变化','score':None,'analysis':{**BASE,'sentiment_score':None,'assessment':'insufficient','version':PROMPT_VERSION}}]})
+            {**self.item,'id':'impact','score':25,'analysis':{**BASE,'sentiment_score':25,'version':'news-v4-evidence'}},
+            {**self.item,'id':'missing','url':'https://example.com/missing','title':'供应链变化','score':None,'analysis':{**BASE,'sentiment_score':None,'assessment':'insufficient','version':'news-v4-evidence'}}]})
         digest=build_digest(self.store,'reader',now=datetime(2026,10,8,12,tzinfo=SHANGHAI))
         item=next(row for row in digest['recommendations'] if row['id']=='impact')
-        self.assertLessEqual(item['components']['重要性'],20)
+        self.assertEqual(item['components']['重要性'],6)
         missing=next(row for row in digest['recommendations'] if row['id']=='missing')
-        self.assertEqual(missing.get('score_label'),'待补证')
+        self.assertEqual(missing.get('score_label'),'待研判')
 
     async def test_corrected_publication_date_and_material_quality_invalidate_analysis(self):
         self.stock['business_profile']={'main_business':'炼油','status':'ok'}

@@ -67,7 +67,7 @@ def build_digest(store, owner, now=None):
             topics = [topic for topic, pattern in TOPICS.items() if re.search(pattern, text)]
             freshness = 30 * math.exp(-age / 3)
             relevance = 25 if row.get('tier', 'company') == 'company' else 12
-            magnitude = min(1,abs(row.get('score') or 0) / (100 if analysis.get('version') == PROMPT_VERSION else 2))
+            magnitude = min(1,abs(row.get('score') or 0) / (100 if analysis.get('version') in (PROMPT_VERSION,'news-v4-evidence') else 2))
             importance = 20 * max(magnitude, .8 if topics else .3)
             evidence = 15 if row.get('text_source') in ('extract', 'extracted', 'extracted_body', 'akshare') else 7
             if row.get('date_status') == 'body_verified':

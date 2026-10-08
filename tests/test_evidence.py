@@ -12,31 +12,29 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(hasattr(prompts, 'EvidenceAnalysis'), 'Missing independent v4 analysis contract')
         return prompts.parse_json(json.dumps({**BASE, **change}), prompts.EvidenceAnalysis)
 
-    def test_insufficient_is_completed_but_has_no_directional_score(self):
-        result = self.parse(sentiment_score=None, assessment='insufficient', positive_factors=[])
-        self.assertIsNone(result['sentiment_score'])
+    def test_insufficient_is_pending_until_model_gives_direction(self):
         with self.assertRaises(ValidationError):
-            self.parse(sentiment_score=0, assessment='insufficient')
+            self.parse(sentiment_score=None, assessment='insufficient', positive_factors=[])
 
     def test_score_state_sign_and_granularity_must_agree(self):
         for values in ({'sentiment_score': -25}, {'sentiment_score': 26}, {'sentiment_score': True}, {'assessment': 'neutral'}, {'confidence': 'certain'}):
             with self.subTest(values=values), self.assertRaises(ValidationError):
                 self.parse(**values)
 
-    def test_mixed_retains_both_effects_without_forced_zero(self):
-        result = self.parse(sentiment_score=None, assessment='mixed', negative_factors=['库存减值风险'])
+    def test_direction_keeps_opposing_risks_in_details(self):
+        result = self.parse(negative_factors=['库存减值风险'])
         self.assertEqual(result['negative_factors'], ['库存减值风险'])
         with self.assertRaises(ValidationError):
-            self.parse(sentiment_score=None, assessment='mixed', negative_factors=[])
+            self.parse(sentiment_score=None, assessment='mixed', negative_factors=['库存减值风险'])
 
     def test_overview_preserves_conflicting_directions_and_excludes_legacy_zero(self):
         from backend.evidence import build_overview
         news = [{'id': str(i), 'title': '事件'+str(i), 'analysis_status':'completed', 'analysis':{**BASE, 'version':prompts.PROMPT_VERSION, **change}} for i,change in enumerate(({}, {'assessment':'negative','sentiment_score':-30,'negative_factors':['成本压力']}, {'assessment':'insufficient','sentiment_score':None}))]
         news.append({'id':'old','analysis_status':'completed','score':0,'analysis':{'sentiment_score':0}})
         result = build_overview(news)
-        self.assertEqual(result['status'], 'mixed')
-        self.assertEqual(result['counts']['insufficient'], 1)
-        self.assertEqual(result['counts']['legacy'], 1)
+        self.assertEqual(result['status'], 'negative')
+        self.assertEqual(result['net_score'], -2.5)
+        self.assertEqual(result['counts']['pending'], 2)
         self.assertTrue(result['opportunities'] and result['risks'])
 
     def test_material_event_beats_newer_price_bulletin(self):
@@ -49,16 +47,16 @@ class EvidenceTests(unittest.TestCase):
         row={'id':'missing','title':'行业需求变化','analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION,'assessment':'insufficient','sentiment_score':None}}
         overview=build_overview([row])
         self.assertEqual(overview['opportunities'],[])
-        self.assertEqual(overview['status'],'insufficient')
-        self.assertTrue(overview['watch_points'])
+        self.assertEqual(overview['status'],'pending')
+        self.assertEqual(overview['watch_points'],[])
 
     def test_stale_analysis_is_not_part_of_current_company_direction(self):
         from backend.evidence import build_overview
-        row={'id':'old','title':'上次事件','stale':True,'analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION}}
+        row={'id':'old','title':'上次事件','refresh_pending':True,'analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION}}
         overview=build_overview([row])
-        self.assertEqual(overview['status'],'insufficient')
+        self.assertEqual(overview['status'],'pending')
         self.assertEqual(overview['opportunities'],[])
-        self.assertEqual(overview['counts']['stale'],1)
+        self.assertEqual(overview['counts']['pending'],1)
 
     def test_positive_event_still_preserves_its_execution_risks(self):
         from backend.evidence import build_overview

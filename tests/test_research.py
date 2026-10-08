@@ -101,6 +101,22 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/research/600519/refresh', headers=ORIGIN, json={}).status_code, 403)
             search.assert_not_awaited()
 
+    def test_analyze_all_auth_and_private_job(self):
+        with patch('backend.app.completion', new=AsyncMock(return_value=REPLY)) as model:
+            self.assertEqual(self.client.post('/api/research/600519/analyze-all', headers=ORIGIN, json={}).status_code,401)
+            headers=self.register()
+            self.assertEqual(self.client.post('/api/research/600519/analyze-all', headers=ORIGIN, json={}).status_code,403)
+            model.assert_not_awaited()
+            self.store.put('dashboard','600519',{'stock':stock_by_code('600519'),'news':[],'candles':[],'pipeline':{'warnings':[],'counts':{},'stages':{}}})
+            response=self.client.post('/api/research/600519/analyze-all',headers=headers,json={})
+            self.assertEqual(response.status_code,202)
+            self.assertEqual(response.json()['kind'],'analysis_all')
+            job_id=response.json()['id']
+            self.wait_job(job_id)
+            self.register('batch-other')
+            self.assertEqual(self.client.get('/api/research/jobs/'+job_id).status_code,404)
+            model.assert_not_awaited()
+
     def test_live_flow_persists_analysis_audit_and_reuses_cache(self):
         headers = self.register()
         market = {'status': 'ok', 'price': 101, 'change': 1, 'as_of_date': '2026-09-30', 'is_realtime': False, 'source': 'test', 'candles': [{'date': '2026-09-30', 'open': 100, 'close': 101, 'low': 99, 'high': 102, 'volume': 10000}]}

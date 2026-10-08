@@ -181,6 +181,19 @@ async def refresh(code: str, data: RefreshRequest, response: Response, user=Depe
     return await research.launch(code, user, data.days, data.max_articles, data.include_community)
 
 
+class AnalyzeAllRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+
+@router.post('/research/{code}/analyze-all', status_code=202)
+async def analyze_all(code: str, data: AnalyzeAllRequest, response: Response, user=Depends(authorize_model_request), research=Depends(service)):
+    private(response)
+    if not research.catalog.get(code):
+        raise HTTPException(404, '暂不支持该股票。')
+    await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('research:' + user['id']), 12)])
+    return await research.launch(code, user, max_articles=0, analysis_only=True)
+
+
 @router.get('/research/jobs/{job_id}')
 def get_job(job_id: str, response: Response, session=Depends(current_session), research=Depends(service)):
     private(response)
@@ -234,6 +247,9 @@ async def analyze_saved(code: str, news_id: str, response: Response, user=Depend
                 raise HTTPException(404, '新闻不存在或已更新，请刷新列表。')
             reply = await research.analyze_document({**dashboard['stock'], 'industry_profile': dashboard.get('industry_profile'), 'business_profile':dashboard.get('business_profile')}, item)
             item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'], analysis_prompt_version=reply['prompt_version'], analysis_context_key=reply['context_key'])
+            item.pop('analysis_error',None)
+            if item.pop('refresh_pending',False):
+                item['stale']=True
             from .research import forward_returns
             dashboard['backtest'] = forward_returns(dashboard['news'], dashboard['candles'])
             await asyncio.to_thread(research.store.put, 'dashboard', code, dashboard)

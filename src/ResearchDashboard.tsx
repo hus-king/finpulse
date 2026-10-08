@@ -11,7 +11,7 @@ import type { Dashboard, Job, News, Stock } from './types';
 interface Props {
   data: Dashboard | null; loading: boolean; catalog: Stock[]; snapshots: Record<string, Dashboard>; watchlist: string[];
   savingWatch: boolean; code: string; setCode: (code: string) => void; userSignedIn: boolean; add: () => void; remove: (code: string) => void;
-  running: boolean; job: Job | null; collect: (days: number, community: boolean, communityOnly?: boolean) => void; audit: () => void; auditLoading: boolean;
+  running: boolean; job: Job | null; collect: (days: number, community: boolean, communityOnly?: boolean, analysisOnly?: boolean) => void; audit: () => void; auditLoading: boolean;
   openAssistant: (news?: News) => void; briefing: () => void;
   onMarket: (data: Dashboard) => void;
 }
@@ -33,7 +33,7 @@ export default function ResearchDashboard(props: Props) {
         {job?.warnings.length ? <div className="pipeline-warning" role="status">本次任务：{job.warnings.join('；')}</div> : null}
         {data.pipeline && <div className="pipeline-summary"><span>检索 {data.pipeline.counts.input}</span><ChevronRight size={12} /><span>保留 {data.pipeline.counts.retained}</span><ChevronRight size={12} /><span>合并 {data.pipeline.counts.merged}</span><ChevronRight size={12} /><span>本轮研判 {data.pipeline.counts.analyzed}</span><button disabled={auditLoading || !data.pipeline.collection_id} onClick={audit}>{auditLoading ? '读取中…' : '查看清洗记录'}</button></div>}
         {!!data.pipeline?.warnings.length && !job && <details className="pipeline-warning"><summary>数据采集存在 {data.pipeline.warnings.length} 项限制</summary>{data.pipeline.warnings.map(item => <p key={item}>{item}</p>)}</details>}
-        <NewsFeed data={data} openAssistant={openAssistant} />
+        <NewsFeed data={data} openAssistant={openAssistant} analyzeAll={() => collect(days, false, false, true)} running={running} stage={job?.stage} />
         <section className="panel returns-panel"><header><h2>新闻后的历史走势</h2><span>事后观察</span></header>{data.backtest.items.length ? <div className="returns-table"><table><thead><tr><th>新闻</th><th>基准日</th><th>3 交易日</th><th>5 交易日</th></tr></thead><tbody>{data.backtest.items.slice(0, 8).map(item => <tr key={item.news_id}><td>{item.title}</td><td>{item.base_date ?? '待有日线'}</td><td className={tone(item.return_3d)}>{percent(item.return_3d)}</td><td className={tone(item.return_5d)}>{percent(item.return_5d)}</td></tr>)}</tbody></table></div> : <p className="returns-note">保存新闻与日线后，这里会展示可计算的后续价格变化。</p>}<p className="returns-note">{data.backtest.note}</p></section>
       </>}
     </div>

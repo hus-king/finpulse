@@ -20,7 +20,7 @@ from .daily_market import DailyMarketService, quote_order
 from .industry import PROFILE_NOTE, PROFILE_VERSION, build_topics, select_analyses
 from .industry_news import IndustryNewsService
 from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url
-from .evidence import build_overview, rank_events
+from .evidence import build_overview, rank_events, is_scored
 from .prompts import EvidenceAnalysis, CommunityAnalysis, COMMUNITY_SYSTEM, NEWS_SYSTEM, PROMPT_VERSION, parse_json
 
 
@@ -99,14 +99,14 @@ class ResearchService:
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    async def launch(self, code, user, days=30, max_articles=6, community=False, start=True, community_only=False):
+    async def launch(self, code, user, days=30, max_articles=6, community=False, start=True, community_only=False, analysis_only=False):
         # A single process is intentional; concurrent refreshes of a stock reuse a job.
         key = (user['id'], code)
         if key in self.active:
             return self.live_jobs[self.active[key]]
         if len(self.active) >= self.max_pending:
             raise HTTPException(429, '任务队列已满，请稍后重试。')
-        job = {'id': uuid.uuid4().hex, 'code': code, 'kind': 'community' if community_only else 'research', 'status': 'queued', 'stage': '等待处理', 'created_at': now_iso(), 'warnings': [], 'counts': {}}
+        job = {'id': uuid.uuid4().hex, 'code': code, 'kind': 'analysis_all' if analysis_only else 'community' if community_only else 'research', 'status': 'queued', 'stage': '等待处理', 'created_at': now_iso(), 'warnings': [], 'counts': {}}
         self.active[key] = job['id']
         self.live_jobs[job['id']] = job
         try:
@@ -119,14 +119,14 @@ class ResearchService:
         self.job_starts[job['id']] = event
         if start:
             event.set()
-        task = asyncio.create_task(self._job(job, user['id'], days, max_articles, community, community_only))
+        task = asyncio.create_task(self._job(job, user['id'], days, max_articles, community, community_only, analysis_only))
         self.tasks.add(task)
         self.job_tasks[job['id']] = task
         task.add_done_callback(self.tasks.discard)
         task.add_done_callback(lambda finished: self.job_tasks.pop(job['id'], None))
         return job
 
-    async def _job(self, job, owner, days, maximum, community, community_only=False):
+    async def _job(self, job, owner, days, maximum, community, community_only=False, analysis_only=False):
         updates = asyncio.Queue()
         async def persist_progress():
             while True:
@@ -144,7 +144,7 @@ class ResearchService:
                 job.update(status='running', stage=stage)
                 job['data_revision'] = self.dashboard_revisions.get(job['code'])
                 updates.put_nowait(dict(job))
-            result = await self.refresh_shared(job['code'], days, maximum, community, progress, community_only=community_only)
+            result = await self.refresh_shared(job['code'], days, maximum, community, progress, community_only=community_only, analysis_only=analysis_only)
             job.update(status='partial' if result['pipeline']['warnings'] else 'completed', stage='处理完成', counts=result['pipeline']['counts'], warnings=result['pipeline']['warnings'])
         except asyncio.CancelledError:
             job.update(status='failed', stage='服务停止，任务已中断', warnings=['可重新发起采集'])
@@ -165,9 +165,9 @@ class ResearchService:
                 self.live_jobs.pop(job['id'], None)
                 self.job_starts.pop(job['id'], None)
 
-    async def refresh_shared(self, code, days=7, maximum=3, community=False, progress=lambda stage: None, community_only=False):
+    async def refresh_shared(self, code, days=7, maximum=3, community=False, progress=lambda stage: None, community_only=False, analysis_only=False):
         """Share identical concurrent work; each account keeps its own job record."""
-        key = (code, days, maximum, community, community_only)
+        key = (code, days, maximum, community, community_only, analysis_only)
         if key not in self.inflight:
             listeners = set()
             async def run():
@@ -180,7 +180,7 @@ class ResearchService:
                                     callback(stage)
                                 except Exception:
                                     logging.getLogger(__name__).warning('Could not persist job progress')
-                        work = self.collect_community(code, days, notify) if community_only else self.collect(code, days, maximum, community, notify)
+                        work = self.analyze_all(code, notify) if analysis_only else self.collect_community(code, days, notify) if community_only else self.collect(code, days, maximum, community, notify)
                         return await asyncio.wait_for(work, 1800)
             task = asyncio.create_task(run())
             self.inflight[key] = (task, listeners)
@@ -227,7 +227,97 @@ class ResearchService:
             except (ValueError, TypeError):
                 if attempt:
                     raise HTTPException(502, '模型输出两次均未通过结构化校验。') from None
-                messages.append({'role': 'user', 'content': '上一轮输出未通过JSON校验。请严格按照规定的字段、assessment与分数一致（mixed/insufficient用null，neutral用0，positive正分，negative负分，5的整数倍）、证据列表和三项因果链重新生成，不添加额外字段。'})
+                messages.append({'role': 'user', 'content': '上一轮输出未通过JSON校验。请严格按照规定的字段、assessment只允许positive/negative且与非零分数方向一致（禁止null或0，5的整数倍）、证据列表和三项因果链重新生成，不添加额外字段。'})
+
+    async def analyze_all(self, code, progress=lambda stage: None):
+        """Score every currently pending document; caller holds the shared stock lock."""
+        result = await asyncio.to_thread(self.dashboard,code)
+        candidates = [row for row in result['news'] if not is_scored(row)]
+        profile = await self.industry_news.business(result['stock'])
+        result['business_profile'] = profile
+        pipeline = result.setdefault('pipeline',{}) or {}
+        result['pipeline'] = pipeline
+        pipeline.setdefault('counts',{}).update(analysis_total=len(candidates),analysis_finished=0,analyzed=0)
+        pipeline.setdefault('stages',{})['analysis']='running' if candidates else 'completed'
+        # Keep source restrictions; a previous model error is retried, not retained as a new failure.
+        old_errors = {row.get('analysis_error') for row in candidates}
+        warnings = [w for w in pipeline.get('warnings',[]) if w not in old_errors]
+        publish_lock = asyncio.Lock()
+        async def publish(stage):
+            async with publish_lock:
+                result.update(as_of=now_iso(),revision=uuid.uuid4().hex)
+                pipeline['warnings'] = list(dict.fromkeys(warnings))
+                pipeline['job_status'] = 'running' if pipeline['stages']['analysis']=='running' else 'partial' if warnings else 'completed'
+                result['research_overview']=build_overview(result['news'])
+                result['backtest']=forward_returns(result['news'],result.get('candles',[]))
+                write=asyncio.create_task(asyncio.to_thread(self.store.put,'dashboard',code,deepcopy(result)))
+                cancelled=False
+                while True:
+                    try:
+                        await asyncio.shield(write)
+                        break
+                    except asyncio.CancelledError:
+                        if write.cancelled():
+                            raise
+                        # Repeated cancellation cannot stop a DB thread. Finish
+                        # the real write before any recovery snapshot can follow.
+                        cancelled=True
+                if cancelled:
+                    raise asyncio.CancelledError
+                self.dashboard_revisions[code]=result['revision']
+                progress(stage)
+        semaphore=asyncio.Semaphore(3)
+        async def run(row):
+            async with semaphore:
+                try:
+                    reply=await self.analyze_document({**result['stock'],'business_profile':profile,'industry_profile':result.get('industry_profile')},row)
+                    row.update(analysis=reply['analysis'],score=reply['analysis']['sentiment_score'],analysis_status='completed',
+                               analyzed_at=reply['analyzed_at'],model=reply['model'],analysis_prompt_version=reply['prompt_version'],analysis_context_key=reply['context_key'])
+                    row.pop('analysis_error',None)
+                    if row.pop('refresh_pending',False):
+                        row['stale']=True
+                    pipeline['counts']['analyzed']+=1
+                except Exception as exc:
+                    error=str(exc.detail) if isinstance(exc,HTTPException) else 'AI 新闻研判失败（'+type(exc).__name__+'）'
+                    row.update(analysis=None,score=None,analysis_status='failed',analysis_error=error)
+                    warnings.append(error)
+                pipeline['counts']['analysis_finished']+=1
+                if pipeline['counts']['analysis_finished']==len(candidates):
+                    pipeline['stages']['analysis']='completed'
+                await publish(f'全部研判：{pipeline["counts"]["analysis_finished"]}/{len(candidates)}')
+        workers=[]
+        try:
+            for row in candidates:
+                row.update(analysis_status='running',score=None)
+            await publish(f'全部研判：0/{len(candidates)}')
+            workers=[asyncio.create_task(run(row)) for row in candidates]
+            await asyncio.gather(*workers)
+        except BaseException:
+            # A failed progress write must not leave sibling models running after
+            # the caller releases the stock lock.
+            for worker in workers:
+                if not worker.done() and worker.cancelling()==0:
+                    worker.cancel()
+            draining=asyncio.gather(*workers,return_exceptions=True)
+            while True:
+                try:
+                    await asyncio.shield(draining)
+                    break
+                except asyncio.CancelledError:
+                    # Complete all writes before releasing the stock lock, even
+                    # if shutdown sends another cancellation during cleanup.
+                    continue
+            for row in candidates:
+                if row['analysis_status']=='running':
+                    row.update(analysis_status='pending',analysis=None,score=None)
+            pipeline['stages']['analysis']='failed'
+            warnings.append('批量研判已中断，剩余新闻可重新研判')
+            try:
+                await publish('全部研判已中断')
+            except Exception:
+                logging.getLogger(__name__).warning('Could not save interrupted batch state')
+            raise
+        return result
 
     async def collect(self, code, days, maximum, include_community, progress=lambda stage: None):
         stock = self.catalog.get(code)

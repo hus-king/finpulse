@@ -13,51 +13,49 @@ def rank_events(news):
     return sorted(news, key=priority, reverse=True)
 
 
+def is_scored(row):
+    analysis = row.get('analysis') or {}
+    score = analysis.get('sentiment_score')
+    return (row.get('analysis_status') == 'completed' and not row.get('refresh_pending')
+            and analysis.get('version') in (PROMPT_VERSION,'news-v4-evidence')
+            and analysis.get('assessment') in ('positive','negative')
+            and isinstance(score,int) and not isinstance(score,bool) and 0 < abs(score) <= 100
+            and score % 5 == 0 and row.get('score',score) == score
+            and (score > 0) == (analysis['assessment'] == 'positive'))
+
+
 def build_overview(news):
-    counts = dict.fromkeys(('positive', 'negative', 'neutral', 'mixed', 'insufficient', 'legacy', 'pending', 'stale'), 0)
-    opportunities, risks, watch, directional = [], [], [], []
+    counts = {'positive':0,'negative':0,'pending':0}
+    opportunities, risks, watch, series = [], [], [], []
     for row in rank_events(news):
-        analysis = row.get('analysis') or {}
-        if row.get('analysis_status') != 'completed':
+        if not is_scored(row):
             counts['pending'] += 1
             continue
-        if row.get('stale') or row.get('refresh_pending'):
-            counts['stale'] += 1
-            continue
-        if analysis.get('version') != PROMPT_VERSION:
-            counts['legacy'] += 1
-            continue
-        state = analysis['assessment']
-        counts[state] += 1
-        base = {'news_id': row['id'], 'title': row['title'], 'url': row.get('url'), 'score': analysis['sentiment_score'], 'confidence': analysis['confidence'], 'horizon': analysis['horizon']}
-        for field, target in (('positive_factors', opportunities), ('negative_factors', risks), ('watch_points', watch)):
-            if state == 'insufficient' and field != 'watch_points':
-                continue
-            for text in analysis[field]:
+        analysis = row['analysis']
+        score = analysis['sentiment_score']
+        counts['positive' if score > 0 else 'negative'] += 1
+        base = {'news_id':row['id'],'title':row['title'],'url':row.get('url'),'score':score,
+                'date':row.get('time'),'confidence':analysis.get('confidence','low'),'horizon':analysis.get('horizon','unclear')}
+        series.append(base)
+        for field,target in (('positive_factors',opportunities),('negative_factors',risks),('watch_points',watch)):
+            for text in analysis.get(field,[]):
                 if text not in [item['text'] for item in target]:
-                    target.append({**base, 'text': text})
-        if analysis['sentiment_score'] is not None:
-            directional.append(analysis['sentiment_score'])
-    if counts['mixed'] or counts['positive'] and counts['negative']:
-        status = 'mixed'
-    elif counts['positive']:
-        status = 'positive'
-    elif counts['negative']:
-        status = 'negative'
-    elif counts['neutral']:
-        status = 'neutral'
-    else:
-        status = 'insufficient'
-    return {'status': status, 'counts': counts, 'analyzed': sum(counts[k] for k in ('positive','negative','neutral','mixed','insufficient')), 'total':len(news),
-            'score_range': [min(directional), max(directional)] if directional else None,
-            'opportunities': opportunities[:3], 'risks': risks[:3], 'watch_points': watch[:3],
-            'note': '按独立事件展示证据；未研判与证据不足不作中性，正负影响不做简单平均。分数不是收益率或涨跌概率。'}
+                    target.append({**base,'text':text})
+    # Stable chronology makes per-event bars readable; materiality still orders evidence lists.
+    series.sort(key=lambda row:(row['date'] or '',row['news_id']))
+    scores = [row['score'] for row in series]
+    net_score = round(sum(scores)/len(scores),1) if scores else None
+    return {'status':'positive' if net_score is not None and net_score > 0 else 'negative' if net_score is not None and net_score < 0 else 'pending',
+            'counts':counts,'analyzed':len(series),'total':len(news),'net_score':net_score,
+            'score_range':[min(scores),max(scores)] if scores else None,'score_series':series,
+            'opportunities':opportunities[:3],'risks':risks[:3],'watch_points':watch[:3],
+            'note':'综合分为已研判新闻分数的算术平均，待研判不计入。AI判断的消息倾向，不是预期涨幅或涨跌概率。'}
 
 
 def score_label(analysis, score=None):
-    if analysis.get('version') == PROMPT_VERSION:
-        if analysis.get('assessment') in ('insufficient','mixed'):
-            return '待补证' if analysis['assessment'] == 'insufficient' else '正负影响并存'
-        value = analysis.get('sentiment_score')
-        return f'影响 {value:+d}/100' if value is not None else '待补证'
-    return f'旧版 {score:+d}/2' if isinstance(score,int) else '未研判'
+    value = analysis.get('sentiment_score')
+    if analysis.get('version') in (PROMPT_VERSION,'news-v4-evidence'):
+        if analysis.get('assessment') in ('positive','negative') and isinstance(value,int) and value != 0:
+            return f'{"利好" if value > 0 else "利空"} {value:+d}/100'
+        return '待研判'
+    return '待研判'
