@@ -30,8 +30,22 @@ def news_sample():
     return {'results': [{'title': '贵州茅台披露海外市场业务进展', 'content': f'{day}\n贵州茅台介绍海外市场业务进展，相关计划仍需持续观察实际执行情况和最终收入贡献，不应据此判断未来股价。', 'published_date': day, 'url': 'https://example.com/news/1'}]}
 
 
+def mock_industry_sources(test):
+    # Existing research tests exercise company news; keep both new external
+    # adapters deterministic and offline. Industry behavior has its own suite.
+    async def profile(stock):
+        industry = stock.get('industry')
+        return {**stock, 'industry': industry if industry and industry != 'A 股' else '测试行业', 'source': 'test industry source'}
+    for target, mock in [('backend.providers.stock_profile', AsyncMock(side_effect=profile)),
+                         ('backend.providers.search_industry_news', AsyncMock(return_value={'results': []}))]:
+        source_patch = patch(target, new=mock)
+        source_patch.start()
+        test.addCleanup(source_patch.stop)
+
+
 class ResearchTests(unittest.TestCase):
     def setUp(self):
+        mock_industry_sources(self)
         self.directory = tempfile.TemporaryDirectory()
         self.auth = AuthStore(Path(self.directory.name) / 'test.db')
         app.state.auth_store = self.auth
@@ -269,6 +283,7 @@ class ResearchTests(unittest.TestCase):
 
 class StagedCollectionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        mock_industry_sources(self)
         self.directory = tempfile.TemporaryDirectory()
         auth = AuthStore(Path(self.directory.name) / 'staged.db')
         auth.initialize()

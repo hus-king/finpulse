@@ -55,6 +55,17 @@ async def minute_market(code: str, request: Request, response: Response,
     return await request.app.state.minute_market.snapshot(stock, period, force=refresh)
 
 
+@router.get('/market/sentiment')
+async def market_sentiment(request: Request, response: Response, refresh: bool = False, research=Depends(service)):
+    private(response)
+    sentiment_service = getattr(research, 'market_sentiment', None)
+    if not sentiment_service:
+        from .market_sentiment import MarketSentimentService
+        sentiment_service = MarketSentimentService()
+        research.market_sentiment = sentiment_service
+    return await sentiment_service.get_sentiment(force=refresh)
+
+
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     days: int = Field(default=30, ge=1, le=90)
@@ -221,8 +232,8 @@ async def analyze_saved(code: str, news_id: str, response: Response, user=Depend
             item = next((row for row in dashboard['news'] if row['id'] == news_id), None)
             if not item:
                 raise HTTPException(404, '新闻不存在或已更新，请刷新列表。')
-            reply = await research.analyze_document(dashboard['stock'], item)
-            item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'])
+            reply = await research.analyze_document({**dashboard['stock'], 'industry_profile': dashboard.get('industry_profile')}, item)
+            item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'], analysis_prompt_version=reply['prompt_version'])
             from .research import forward_returns
             dashboard['backtest'] = forward_returns(dashboard['news'], dashboard['candles'])
             await asyncio.to_thread(research.store.put, 'dashboard', code, dashboard)

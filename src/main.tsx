@@ -7,5 +7,6 @@ import './styles.css';
 import './finance.css';
 import './briefing.css';
 import './theme.css';
+import './industry.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><ThemeProvider><AuthProvider><App /></AuthProvider></ThemeProvider></React.StrictMode>);

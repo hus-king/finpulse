@@ -128,3 +128,22 @@ class CommunityCollectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'error')
         self.assertEqual(len(result['posts']), 5)
         self.assertIsNone(result['bull'])
+
+    async def test_interaction_weights_change_ratios_without_changing_classified_stance(self):
+        sample = posts()
+        for item in sample:
+            item.update(views=0, replies=0)
+        sample[0].update(views=10000, replies=100)
+        model = AsyncMock(return_value={'content': json.dumps({'items': [
+            {'id': item['id'], 'stance': 'bull' if index == 0 else 'bear'}
+            for index, item in enumerate(sample)], 'keywords': []})})
+        service = ResearchService(None, model)
+        with patch('backend.research.collect_posts', new=AsyncMock(return_value={
+                'posts': sample, 'source': 'eastmoney_direct', 'diagnostics': {}, 'warnings': []})):
+            result = await service.community(STOCK, START, END)
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['weighting_method'], 'log_interaction')
+        self.assertGreater(result['bull'], 80)
+        self.assertEqual(sum(result[key] for key in ('bull', 'bear', 'neutral')), 100)
+        self.assertEqual([item['stance'] for item in result['posts']], ['bull', 'bear', 'bear', 'bear', 'bear'])
+        self.assertEqual(result['posts'][1]['weight'], 1)

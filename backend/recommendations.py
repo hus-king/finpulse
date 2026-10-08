@@ -13,7 +13,7 @@ TOPICS = {
     '行业政策': r'政策|监管|行业|产业|补贴|关税',
     '风险事件': r'处罚|诉讼|调查|违约|风险|暴雷|退市|减值',
 }
-VERSION = 'briefing-rank-v2'
+VERSION = 'briefing-rank-v3-industry'
 
 
 def duplicate_event(left, right):
@@ -73,12 +73,23 @@ def build_digest(store, owner, now=None):
             personalization = 5 + (5 if set(topics) & set(interests) else 0)
             components = {'时效': round(freshness, 1), '关联': relevance, '重要性': round(importance, 1), '证据': evidence, '关注主题': personalization}
             reasons = [f'{age} 天内发布', '关联自选股 ' + stock['name'], '正文已取得' if evidence >= 15 else '仅有片段，证据降权']
+            if row.get('news_scope') == 'industry':
+                reasons.append('行业间接关联：' + (row.get('relevance_reason') or row.get('industry') or '需核验业务影响'))
+            if row.get('refresh_pending'):
+                reasons.append('行业检索进行中，暂展示上次材料')
+            elif row.get('stale'):
+                reasons.append('本轮更新失败，保留旧材料')
             if topics:
                 reasons.append('主题：' + '、'.join(topics))
             if set(topics) & set(interests):
                 reasons.append('匹配你的关注主题')
             item = {key: row.get(key) for key in ('id', 'title', 'time', 'score', 'source', 'tag', 'text_source')}
             item.update(url=url, summary=analysis.get('summary'), uncertainty=analysis.get('uncertainty'), code=code, name=stock['name'], topics=topics, priority=round(sum(components.values()) / 105 * 100, 1), components=components, reasons=reasons, related_stocks=[{'code': code, 'name': stock['name']}])
+            item.update(news_scope=row.get('news_scope', 'company'), industry=row.get('industry'),
+                        related_factors=row.get('related_factors', []), relevance_reason=row.get('relevance_reason'), stale=bool(row.get('stale')),
+                        company_impacts=[{'code': code, 'name': stock['name'], 'score': row.get('score'), 'summary': analysis.get('summary'),
+                                          'uncertainty': analysis.get('uncertainty'), 'relevance_reason': row.get('relevance_reason'),
+                                          'news_scope': row.get('news_scope', 'company'), 'stale': bool(row.get('stale')), 'refresh_pending': bool(row.get('refresh_pending'))}])
             candidates.append(item)
     # Merge near-identical same-day titles/URLs, retaining all associated watchlist stocks.
     unique = []
@@ -87,6 +98,12 @@ def build_digest(store, owner, now=None):
         if duplicate:
             if item['code'] not in [stock['code'] for stock in duplicate['related_stocks']]:
                 duplicate['related_stocks'].extend(item['related_stocks'])
+                duplicate['company_impacts'].extend(item['company_impacts'])
+                if duplicate['news_scope'] == 'industry' or item['news_scope'] == 'industry':
+                    # A shared document is not a shared target-company rating.
+                    duplicate['score'] = None
+                    duplicate['summary'] = '同一事件关联多个自选股，影响请查看各公司的独立研判。'
+                    duplicate['uncertainty'] = '各公司的业务关联和影响方向需分别核验。'
         else:
             unique.append(item)
     # Greedy diversity penalty stops one company/topic dominating the reading list.
@@ -106,6 +123,10 @@ def build_digest(store, owner, now=None):
     content = '<h1>FinPulse 每日晨报 · ' + digest['date'] + '</h1><p>' + html.escape(digest['note']) + '</p>'
     for item in selected:
         content += '<h2>' + str(item['rank']) + '. <a href="' + html.escape(item['url'], quote=True) + '">' + html.escape(item['title']) + '</a></h2><p>' + html.escape(item['name'] + ' · ' + item['time']) + '</p><p>' + html.escape(item['summary'] or '尚未完成研判，请阅读原文。') + '</p><p>推荐理由：' + html.escape('；'.join(item['reasons'])) + '</p><p>' + html.escape(item['uncertainty'] or '') + '</p>'
+        if item['news_scope'] == 'industry' or len(item['company_impacts']) > 1:
+            for impact in item['company_impacts']:
+                name = impact['name'] + ('（行业检索中，暂用上次材料）' if impact['refresh_pending'] else '（沿用上次材料）' if impact['stale'] else '')
+                content += '<p><strong>' + html.escape(name) + '</strong>：' + html.escape(impact['summary'] or '尚未完成该公司研判') + '</p><p>' + html.escape(impact['relevance_reason'] or '') + '</p><p>' + html.escape(impact['uncertainty'] or '') + '</p>'
     if not selected:
         content += '<p>当前时间窗口没有符合条件的新闻；未生成替代内容。</p>'
     if digest['warnings']:

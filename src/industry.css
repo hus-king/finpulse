@@ -1,0 +1,14 @@
+.industry-profile { margin: 0 25px 14px; padding: 12px 14px; border: 1px solid var(--theme-border); border-radius: 6px; background: var(--theme-raised); display: grid; gap: 6px; }
+.industry-profile strong { font-size: 12px; color: var(--theme-text); }
+.industry-profile span, .industry-profile small { font-size: 11px; color: var(--theme-muted); line-height: 1.7; overflow-wrap: anywhere; }
+.news-scope-tabs { flex-wrap: wrap; }
+.news-scope-badge { color: var(--theme-accent-text); }
+.news-industry-relation { margin: 13px 0; padding: 12px 14px; border-left: 2px solid var(--theme-accent-text); border-radius: 4px; background: var(--theme-raised); }
+.news-industry-relation strong { font-size: 11px; color: var(--theme-accent-text); }
+.news-industry-relation p { margin-top: 7px; font-size: 12px; line-height: 1.8; color: var(--theme-muted); }
+.news-stale { color: var(--theme-warning, #9a6c2a) !important; font-size: 11px !important; }
+.company-impacts { margin-top: 12px; padding: 12px 14px; background: var(--theme-raised); border-radius: 6px; }
+.company-impacts section + section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--theme-border); }
+.company-impacts strong { font-size: 12px; color: var(--theme-text); }
+.company-impacts p { font-size: 12px; color: var(--theme-muted); line-height: 1.8; margin-top: 6px; }
+@media (max-width: 760px) { .industry-profile { margin-left: 20px; margin-right: 20px; } }

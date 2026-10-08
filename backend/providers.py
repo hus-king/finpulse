@@ -51,6 +51,21 @@ async def search_news(stock, start, end):
     return await tavily('search', {'query': f'{stock["name"]} {stock["code"]} 公司 公告 新闻', 'topic': 'news', 'search_depth': 'advanced', 'max_results': 12, 'start_date': start, 'end_date': end, 'include_raw_content': False, 'include_answer': False, 'include_usage': True})
 
 
+async def search_industry_news(query, start, end):
+    return await tavily('search', {'query': query, 'topic': 'news', 'search_depth': 'advanced', 'max_results': 8,
+        'start_date': start, 'end_date': end, 'include_raw_content': False, 'include_answer': False, 'include_usage': True})
+
+
+async def stock_profile(stock):
+    result = await akshare_worker('profile', stock['code'], '', '')
+    rows = {row.get('item'): row.get('value') for row in result.get('rows', [])}
+    from .industry import valid_industry
+    if str(rows.get('股票代码', '')).strip() != stock['code'] or not valid_industry(rows.get('行业')):
+        raise ProviderError('个股资料未返回对应股票的有效行业')
+    return {'code': stock['code'], 'name': rows.get('股票简称') or stock['name'],
+            'industry': rows['行业'].strip(), 'source': 'AkShare / 东方财富个股资料'}
+
+
 async def akshare_worker(kind, code, start, end, retry=True):
     # Some AkShare methods do not expose timeouts. A disposable process bounds
     # the whole request without patching global requests state or leaking threads.

@@ -12,6 +12,8 @@ def main():
             symbol = ('sh' if code.startswith('6') else 'sz') + code
             if kind == 'news':
                 frame = ak.stock_news_em(symbol=code)
+            elif kind == 'profile':
+                frame = ak.stock_individual_info_em(symbol=code, timeout=12)
             elif kind == 'catalog_sz':
                 frame = ak.stock_info_sz_name_code(symbol='A股列表').rename(columns={'A股代码': 'code', 'A股简称': 'name', '所属行业': 'industry'})
             elif kind in ('catalog_sh', 'catalog_star'):

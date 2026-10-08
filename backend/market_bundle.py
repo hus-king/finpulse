@@ -90,6 +90,9 @@ class MarketBundleService:
             if daily_error:
                 daily_state['error'] = daily_error
             dashboard['daily_request'] = daily_state
+            sentiment = self.research.market_sentiment.snapshot()
+            if sentiment is not None:
+                dashboard['market_sentiment'] = sentiment
             minute_error = minute_error or base.get('error')
             minutes = {}
             now = datetime.fromisoformat(base['market']['server_time'])

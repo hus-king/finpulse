@@ -11,9 +11,24 @@ export interface MinuteMarket {
   quote: { price: number | null; change: number | null; open: number | null; high: number | null; low: number | null; volume: number | null };
   market: { state: string; label: string; is_trading: boolean; server_time: string; calendar_year: number | null };
 }
+export interface MarketSentiment {
+  source?: string; method?: string; market_as_of?: string | null;
+  status: 'ok' | 'stale' | 'unavailable';
+  score: number | null;
+  level: 'extreme_greed' | 'greed' | 'neutral' | 'fear' | 'extreme_fear' | null;
+  level_name: string;
+  summary: string;
+  advancing: number;
+  declining: number;
+  flat: number;
+  total: number;
+  turnover_cny: number;
+  updated_at: string | null;
+}
 export interface MarketBundle {
   dashboard: Dashboard; minutes: Record<string, MinuteMarket>; status: 'ok' | 'partial';
   errors: Record<string, string>; next_poll_seconds: number; fetched_at: string;
+  market_sentiment?: MarketSentiment;
 }
 export interface Analysis { sentiment_score: number; summary: string; causal_chain: string[]; uncertainty: string }
 export interface News {
@@ -21,13 +36,21 @@ export interface News {
   analysis: Analysis | null; analysis_status: string; analysis_error?: string;
   text_source: string; date_status: string; analyzed_at?: string;
   sources: { title: string; url: string; date: string }[];
+  news_scope?: 'company' | 'industry'; industry?: string | null;
+  related_factors?: string[]; relevance_reason?: string; stale?: boolean; refresh_pending?: boolean;
+}
+export interface IndustryProfile {
+  code: string; industry: string | null; status: 'ok' | 'stale' | 'unavailable';
+  source?: string; fetched_at: string | null; version: string; error?: string | null; note: string;
 }
 export interface Pipeline { date_range: string[]; statuses: Record<string, string>; counts: Record<string, number>; warnings: string[]; collection_id?: string; job_status?: string; stages?: Record<string, string> }
 export interface Dashboard {
+  industry_profile?: IndustryProfile;
   daily_request?: { refreshing: boolean; error: string | null; next_poll_seconds: number; market: { label: string } };
   stock: Stock; candles: Candle[]; news: News[]; as_of: string | null; revision?: string; pipeline: Pipeline | null;
   quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string };
-  sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; note?: string; error?: string; source?: string; collected_at?: string; warnings?: string[]; diagnostics?: { direct?: { status?: string; listed?: number; eligible?: number; retained?: number; detail_failed?: number }; tavily?: { status?: string; listed?: number; retained?: number } }; posts: { id: string; title: string; url: string; date: string; stance?: string; content?: string; text_source?: string; views?: number | null; replies?: number | null }[] };
+  market_sentiment?: MarketSentiment;
+  sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; alert_level?: 'overheated' | 'frozen' | 'normal' | null; weighting_method?: string; note?: string; error?: string; source?: string; collected_at?: string; warnings?: string[]; diagnostics?: { direct?: { status?: string; listed?: number; eligible?: number; retained?: number; detail_failed?: number }; tavily?: { status?: string; listed?: number; retained?: number } }; posts: { id: string; title: string; url: string; date: string; stance?: string; content?: string; text_source?: string; views?: number | null; replies?: number | null; weight?: number }[] };
   backtest: { items: { news_id: string; title: string; score: number | null; publication_date: string; base_date: string | null; return_3d: number | null; return_5d: number | null }[]; note: string };
 }
 export interface Job { id: string; code: string; status: string; stage: string; warnings: string[]; counts: Record<string, number>; data_revision?: string }

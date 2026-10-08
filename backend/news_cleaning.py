@@ -9,6 +9,8 @@ from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .industry import match_industry, valid_industry
+
 SHANGHAI = timezone(timedelta(hours=8))
 STOCK_ENTITIES = {
     "贵州茅台": {"code": "600519", "aliases": ["贵州茅台", "茅台", "600519"]},
@@ -19,7 +21,9 @@ STOCK_ENTITIES = {
 }
 REASONS = {
     "quote_page": "行情、历史价格或评级聚合页面，不是独立新闻",
+    "news_index": "新闻或公告索引页面，不是独立文章",
     "not_primary_entity": "标题的主要对象不是这只股票",
+    "not_industry_event": "缺少与目标行业对应的标题及正文事件证据",
     "company_profile": "企业介绍，缺少明确的新事件",
     "date_conflict": "正文日期与搜索元数据冲突，暂不进入分析",
     "out_of_range": "正文日期不在本次检索区间",
@@ -57,7 +61,7 @@ def source_page_kind(url):
         return 'news_index'
     if (host.endswith('.finance.sina.com.cn') and ('/quotes_service/' in path or '/vfd_' in path)
         or host == 'www.cnyes.com' and path.startswith('/astock/quote/')
-        or (host == 'investing.com' or host.endswith('.investing.com')) and path.startswith('/equities/')
+        or (host == 'investing.com' or host.endswith('.investing.com')) and path.startswith(('/equities/', '/commodities/', '/indices/'))
         or host == 'stockanalysis.com' and path.startswith('/quote/')
         or (host == 'yahoo.com' or host.endswith('.yahoo.com')) and path.startswith('/quote/')
         or (host == 'futunn.com' or host.endswith('.futunn.com')) and path.startswith('/stock/')
@@ -182,7 +186,7 @@ def same_event(left, right):
     return matched, {"title_jaccard": round(jaccard, 3), "title_sequence": round(sequence, 3), "simhash_distance": distance}
 
 
-def clean_report(raw_report, extracts=None, entities=None):
+def clean_report(raw_report, extracts=None, entities=None, industry_profile=None):
     entities = STOCK_ENTITIES if entities is None else entities
     extracts = dict(extracts or {})
     for result in raw_report.get("extract", {}).get("response", {}).get("results", []):
@@ -211,7 +215,15 @@ def clean_report(raw_report, extracts=None, entities=None):
             meta, body = metadata_date(raw.get("published_date")), body_publication_date(text) or extracted_date
             effective = body or meta
             kind, label, tier = category(raw.get("title", ""), text)
+            direct = any(alias.lower() in raw.get('title', '').lower() for alias in entities[stock]['aliases'])
+            scope = 'industry' if search.get('news_scope') == 'industry' and not direct else 'company'
+            industry = (industry_profile or {}).get('industry')
+            relation = match_industry(industry, raw.get('title', ''), text) if scope == 'industry' else {'factors': [], 'reason': '标题直接涉及目标公司。'}
+            if scope == 'industry':
+                kind, label, tier = 'industry_news', '行业新闻', 'industry'
             item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": entities[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": "conflict" if body and meta and body != meta else "body_verified" if body else "metadata_only" if meta else "missing", "text_source": text_source, "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
+            item.update(news_scope=scope, industry=industry if valid_industry(industry) else None,
+                        related_factors=relation['factors'], relevance_reason=relation['reason'], stale=search.get('cache_status') == 'stale')
             reasons = []
             source_kind = source_page_kind(url)
             if source_kind:
@@ -234,7 +246,9 @@ def clean_report(raw_report, extracts=None, entities=None):
                         reasons.append('event_after_publication')
                 except ValueError:
                     pass
-            if not any(alias.lower() in title.lower() for alias in entities[stock]["aliases"]):
+            if scope == 'industry' and not relation['factors']:
+                reasons.append('not_industry_event')
+            elif scope == 'company' and not direct:
                 reasons.append("not_primary_entity")
             if re.search(r"股票股价|股价行情|历史行情|详细报价|詳細報價|即時報價|股票预测|股票預測|RT Quote", title, flags=re.I):
                 if 'quote_page' not in reasons:
@@ -252,6 +266,10 @@ def clean_report(raw_report, extracts=None, entities=None):
             if not reasons:
                 for previous in retained:
                     matched, metrics = same_event(item, previous)
+                    # A URL repeated in company and industry searches is one
+                    # document, irrespective of the query's assigned category.
+                    if item['url'] == previous['url'] and item['stock'] == previous['stock']:
+                        matched = True
                     if matched:
                         previous["sources"].append({"id": item["id"], "title": title, "url": url, "date": item["effective_date"]})
                         entry.update(status="merged", canonical_id=previous["id"], reason_codes=["duplicate_event"], reasons=[REASONS["duplicate_event"]], duplicate_metrics=metrics)
@@ -260,4 +278,4 @@ def clean_report(raw_report, extracts=None, entities=None):
                     retained.append({**item, "sources": [{"id": item["id"], "title": title, "url": url, "date": item["effective_date"]}]})
             audit.append(entry)
     counts = Counter(entry["status"] for entry in audit)
-    return {"date_range": raw_report["date_range"], "summary": {"input": len(audit), "retained": counts["retained"], "filtered": counts["filtered"], "merged": counts["merged"], "company_events": sum(item["tier"] == "company" for item in retained), "auxiliary_events": sum(item["tier"] == "auxiliary" for item in retained)}, "items": retained, "audit": audit, "limitations": ["规则清洗试验，尚未进行全面人工标注评估", "只有取得正文的条目才能核对正文日期；搜索片段可能截断", "日期冲突保守隔离，不自动改正来源日期", "不同日期和不同编号的事件不因标题相似而合并", "机构观点、行情快讯和衍生品事件单独标记，不能当作公司经营公告", "保留新闻与行情并列展示，不据此推断新闻导致价格变化"]}
+    return {"date_range": raw_report["date_range"], "summary": {"input": len(audit), "retained": counts["retained"], "filtered": counts["filtered"], "merged": counts["merged"], "company_events": sum(item["tier"] == "company" for item in retained), "industry_events": sum(item['news_scope'] == 'industry' for item in retained), "auxiliary_events": sum(item["tier"] == "auxiliary" for item in retained)}, "items": retained, "audit": audit, "limitations": ["规则清洗试验，尚未进行全面人工标注评估", "只有取得正文的条目才能核对正文日期；搜索片段可能截断", "日期冲突保守隔离，不自动改正来源日期", "不同日期和不同编号的事件不因标题相似而合并", "机构观点、行情快讯和衍生品事件单独标记，不能当作公司经营公告", "保留新闻与行情并列展示，不据此推断新闻导致价格变化", "行业事件只表示间接关联，需结合目标公司的主营业务核验影响"]}

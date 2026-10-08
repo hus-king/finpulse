@@ -114,6 +114,13 @@ class BundleServiceTests(unittest.IsolatedAsyncioTestCase):
             await other_minute.close()
             await other_research.close()
 
+    async def test_sentiment_failure_cannot_block_ready_chart_bundle(self):
+        with patch.object(self.research.market_sentiment, '_fetch', new_callable=AsyncMock) as fetch:
+            fetch.side_effect = AssertionError('Chart must not await sentiment network')
+            result = await asyncio.wait_for(self.bundle.get(STOCK), 2)
+            self.assertEqual(result['status'], 'ok')
+            fetch.assert_not_awaited()
+
     async def test_twenty_viewers_wait_for_both_parallel_sources_once(self):
         gate, daily_started, minute_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
         async def daily(*args):
