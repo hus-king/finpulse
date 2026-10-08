@@ -1,6 +1,6 @@
 # FinPulse 20 万元 A 股模拟盘 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在现有 FinPulse 网站上线每人 20 万元的独立 A 股模拟盘，完成买卖、T+1、持仓盈亏及成交记录。
 
@@ -10,7 +10,7 @@
 
 **Spec:** [已确认设计](../specs/2026-10-08-paper-trading-design.md)
 
-**Execution:** 当前会话按任务顺序执行；每步验证通过后独立提交，最后统一审查和发布。用户已要求“分步执行多次 commits”。本计划等待用户审阅确认。
+**Execution:** 当前会话按任务顺序执行；每步验证通过后独立提交，最后统一审查和发布。用户已要求“分步执行多次 commits”。用户已确认本计划，按步骤执行中。
 
 ## Global Constraints
 
@@ -51,13 +51,13 @@
 - apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dict, now: datetime) -> tuple[dict, dict]，输入保持不变；返回新账户和待补充幂等键的成交记录。
 - value_account(account: dict, quotes: dict[str, dict], now: datetime) -> dict；quotes 缺失时按持仓最近成交价估值并标记 estimated。
 
-- [ ] 写初始余额、买入费用和 T+1 测试；关键断言为 `new_account()['cash_fen'] == 20_000_000`、`fees(100_000, 'buy')['fees_fen'] == 501`、同日可卖 0、下一交易日可卖 100。
-- [ ] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_rules.py' -v`，确认因模块或函数缺失失败。
-- [ ] 实现上述纯函数；日期批次维护数量，成本按平均成本分摊，最后清仓扣尽成本；规则失败有稳定业务码。
-- [ ] 增加时段边界（09:29:59、09:30、11:30、13:00、14:57）、国庆／周末／未知年份、100 与 200 股规则、上限、零股、资金不足与超卖测试。
-- [ ] 增加报价错误、价格 NaN／无穷／零／负数、昨日／午休旧报价、采集未来、分钟领先 60 与 61 秒、年龄 180 与 181 秒、采集年龄 90 与 91 秒测试。
-- [ ] 增加多次买入和部分卖出、费用边界及清仓测试；断言清仓 cost_fen 为 0、现金非负、现金减初始金额等于累计已实现盈亏。验证延迟与 estimated 估值不成为可成交报价。
-- [ ] 重跑规则测试，全部通过后提交 `feat: add precise A-share paper trading rules`。
+- [x] 写初始余额、买入费用和 T+1 测试；关键断言为 `new_account()['cash_fen'] == 20_000_000`、`fees(100_000, 'buy')['fees_fen'] == 501`、同日可卖 0、下一交易日可卖 100。
+- [x] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_rules.py' -v`，确认因模块或函数缺失失败。
+- [x] 实现上述纯函数；日期批次维护数量，成本按平均成本分摊，最后清仓扣尽成本；规则失败有稳定业务码。
+- [x] 增加时段边界（09:29:59、09:30、11:30、13:00、14:57）、国庆／周末／未知年份、100 与 200 股规则、上限、零股、资金不足与超卖测试。
+- [x] 增加报价错误、价格 NaN／无穷／零／负数、昨日／午休旧报价、采集未来、分钟领先 60 与 61 秒、年龄 180 与 181 秒、采集年龄 90 与 91 秒测试。
+- [x] 增加多次买入和部分卖出、费用边界及清仓测试；断言清仓 cost_fen 为 0、现金非负、现金减初始金额等于累计已实现盈亏。验证延迟与 estimated 估值不成为可成交报价。
+- [x] 重跑规则测试，全部通过后提交 `feat: add precise A-share paper trading rules`。
 
 ### Task 2: 持久化、并发与幂等
 
@@ -65,13 +65,13 @@
 
 **Interfaces:** PaperStore(research_store: ResearchStore)。get_account(owner: str) -> dict 返回保存值或 new_account()；list_trades(owner: str, limit: int = 20, before_seq: int | None = None) -> dict；transact(owner: str, request_id: str, intent: dict, apply: Callable[[dict, dict], tuple[dict, dict]]) -> dict，回调接收账户和该 code 的原始分钟缓存。回调在锁内执行；存储层补齐 request_id、sequence。
 
-- [ ] 写临时 AuthStore / ResearchStore 测试，注册两个测试用户；断言新账户均为 20,000,000 分、读取不创建记录、首笔成交更新且另一个用户不变。
-- [ ] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_store.py' -v`，确认缺失实现失败。
-- [ ] 实现用户行锁、锁内有效性检查、请求内容比较、账户和成交同事务写入；SQLite／MySQL 分别使用现有连接 API 和 upsert 方言。不调用独立 ResearchStore.put 写资金。
-- [ ] 增加相同 UUID 重放、UUID 内容冲突、重建存储实例后恢复，以及成交失败不创建资金记录测试。
-- [ ] 用 ThreadPoolExecutor 验证同 UUID 并发只成交一次、两个不同请求抢有限现金只成功一个、并发卖出不超卖；故障注入在账户更新后、成交插入前抛异常，断言账户和记录全部回滚。
-- [ ] 验证禁用账号不能写入；按 sequence 取得同秒多笔交易及分页，无重复遗漏。SQL 按 JSON 中的数值 sequence 排序与过滤，兼容两种数据库；补充 MySQL 连接替身验证 FOR UPDATE 与写入共用一连接。
-- [ ] 重跑存储及规则测试，全部通过后提交 `feat: persist isolated atomic paper accounts and trades`。
+- [x] 写临时 AuthStore / ResearchStore 测试，注册两个测试用户；断言新账户均为 20,000,000 分、读取不创建记录、首笔成交更新且另一个用户不变。
+- [x] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_store.py' -v`，确认缺失实现失败。
+- [x] 实现用户行锁、锁内有效性检查、请求内容比较、账户和成交同事务写入；SQLite／MySQL 分别使用现有连接 API 和 upsert 方言。不调用独立 ResearchStore.put 写资金。
+- [x] 增加相同 UUID 重放、UUID 内容冲突、重建存储实例后恢复，以及成交失败不创建资金记录测试。
+- [x] 用 ThreadPoolExecutor 验证同 UUID 并发只成交一次、两个不同请求抢有限现金只成功一个、并发卖出不超卖；故障注入在账户更新后、成交插入前抛异常，断言账户和记录全部回滚。
+- [x] 验证禁用账号不能写入；按 sequence 取得同秒多笔交易及分页，无重复遗漏。SQL 按 JSON 中的数值 sequence 排序与过滤，兼容两种数据库；补充 MySQL 连接替身验证 FOR UPDATE 与写入共用一连接。
+- [x] 重跑存储及规则测试，全部通过后提交 `feat: persist isolated atomic paper accounts and trades`。
 
 ### Task 3: 服务、身份 API 与生命周期
 
@@ -79,14 +79,14 @@
 
 **Interfaces:** PaperTradingService(store: PaperStore, catalog, minute_market, clock=None)。account(owner: str) -> dict；trades(owner: str, limit: int, before_seq: int | None) -> dict；async quote(code: str, refresh: bool = False) -> dict；async submit(owner: str, request_id: str, code: str, side: str, quantity: int) -> dict。clock 默认 datetime.now(SHANGHAI)。API 通过 asyncio.to_thread 执行同步数据库工作；存储回调内部重新读取 clock。
 
-- [ ] 用 TestClient 和隔离 SQLite 写 GET /api/paper/account、GET /api/paper/quote/000001、GET /api/paper/trades、POST /api/paper/trades 测试，未登录均 401；登录读接口返回 no-store 和 20 万元。
-- [ ] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_api.py' -v`，确认新增路由尚不存在导致失败。
-- [ ] 实现 PaperTradeRequest：UUID、六位 code、Literal buy/sell、严格正整数 quantity、extra forbid；接入 current_session 和 authorize_model_request，PaperError 映射为 detail、code 与状态码。
-- [ ] 在生命周期接入 PaperStore 与 PaperTradingService、注册路由；报价端点只安排现有分钟刷新，账户估值只读缓存，不调用日线 bundle、新闻或模型。
-- [ ] 写 Origin、CSRF、伪造 owner／price、布尔／小数／负股数、未知股票、历史分页参数测试；断言无效写入不改变账户。
-- [ ] 用受控时钟和行情缓存测试真实买入、同日卖出拒绝、翌日卖出、休市拒绝、过期报价拒绝及缺报价估值；断言模型／新闻 fetcher 未调用。
-- [ ] 模拟提交前行情新鲜但锁内时钟跨过 14:57，必须拒绝；成功后移动到收盘时间并重发相同 UUID，必须返回原记录。模拟认证后禁用账号，必须拒绝事务写入。
-- [ ] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_*.py' -v`，全部通过后提交 `feat: expose authenticated paper trading API`。
+- [x] 用 TestClient 和隔离 SQLite 写 GET /api/paper/account、GET /api/paper/quote/000001、GET /api/paper/trades、POST /api/paper/trades 测试，未登录均 401；登录读接口返回 no-store 和 20 万元。
+- [x] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_api.py' -v`，确认新增路由尚不存在导致失败。
+- [x] 实现 PaperTradeRequest：UUID、六位 code、Literal buy/sell、严格正整数 quantity、extra forbid；接入 current_session 和 authorize_model_request，PaperError 映射为 detail、code 与状态码。
+- [x] 在生命周期接入 PaperStore 与 PaperTradingService、注册路由；报价端点只安排现有分钟刷新，账户估值只读缓存，不调用日线 bundle、新闻或模型。
+- [x] 写 Origin、CSRF、伪造 owner／price、布尔／小数／负股数、未知股票、历史分页参数测试；断言无效写入不改变账户。
+- [x] 用受控时钟和行情缓存测试真实买入、同日卖出拒绝、翌日卖出、休市拒绝、过期报价拒绝及缺报价估值；断言模型／新闻 fetcher 未调用。
+- [x] 模拟提交前行情新鲜但锁内时钟跨过 14:57，必须拒绝；成功后移动到收盘时间并重发相同 UUID，必须返回原记录。模拟认证后禁用账号，必须拒绝事务写入。
+- [x] 运行 `.venv/bin/python -m unittest discover -s tests -p 'test_paper_*.py' -v`，全部通过后提交 `feat: expose authenticated paper trading API`。
 
 ### Task 4: 模拟盘页面与交易交互
 
@@ -94,14 +94,14 @@
 
 **Interfaces:** PaperTypes 按本计划契约声明；PaperRules 包含 board、min_quantity、quantity_step、max_quantity。estimateFees(grossFen: number, side: 'buy'|'sell') -> {commission_fen, transfer_fen, stamp_fen, fees_fen: number}，整数比率舍入；maxBuyQuantity(cashFen: number, priceFen: number, rules: PaperRules) -> number，计入费用和上限；formatMoney(fen: number | null) -> string。PaperStockSearch({ onSelect: (stock: Stock) => void })；PaperTradingPanel({ initialCode: string })，使用 useAuth、api，用户切换以 key={user?.id ?? 'guest'} 隔离。测试服务 create_app(db_path: Path) -> FastAPI，挂载同样身份／模拟盘路由及构建的 dist，使用临时 SQLite、受控时钟、固定股票与行情；测试专属时钟控制仅存在于测试模块，服务仅监听 127.0.0.1。
 
-- [ ] 写前端费用／最大可买量测试：10 元 ×100 股费用 501 分；20 万余额可以买入 100 股 ×1338 元，但余额不足时返回 0；科创板最小 200 股、可买 201 股，且均计入费用。Node 通过 TypeScript strip types 引入独立 math 文件。
-- [ ] 运行 `node --test tests/paper_math.test.mjs`，确认缺失实现失败。
-- [ ] 实现类型和 math 辅助函数，不在前端累积真实余额；实现股票搜索的取消、去抖和错误展示，仅调用 /api/stocks。
-- [ ] 实现账户、持仓、成交记录、股票报价、买卖表单和简明规则；休市或报价无效时禁用下单；显示费用、可买／可卖股数和锁定数量。提交期间锁定表单，网络结果未知时保留意图与原 UUID，可重试或查询历史核对，不能自动用新 UUID 再下单。
-- [ ] 在 App 接入模拟盘导航、标题和按账号挂载；加入主题变量样式、表格横向滚动、表单标签、状态／错误可访问反馈。报价轮询遵守 next_poll_seconds，切换标的和卸载取消旧请求；账户与成交分页分别维护加载状态。
-- [ ] 写浏览器脚本，启动 tests/paper_ui_server.py 隔离服务，用本地 API 场景检查 20 万显示、选股、买入成功、T+1 禁售、下一交易日卖出及记录；生产时间限制保持原样，只在测试服务器注入时钟。脚本支持 PAPER_UI_BASE_URL，默认 http://127.0.0.1:8012，运行 `node tests/paper_ui.mjs`，失败退出非零并保留截图；测试服务命令 `.venv/bin/python tests/paper_ui_server.py --port 8012`。
-- [ ] 浏览器模拟丢失一次成功成交响应，重试必须携带原 UUID 且只存在一笔成交；快速切换股票时旧报价不得覆盖，退出及切换账号不得显示旧持仓。
-- [ ] 运行 Node 测试、`npm run build` 和浏览器检查；检查深色、浅色、390 像素宽页面无整体横向溢出。通过后提交 `feat: add themed 200k paper trading workspace`。
+- [x] 写前端费用／最大可买量测试：10 元 ×100 股费用 501 分；20 万余额可以买入 100 股 ×1338 元，但余额不足时返回 0；科创板最小 200 股、可买 201 股，且均计入费用。Node 通过 TypeScript strip types 引入独立 math 文件。
+- [x] 运行 `node --test tests/paper_math.test.mjs`，确认缺失实现失败。
+- [x] 实现类型和 math 辅助函数，不在前端累积真实余额；实现股票搜索的取消、去抖和错误展示，仅调用 /api/stocks。
+- [x] 实现账户、持仓、成交记录、股票报价、买卖表单和简明规则；休市或报价无效时禁用下单；显示费用、可买／可卖股数和锁定数量。提交期间锁定表单，网络结果未知时保留意图与原 UUID，可重试或查询历史核对，不能自动用新 UUID 再下单。
+- [x] 在 App 接入模拟盘导航、标题和按账号挂载；加入主题变量样式、表格横向滚动、表单标签、状态／错误可访问反馈。报价轮询遵守 next_poll_seconds，切换标的和卸载取消旧请求；账户与成交分页分别维护加载状态。
+- [x] 写浏览器脚本，启动 tests/paper_ui_server.py 隔离服务，用本地 API 场景检查 20 万显示、选股、买入成功、T+1 禁售、下一交易日卖出及记录；生产时间限制保持原样，只在测试服务器注入时钟。脚本支持 PAPER_UI_BASE_URL，默认 http://127.0.0.1:8012，运行 `node tests/paper_ui.mjs`，失败退出非零并保留截图；测试服务命令 `.venv/bin/python tests/paper_ui_server.py --port 8012`。
+- [x] 浏览器模拟丢失一次成功成交响应，重试必须携带原 UUID 且只存在一笔成交；快速切换股票时旧报价不得覆盖，退出及切换账号不得显示旧持仓。
+- [x] 运行 Node 测试、`npm run build` 和浏览器检查；检查深色、浅色、390 像素宽页面无整体横向溢出。通过后提交 `feat: add themed 200k paper trading workspace`。
 
 ### Task 5: 整体验证、说明与服务器发布
 
