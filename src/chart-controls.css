@@ -1,0 +1,292 @@
+/* Keep the compact quote header visible while its chart tools float above the card. */
+.live-quote {
+  position: relative;
+  overflow: visible;
+}
+
+.chart-controls {
+  --chart-menu-muted: var(--theme-toggle-text, #526276);
+  position: relative;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.chart-controls button {
+  font-family: inherit;
+}
+
+.chart-controls-trigger,
+.chart-controls-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--chart-menu-muted);
+  background: transparent;
+}
+
+.chart-controls-trigger:hover,
+.chart-controls-close:hover {
+  background: var(--theme-hover, #edf3f2);
+  color: var(--theme-text, #202a3a);
+}
+
+.chart-controls-trigger.is-collapsed {
+  background: var(--theme-raised, #f0f3f7);
+  border-color: var(--theme-border, #e3e8ef);
+}
+
+.chart-controls-trigger[aria-expanded="true"] {
+  background: var(--theme-accent-soft, #eaf5f1);
+  border-color: var(--theme-accent-border, #c9e3db);
+  color: var(--theme-accent-text, #16856f);
+}
+
+.chart-controls button:focus-visible {
+  outline: 2px solid var(--theme-focus, #16856f);
+  outline-offset: 2px;
+}
+
+.chart-controls-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: min(320px, calc(100vw - 64px));
+  max-height: min(650px, calc(100dvh - 80px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid var(--theme-border, #e3e8ef);
+  border-radius: 10px;
+  background: var(--theme-panel, #ffffff);
+  color: var(--theme-text, #202a3a);
+  box-shadow: 0 12px 36px #16223720, 0 2px 8px #1622370d;
+  text-align: left;
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border, #e3e8ef) transparent;
+}
+
+.live-quote .chart-controls-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.chart-controls-heading strong {
+  color: var(--theme-heading, var(--theme-text, #202a3a));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.chart-controls-close {
+  width: 24px;
+  height: 24px;
+  margin: -3px -3px -3px 0;
+}
+
+.chart-visibility-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 9px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--theme-border, #e3e8ef);
+  border-radius: 7px;
+  background: var(--theme-raised, #f0f3f7);
+  color: var(--theme-text, #202a3a);
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chart-visibility-action > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--theme-accent-text, #16856f);
+}
+
+.chart-visibility-action > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.chart-visibility-action small {
+  display: block;
+  margin-top: 3px;
+  color: var(--chart-menu-muted);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.chart-visibility-action > small {
+  flex-basis: calc(100% - 23px);
+  margin: 0 0 0 23px;
+}
+
+.chart-visibility-action:hover {
+  background: var(--theme-hover, #edf3f2);
+  border-color: var(--theme-accent-border, #c9e3db);
+}
+
+.chart-control-group {
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.chart-control-group > legend {
+  display: block;
+  width: 100%;
+  margin-bottom: 7px;
+  padding: 0;
+  color: var(--chart-menu-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.chart-control-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.chart-control-options > button {
+  min-width: 0;
+  min-height: 29px;
+  padding: 5px 6px;
+  border: 1px solid var(--theme-border, #e3e8ef);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--chart-menu-muted);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.chart-control-options > button:hover {
+  background: var(--theme-hover, #edf3f2);
+  color: var(--theme-text, #202a3a);
+}
+
+.chart-control-options > button:is([aria-pressed="true"], [data-active="true"], .active) {
+  border-color: var(--theme-accent-border, #c9e3db);
+  background: var(--theme-accent-soft, #eaf5f1);
+  color: var(--theme-accent-text, #16856f);
+  font-weight: 500;
+}
+
+.chart-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 9px;
+  border-radius: 6px;
+  color: var(--theme-text, #202a3a);
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.chart-menu-action > svg {
+  flex-shrink: 0;
+  color: var(--chart-menu-muted);
+}
+
+.chart-menu-action:hover {
+  background: var(--theme-hover, #edf3f2);
+}
+
+.chart-menu-action:disabled {
+  opacity: .55;
+}
+
+.chart-controls-note {
+  margin-top: 9px;
+  padding-top: 10px;
+  border-top: 1px solid var(--theme-border, #e3e8ef);
+  color: var(--chart-menu-muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.live-quote .chart-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  min-height: 32px;
+  padding: 10px 24px 0;
+  border-top: 1px solid var(--theme-border, #e3e8ef);
+  color: var(--theme-toggle-text, #526276);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.live-quote .chart-footer {
+  height: auto;
+  min-height: 36px;
+  gap: 6px 15px;
+  flex-wrap: wrap;
+  padding: 9px 24px;
+  color: var(--theme-toggle-text, #526276);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.live-quote .chart-footer > span:nth-child(2) {
+  font-size: inherit;
+}
+
+:root[data-theme="dark"] .chart-controls {
+  --chart-menu-muted: var(--theme-muted, #9ba6b8);
+}
+
+:root[data-theme="dark"] .chart-controls-popover {
+  box-shadow: 0 16px 40px #00000066, 0 2px 10px #00000033;
+}
+
+@media (max-width: 760px) {
+  .chart-controls-trigger {
+    width: 32px;
+    height: 32px;
+  }
+
+  .chart-controls-popover {
+    padding: 12px;
+  }
+
+  .chart-control-options > button {
+    min-height: 32px;
+  }
+
+  .live-quote .chart-context {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .live-quote .chart-footer {
+    padding-right: 18px;
+    padding-left: 18px;
+    font-size: 9px;
+  }
+}
