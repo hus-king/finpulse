@@ -245,8 +245,12 @@ class ResearchTests(unittest.TestCase):
         owner = 'test-owner'
         self.store.put('watchlist', 'list', ['600519'], owner)
         self.store.put('dashboard', '600519', {'news': [{'id': 'n', 'title': '<script>evil</script>', 'url': 'https://example.com/n', 'time': '2026-09-30', 'score': 0}], 'as_of': '2026-09-30'})
-        digest = build_briefing(self.store, owner)
+        # Keep the fixture inside the lookback window regardless of the run date.
+        with patch('backend.recommendations.datetime', wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 6, 10, tzinfo=SHANGHAI)
+            digest = build_briefing(self.store, owner)
         self.assertNotIn('<script>', digest['html'])
+        self.assertIn('&lt;script&gt;evil&lt;/script&gt;', digest['html'])
         self.assertIn('https://example.com/n', digest['html'])
 
     def test_forward_returns_use_next_trading_close_without_lookahead(self):
