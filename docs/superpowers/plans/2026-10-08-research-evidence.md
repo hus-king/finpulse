@@ -31,3 +31,8 @@ Spec: approved four-part design in the preceding conversation, with permission t
 
 ## Progress
 - Native worktree API cannot identify nested repo; isolated ignored git worktree created at `.runtime/research-evidence` from `1a3fa1f`; user changes remain outside it.
+- Tasks 1–4 complete: 185 local tests pass; TypeScript/Vite build passes. First candidate server full 180 tests pass (165.268s).
+- Independent reviewer ran 39 focused tests and identified stale business context reuse, raw/paid budget overlap and insufficient factors promoted to opportunities. Added failing regression tests and fixed all three; preserved unchanged-context stale/manual analysis behavior. Date/source-quality changes now also invalidate model cache.
+- Ruling: use deterministic per-event overview in this first release rather than an additional paid synthesis model; it preserves source links and conflicting effects, but is not an independently forecast-validated company rating.
+- Ruling: retain explicit unknown revenue segments; provider supplies verified main-business descriptions only. Do not fabricate proportions.
+- Real server probe: 8 old saved news documents across oil/rail/liquor/semiconductor produced positive +10/+40, negative -5/-25, true neutral 0, mixed null, insufficient null. This validates structured behavior and evidence distinctions, not predictive accuracy. Final deployment and broader live refresh remain.

@@ -233,7 +233,7 @@ async def analyze_saved(code: str, news_id: str, response: Response, user=Depend
             if not item:
                 raise HTTPException(404, '新闻不存在或已更新，请刷新列表。')
             reply = await research.analyze_document({**dashboard['stock'], 'industry_profile': dashboard.get('industry_profile'), 'business_profile':dashboard.get('business_profile')}, item)
-            item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'], analysis_prompt_version=reply['prompt_version'])
+            item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'], analysis_prompt_version=reply['prompt_version'], analysis_context_key=reply['context_key'])
             from .research import forward_returns
             dashboard['backtest'] = forward_returns(dashboard['news'], dashboard['candles'])
             await asyncio.to_thread(research.store.put, 'dashboard', code, dashboard)

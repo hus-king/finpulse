@@ -14,12 +14,15 @@ def rank_events(news):
 
 
 def build_overview(news):
-    counts = dict.fromkeys(('positive', 'negative', 'neutral', 'mixed', 'insufficient', 'legacy', 'pending'), 0)
+    counts = dict.fromkeys(('positive', 'negative', 'neutral', 'mixed', 'insufficient', 'legacy', 'pending', 'stale'), 0)
     opportunities, risks, watch, directional = [], [], [], []
     for row in rank_events(news):
         analysis = row.get('analysis') or {}
         if row.get('analysis_status') != 'completed':
             counts['pending'] += 1
+            continue
+        if row.get('stale') or row.get('refresh_pending'):
+            counts['stale'] += 1
             continue
         if analysis.get('version') != PROMPT_VERSION:
             counts['legacy'] += 1
@@ -28,6 +31,8 @@ def build_overview(news):
         counts[state] += 1
         base = {'news_id': row['id'], 'title': row['title'], 'url': row.get('url'), 'score': analysis['sentiment_score'], 'confidence': analysis['confidence'], 'horizon': analysis['horizon']}
         for field, target in (('positive_factors', opportunities), ('negative_factors', risks), ('watch_points', watch)):
+            if field == 'positive_factors' and state not in ('positive','mixed') or field == 'negative_factors' and state not in ('negative','mixed'):
+                continue
             for text in analysis[field]:
                 if text not in [item['text'] for item in target]:
                     target.append({**base, 'text': text})

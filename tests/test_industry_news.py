@@ -288,6 +288,33 @@ class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(impacts['600028']['stale'])
         self.assertIn('中国石油（沿用上次材料）', digest['html'])
 
+    async def test_changed_business_context_does_not_reuse_stale_analysis(self):
+        first=await self.collect()
+        old=next(row for row in first['news'] if row['news_scope']=='industry')
+        self.store.put('company_business',STOCK['code'],{})
+        self.service.industry_news.clock=lambda:time.time()+1801
+        with patch('backend.providers.business_profile',new=AsyncMock(return_value={'code':STOCK['code'],'main_business':'完全不同的上游开采业务','source':'test'})):
+            result=await self.collect(source_error=ProviderError('行业查询暂不可用'))
+        stale=next(row for row in result['news'] if row['url']==old['url'])
+        self.assertIsNone(stale.get('analysis'))
+        self.assertIsNone(stale.get('score'))
+
+    async def test_raw_and_paid_extraction_share_twelve_document_budget(self):
+        day=datetime.now(SHANGHAI).date().isoformat()
+        rows=[news(title=f'中国石油公告中标订单{i}' if i>=8 else f'中国石油盘中行情{i}',url=f'https://example.com/company-{i}',day=day,
+                   content='中国石油订单增长，企业公布经营进展，更多详细资料需要核验。',
+                   **({'raw_content':'中国石油订单增长，企业公布经营进展，新建生产线投产并扩大产能。'} if i>=8 else {})) for i in range(16)]
+        gate=asyncio.Event()
+        async def delayed_profile(stock):
+            await gate.wait()
+            return {**STOCK,'industry':'石油行业','status':'ok'}
+        async def extract(endpoint,payload):
+            gate.set()
+            return {'results':[{'url':url,'raw_content':'中国石油订单增长，企业公布经营进展，新建生产线投产并扩大产能。'} for url in payload.get('urls',[])]}
+        with patch.object(self.service.industry_news,'profile',new=AsyncMock(side_effect=delayed_profile)), patch('backend.providers.search_news',new=AsyncMock(return_value={'results':rows})), patch('backend.providers.akshare_news',new=AsyncMock(return_value={'results':[]})), patch('backend.providers.search_industry_news',new=AsyncMock(return_value={'results':[]})), patch('backend.providers.daily_market',new=AsyncMock(return_value={'candles':[],'price':None})), patch('backend.providers.tavily',new=AsyncMock(side_effect=extract)):
+            result=await self.service.collect(STOCK['code'],7,3,False)
+        self.assertLessEqual(result['pipeline']['counts']['extracted'],12)
+
 
 class IndustryRuleTests(unittest.TestCase):
     def test_unknown_specialization_has_generic_queries(self):

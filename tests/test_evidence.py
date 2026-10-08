@@ -43,3 +43,19 @@ class EvidenceTests(unittest.TestCase):
         from backend.evidence import rank_events
         rows = [{'id':'price','title':'今日盘中突破年线个股','time':'2026-10-08','text_source':'search_fragments'}, {'id':'order','title':'公司公告签署重大订单','time':'2026-10-06','text_source':'extracted_body','date_status':'body_verified'}]
         self.assertEqual(rank_events(rows)[0]['id'], 'order')
+
+    def test_insufficient_potential_factors_are_not_promoted_to_company_opportunities(self):
+        from backend.evidence import build_overview
+        row={'id':'missing','title':'行业需求变化','analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION,'assessment':'insufficient','sentiment_score':None}}
+        overview=build_overview([row])
+        self.assertEqual(overview['opportunities'],[])
+        self.assertEqual(overview['status'],'insufficient')
+        self.assertTrue(overview['watch_points'])
+
+    def test_stale_analysis_is_not_part_of_current_company_direction(self):
+        from backend.evidence import build_overview
+        row={'id':'old','title':'上次事件','stale':True,'analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION}}
+        overview=build_overview([row])
+        self.assertEqual(overview['status'],'insufficient')
+        self.assertEqual(overview['opportunities'],[])
+        self.assertEqual(overview['counts']['stale'],1)

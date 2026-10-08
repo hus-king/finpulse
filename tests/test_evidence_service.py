@@ -52,3 +52,10 @@ class EvidenceServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(item['components']['重要性'],20)
         missing=next(row for row in digest['recommendations'] if row['id']=='missing')
         self.assertEqual(missing.get('score_label'),'待补证')
+
+    async def test_corrected_publication_date_and_material_quality_invalidate_analysis(self):
+        self.stock['business_profile']={'main_business':'炼油','status':'ok'}
+        await self.service.analyze_document(self.stock,self.item)
+        for change in ({'time':'2020-01-01'},{'text_source':'search_fragments'},{'date_status':'metadata_only'}):
+            await self.service.analyze_document(self.stock,{**self.item,**change})
+        self.assertEqual(self.model.await_count,4)

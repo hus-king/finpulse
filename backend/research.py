@@ -32,6 +32,19 @@ def fingerprint(*parts):
     return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
 
 
+def analysis_context(stock, item, profile, business):
+    return {'news_scope':item.get('news_scope','company'), 'industry':item.get('industry'),
+            'related_factors':item.get('related_factors',[]), 'relevance_reason':item.get('relevance_reason',''),
+            'industry_profile':{key:profile.get(key) for key in ('industry','source','version','note')},
+            'business_profile':{key:business.get(key) for key in ('main_business','revenue_segments','source','url','version','status','fetched_at','note')}}
+
+
+def analysis_cache_key(stock, item, context):
+    return fingerprint(stock['code'], item['title'], item['content'][:10000], item.get('time',''),
+                       item.get('date_status',''),item.get('text_source',''),json.dumps(context,ensure_ascii=False,sort_keys=True),
+                       PROMPT_VERSION,providers.read_config().get('model',''))
+
+
 def news_documents(code, cleaned):
     items = sorted(cleaned['items'], key=lambda row: (row['effective_date'], row['tier'] == 'company', row.get('search_relevance') or 0), reverse=True)
     return [{'id': fingerprint(code, item['url'])[:32], 'title': item['title'], 'source': urlsplit(item['url']).hostname,
@@ -189,16 +202,12 @@ class ResearchService:
         content = item['content'][:10000]
         profile = stock.get('industry_profile') or (await asyncio.to_thread(self.store.get, 'stock_industry', stock['code'], default={})).get('data') or {}
         profile = {**profile, 'version': profile.get('version') or PROFILE_VERSION, 'note': profile.get('note') or PROFILE_NOTE}
-        relation_context = {'news_scope': item.get('news_scope', 'company'), 'industry': item.get('industry'),
-                            'related_factors': item.get('related_factors', []), 'relevance_reason': item.get('relevance_reason', ''),
-                            'industry_profile': {key: profile.get(key) for key in ('industry', 'source', 'version', 'note')}}
         business = stock.get('business_profile') or await self.industry_news.business(stock)
-        business_context = {key: business.get(key) for key in ('main_business', 'revenue_segments', 'source', 'url', 'version', 'status', 'fetched_at', 'note')}
-        relation_context['business_profile'] = business_context
-        key = fingerprint(stock['code'], item['title'], content, json.dumps(relation_context, ensure_ascii=False, sort_keys=True), PROMPT_VERSION, providers.read_config().get('model', ''))
+        relation_context = analysis_context(stock,item,profile,business)
+        key = analysis_cache_key(stock,item,relation_context)
         cached = await asyncio.to_thread(self.store.get, 'analysis', key)
         if cached:
-            return {**cached, 'cached': True}
+            return {**cached, 'context_key':key, 'cached': True}
         payload = {'stock_name': stock['name'], 'stock_code': stock['code'], 'exchange': stock['exchange'], 'title': item['title'], 'content': content, 'category': item.get('tag'), 'published_date': item['time'], 'url': item['url'], 'text_source': item['text_source'], 'date_status': item['date_status'], 'analysis_time': now_iso(), **relation_context}
         messages = [{'role': 'system', 'content': NEWS_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
         for attempt in range(2):
@@ -206,7 +215,7 @@ class ResearchService:
             try:
                 analysis = parse_json(result['content'], EvidenceAnalysis)
                 analysis['version'] = PROMPT_VERSION
-                reply = {**result, 'analysis': analysis, 'prompt_version': PROMPT_VERSION, 'analyzed_at': now_iso(), 'cached': False}
+                reply = {**result, 'context_key':key, 'analysis': analysis, 'prompt_version': PROMPT_VERSION, 'analyzed_at': now_iso(), 'cached': False}
                 await asyncio.to_thread(self.store.put, 'analysis', key, reply)
                 return reply
             except (ValueError, TypeError):
@@ -230,7 +239,7 @@ class ResearchService:
         snapshot_key = uuid.uuid4().hex
 
         async def extract_documents(urls):
-            urls = [url for url in urls if url not in attempted_extracts and url not in extracts][:max(0, 12 - len(attempted_extracts))]
+            urls = [url for url in urls if url not in attempted_extracts and url not in extracts][:max(0, 12 - len(attempted_extracts | set(extracts)))]
             if not urls:
                 return
             attempted_extracts.update(urls)
@@ -352,7 +361,7 @@ class ResearchService:
                         candidates[url] = {**row, 'id': url, 'news_scope': group.get('news_scope', 'company')}
             chosen = select_analyses(rank_events(list(candidates.values())), 12)
             for row in chosen:
-                if row.get('raw_content') and len(extracts) < 12:
+                if row.get('raw_content') and (row['id'] in attempted_extracts | set(extracts) or len(attempted_extracts | set(extracts)) < 12):
                     extracts.setdefault(row['id'], row['raw_content'])
             urls = [row['id'] for row in chosen]
             await extract_documents(urls)
@@ -360,11 +369,15 @@ class ResearchService:
             if any(row['text_stats'].get('extraction_mismatch') for row in cleaned['items']):
                 warnings.append('部分页面正文与标题主题不匹配，已降级为搜索片段')
             news = news_documents(code, cleaned)
+            await workers[4]
+            context_stock = {**stock,'industry_profile':result.get('industry_profile'),'business_profile':result.get('business_profile')}
+            def current_context(article):
+                return analysis_cache_key(stock,article,analysis_context(stock,article,result.get('industry_profile') or {},result.get('business_profile') or {}))
             old_by_url = {row.get('url'): row for row in previous.get('news', [])}
             for article in news:
                 old = old_by_url.get(article['url'])
-                if article['stale'] and old and old.get('analysis_prompt_version') == PROMPT_VERSION and all(old.get(key) == article.get(key) for key in ('content', 'time', 'news_scope', 'industry', 'related_factors', 'relevance_reason')):
-                    article.update({key: old[key] for key in ('analysis', 'score', 'analysis_status', 'analyzed_at', 'model', 'analysis_prompt_version') if key in old})
+                if article['stale'] and old and old.get('analysis_prompt_version') == PROMPT_VERSION and old.get('analysis_context_key') == current_context(article) and all(old.get(key) == article.get(key) for key in ('content', 'time', 'news_scope', 'industry', 'related_factors', 'relevance_reason')):
+                    article.update({key: old[key] for key in ('analysis', 'score', 'analysis_status', 'analyzed_at', 'model', 'analysis_prompt_version', 'analysis_context_key') if key in old})
             company_failed = all(statuses.get(name) == 'error' for name in ('tavily', 'akshare_news'))
             industry_failed = statuses.get('industry_news') in ('partial', 'unavailable')
             known_urls = {row['url'] for row in news}
@@ -382,7 +395,10 @@ class ResearchService:
                 warnings.append('行业新闻更新不完整，保留检索区间内的上次行业结果并标记')
             result['news'] = news
             stages['news'] = 'ready' if searches else 'failed'
-            await workers[4]
+            for article in news:
+                if article.get('stale') and article.get('analysis') and article.get('analysis_context_key') != current_context(article):
+                    article.update(analysis=None,score=None,analysis_status='pending')
+                    article.pop('analysis_context_key',None)
             selected = select_analyses(rank_events([row for row in news if not row.get('stale')]), maximum)
             stages['analysis'] = 'running' if selected else 'completed'
             for article in selected:
@@ -397,8 +413,8 @@ class ResearchService:
             async def analyze(article):
                 async with analysis_capacity:
                     try:
-                        reply = await self.analyze_document({**stock, 'industry_profile': result.get('industry_profile'), 'business_profile':result.get('business_profile')}, article)
-                        article.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', model=reply['model'], analyzed_at=reply['analyzed_at'], cached=reply['cached'], analysis_prompt_version=PROMPT_VERSION)
+                        reply = await self.analyze_document(context_stock, article)
+                        article.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', model=reply['model'], analyzed_at=reply['analyzed_at'], cached=reply['cached'], analysis_prompt_version=PROMPT_VERSION, analysis_context_key=reply['context_key'])
                         result['pipeline']['counts']['analyzed'] += 1
                     except Exception as exc:
                         detail = exc.detail if isinstance(exc, HTTPException) else 'AI 新闻研判失败（' + type(exc).__name__ + '）'
