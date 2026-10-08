@@ -371,3 +371,21 @@ class IndustryServiceTests(unittest.IsolatedAsyncioTestCase):
             requests[0].cancel()
             await asyncio.gather(*requests, return_exceptions=True)
         self.assertLessEqual(peak, 2)
+
+    async def test_industry_search_respects_mysql_record_key_limit(self):
+        # SQLite accepts longer keys; production research_records.record_key is
+        # VARCHAR(64). Reproduce that schema contract on every lease operation.
+        original = {name: getattr(self.store, name) for name in ('claim', 'release')}
+        def bounded(name):
+            def invoke(key, *args):
+                self.assertLessEqual(len(key), 64, 'MySQL record_key overflow')
+                return original[name](key, *args)
+            return invoke
+        with patch.object(self.store, 'claim', side_effect=bounded('claim')), \
+             patch.object(self.store, 'release', side_effect=bounded('release')), \
+             patch('backend.providers.search_industry_news', new=AsyncMock(return_value={'results': [news()]})) as source:
+            result = await self.service.search(build_topics('炼化及贸易')[1], '2026-09-08', '2026-10-08')
+            self.assertEqual(result['status'], 'ok')
+            self.assertEqual(len(result['response']['results']), 1)
+            source.assert_awaited_once()
+        self.assertEqual(self.store.list('lease'), [])

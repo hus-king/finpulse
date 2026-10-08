@@ -37,7 +37,10 @@ class IndustryNewsService:
 
     async def _refresh(self, namespace, key, fetcher, ttl):
         token = None
-        lease_key = namespace + ':' + key
+        # MySQL research_records.record_key is VARCHAR(64); the search key
+        # already occupies 64 characters. Hash namespace + key as one identity
+        # so claim/release share a bounded, collision-resistant lease key.
+        lease_key = hashlib.sha256((namespace + ':' + key).encode()).hexdigest()
         try:
             record = await asyncio.to_thread(self.store.get, namespace, key, default={})
             if self._fresh(record, ttl):

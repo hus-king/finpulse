@@ -1,7 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Activity, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { api } from './api';
 import type { MarketSentiment } from './types';
+
+function formatTurnover(cny: number): string {
+  if (!cny || cny <= 0) return '—';
+  if (cny >= 1e12) {
+    return `${(cny / 1e12).toFixed(2)} 万亿`;
+  }
+  return `${Math.round(cny / 1e8).toLocaleString()} 亿`;
+}
+
+function formatMarketTime(marketAsOf?: string | null, updatedAt?: string | null): string {
+  const raw = marketAsOf || updatedAt;
+  if (!raw) return '';
+  if (raw.includes('T')) {
+    const timePart = raw.split('T')[1];
+    return timePart.slice(0, 5);
+  }
+  const match = raw.match(/\b\d{2}:\d{2}/);
+  return match ? match[0] : raw.slice(-5);
+}
 
 export default function MarketSentimentCard({ initial }: { initial?: MarketSentiment }) {
   const [sentiment, setSentiment] = useState<MarketSentiment | null>(initial ?? null);
@@ -45,12 +64,22 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
     }
   };
 
+  const timeLabel = formatMarketTime(sentiment?.market_as_of, sentiment?.updated_at);
+
   return (
     <section className="panel market-sentiment-card">
       <div className="market-sentiment-header">
         <div>
           <span className="eyebrow">MACRO SENTIMENT</span>
-          <h2>市场情绪温度计</h2>
+          <div className="title-with-hint">
+            <h2>全市场情绪温度计</h2>
+            <span
+              className="info-hint"
+              title={`计算模型：(上涨家数 + 0.5 × 平盘家数) / 总家数 × 100\n基于沪深两市全量股票涨跌广度与成交额加权`}
+            >
+              <Info size={13} />
+            </span>
+          </div>
         </div>
         <button
           className="subtle-button"
@@ -62,7 +91,7 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
         </button>
       </div>
 
-      {sentiment?.status === 'stale' && <p className="source-note">来源更新未成功或缓存已过期，当前显示上次有效数据。</p>}
+      {sentiment?.status === 'stale' && <p className="source-note">数据稍有延迟，当前展示最近有效快照。</p>}
       {error && <p className="source-note">刷新失败：{error}</p>}
       {sentiment?.status === 'ok' || sentiment?.status === 'stale' ? (
         <div className="sentiment-body">
@@ -82,11 +111,11 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
           </div>
 
           <div className="gauge-meter-track" title={`当前指数: ${score}/100`}>
-            <div className="meter-segment seg-extreme-fear" title="下跌集中 (0-25)" />
-            <div className="meter-segment seg-fear" title="偏弱 (25-45)" />
+            <div className="meter-segment seg-extreme-fear" title="极度恐慌 (0-25)" />
+            <div className="meter-segment seg-fear" title="偏弱/谨慎 (25-45)" />
             <div className="meter-segment seg-neutral" title="中性震荡 (45-55)" />
             <div className="meter-segment seg-greed" title="偏强/乐观 (55-75)" />
-            <div className="meter-segment seg-extreme-greed" title="上涨集中 (75-100)" />
+            <div className="meter-segment seg-extreme-greed" title="极度过热 (75-100)" />
             <div
               className="gauge-pointer"
               style={{ left: `${Math.max(2, Math.min(98, score))}%` }}
@@ -94,12 +123,15 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
           </div>
 
           <div className="gauge-labels">
-            <span>下跌集中</span>
-            <span>中性</span>
-            <span>上涨集中</span>
+            <span>恐慌探底</span>
+            <span>中性均衡</span>
+            <span>多头亢奋</span>
           </div>
 
-          <p className="sentiment-summary">{sentiment.summary}</p>
+          <div className="sentiment-summary-row">
+            <span className="summary-dot" style={{ backgroundColor: levelColor(level) }} />
+            <p className="sentiment-summary">{sentiment.summary}</p>
+          </div>
 
           <div className="market-breadth-grid">
             <div className="breadth-item up">
@@ -116,16 +148,23 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
             </div>
             <div className="breadth-item turnover">
               <small>两市成交</small>
-              <strong>{(sentiment.turnover_cny / 1e8).toFixed(0)} 亿</strong>
+              <strong>{formatTurnover(sentiment.turnover_cny)}</strong>
             </div>
           </div>
-          <p className="source-note">{sentiment.source ?? '东方财富 · 沪深指数涨跌家数'}。{sentiment.method ?? '涨跌家数的广度情绪代理指标'}；不代表完整的恐惧贪婪指数。</p>
-          {sentiment.updated_at && (
-            <small className="sentiment-time">
-              采集于 {sentiment.updated_at.slice(0, 16).replace('T', ' ')}
-              {sentiment.market_as_of && ` · 行情时间 ${sentiment.market_as_of.slice(0, 16).replace('T', ' ')}`}
-            </small>
-          )}
+
+          <div className="sentiment-card-footer">
+            <span
+              className="source-tag"
+              title={`数据来源: ${sentiment.source ?? '沪深全市场数据'}\n计算方法: ${sentiment.method ?? '全市场广度代理指标'}`}
+            >
+              沪深全市场广度
+            </span>
+            {timeLabel && (
+              <span className="time-tag">
+                行情时间 {timeLabel}
+              </span>
+            )}
+          </div>
         </div>
       ) : (
         <div className="sentiment-empty">

@@ -34,13 +34,16 @@ body{min-width:320px;overflow-x:hidden}.finance-shell{min-height:100vh}button:di
 /* Market breadth sentiment card */
 .market-sentiment-card{padding:22px 20px}
 .market-sentiment-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
-.market-sentiment-header .eyebrow{font-size:7px;letter-spacing:1.7px;color:#8eada2}
-.market-sentiment-header h2{font-size:14px;font-weight:600;margin-top:2px}
+.market-sentiment-header .eyebrow{font-size:9px;letter-spacing:1.6px;color:#8eada2;font-weight:600}
+.title-with-hint{display:flex;align-items:center;gap:6px;margin-top:2px}
+.title-with-hint h2{font-size:15px;font-weight:600;margin:0;color:var(--theme-text)}
+.info-hint{display:inline-flex;align-items:center;color:#6b7f94;cursor:help;transition:color .15s}
+.info-hint:hover{color:var(--theme-accent, #48b89f)}
 .gauge-display{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 10px}
 .gauge-score-wrap{display:flex;align-items:baseline;gap:4px}
 .gauge-score{font:600 36px Consolas,monospace;line-height:1}
 .gauge-max{font-size:11px;color:#98a5b3}
-.sentiment-level-badge{padding:3px 9px;border:1px solid currentColor;border-radius:12px;font-size:11px;font-weight:600;background:var(--theme-raised)}
+.sentiment-level-badge{padding:3px 10px;border:1px solid currentColor;border-radius:12px;font-size:11px;font-weight:600;background:var(--theme-raised)}
 .gauge-meter-track{position:relative;height:7px;border-radius:4px;display:flex;background:var(--theme-raised);overflow:visible;margin:12px 0 6px}
 .meter-segment{flex:1;height:100%}
 .meter-segment:first-child{border-top-left-radius:4px;border-bottom-left-radius:4px}
@@ -50,18 +53,23 @@ body{min-width:320px;overflow-x:hidden}.finance-shell{min-height:100vh}button:di
 .seg-neutral{background:#cbd5e1}
 .seg-greed{background:#f87171}
 .seg-extreme-greed{background:#dc2626}
-.gauge-pointer{position:absolute;top:-4px;width:3px;height:15px;background:var(--theme-text);border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,0.35);transform:translateX(-50%);transition:left .3s ease}
+.gauge-pointer{position:absolute;top:-4px;width:3px;height:15px;background:#ffffff;border-radius:2px;box-shadow:0 0 5px rgba(0,0,0,0.5);transform:translateX(-50%);transition:left .3s ease;z-index:2}
 .gauge-labels{display:flex;justify-content:space-between;font-size:9px;color:#94a3b8;margin-bottom:12px}
-.sentiment-summary{font-size:11px;line-height:1.7;color:var(--theme-muted);margin:10px 0}
-.market-breadth-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;padding:11px 13px;background:var(--theme-raised);border:1px solid var(--theme-border);border-radius:8px;margin-top:12px}
+.sentiment-summary-row{display:flex;align-items:center;gap:7px;margin:10px 0 12px;padding:5px 8px;background:var(--theme-raised);border-radius:6px}
+.summary-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.sentiment-summary{font-size:11px;line-height:1.5;color:var(--theme-text);margin:0}
+.market-breadth-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;padding:12px 14px;background:var(--theme-raised);border:1px solid var(--theme-border);border-radius:8px;margin-top:6px}
 .breadth-item{display:flex;justify-content:space-between;align-items:center;font-size:11px}
-.breadth-item small{color:#8b9aa8}
-.breadth-item strong{font-family:Consolas,monospace;font-size:11px}
+.breadth-item small{color:#7f91a3;font-size:11px}
+.breadth-item strong{font-family:Consolas,monospace;font-size:12px;font-weight:600}
 .breadth-item.up strong{color:var(--up)}
 .breadth-item.down strong{color:var(--down)}
-.breadth-item.neutral strong{color:#64748b}
+.breadth-item.neutral strong{color:#94a3b8}
 .breadth-item.turnover strong{color:var(--theme-text)}
-.sentiment-time{display:block;font-size:9px;color:#9aa8b8;margin-top:10px;text-align:right}
+.sentiment-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px dashed var(--theme-border);font-size:10px;color:#788899}
+.sentiment-card-footer .source-tag{cursor:help;text-decoration:underline dotted;text-underline-offset:2px}
+.sentiment-card-footer .source-tag:hover{color:var(--theme-text)}
+.sentiment-card-footer .time-tag{font-family:Consolas,monospace}
 .sentiment-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:25px 10px;color:#9eb0bf;text-align:center;gap:10px}
 .sentiment-empty p{font-size:11px;line-height:1.8;color:#7e91a2}
 
