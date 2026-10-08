@@ -67,3 +67,5 @@ Final verification: 147 tests passed in 18.019s; npm run build passed; browser v
 Follow-up authorization: 用户要求审查市场情绪和社区卡片、Git 提交推送，并通过 SSH 拉取部署。补充数据校验、失败退避、非阻塞行情、独立轮询和旧记录兼容后执行完整验证。
 
 Follow-up verification: 154 tests passed in 11.884s; final production build and git diff --check passed. Independent reviewer verified market field semantics from official source and ran 18 market/bundle tests; no remaining Important/Critical findings.
+
+Deployment finding: Linux tests passed (154 cases), but the individual quote profile host rejects server requests. Added identity-validated Eastmoney F10 classification fallback; 3 new provider tests passed, then full local suite passed (157 cases). Independent review accepted the fallback; added malformed-row validation from the minor review note.

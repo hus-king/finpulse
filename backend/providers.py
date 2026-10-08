@@ -57,13 +57,41 @@ async def search_industry_news(query, start, end):
 
 
 async def stock_profile(stock):
-    result = await akshare_worker('profile', stock['code'], '', '')
-    rows = {row.get('item'): row.get('value') for row in result.get('rows', [])}
     from .industry import valid_industry
-    if str(rows.get('股票代码', '')).strip() != stock['code'] or not valid_industry(rows.get('行业')):
-        raise ProviderError('个股资料未返回对应股票的有效行业')
-    return {'code': stock['code'], 'name': rows.get('股票简称') or stock['name'],
-            'industry': rows['行业'].strip(), 'source': 'AkShare / 东方财富个股资料'}
+    try:
+        result = await akshare_worker('profile', stock['code'], '', '')
+        rows = {row.get('item'): row.get('value') for row in result.get('rows', [])}
+        if str(rows.get('股票代码', '')).strip() != stock['code'] or not valid_industry(rows.get('行业')):
+            raise ProviderError('个股资料未返回对应股票的有效行业')
+        return {'code': stock['code'], 'name': rows.get('股票简称') or stock['name'],
+                'industry': rows['行业'].strip(), 'source': 'AkShare / 东方财富个股资料'}
+    except ProviderError:
+        # Quote hosts may reject a server network while F10 remains available.
+        # Read the provider classification; never infer it from the company name.
+        exchange = 'SH' if stock['code'].startswith('6') else 'SZ'
+        secucode = stock['code'] + '.' + exchange
+        params = {'reportName': 'RPT_F10_ORG_BASICINFO',
+                  'columns': 'SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,BOARD_NAME_1LEVEL,BOARD_NAME_2LEVEL,BOARD_NAME_3LEVEL',
+                  'filter': f'(SECUCODE="{secucode}")', 'pageNumber': 1, 'pageSize': 1, 'source': 'HSF10', 'client': 'PC'}
+        try:
+            async with httpx.AsyncClient(timeout=12) as client:
+                response = await client.get('https://datacenter.eastmoney.com/securities/api/data/v1/get', params=params)
+                response.raise_for_status()
+                payload = response.json()
+            records = payload['result']['data']
+            if payload.get('success') is not True or not isinstance(records, list) or len(records) != 1:
+                raise ValueError('Invalid F10 records')
+            row = records[0]
+            if not isinstance(row, dict):
+                raise ValueError('Invalid F10 row')
+            industry = next((row.get(key) for key in ('BOARD_NAME_2LEVEL', 'BOARD_NAME_3LEVEL', 'BOARD_NAME_1LEVEL')
+                             if valid_industry(row.get(key))), None)
+            if row.get('SECUCODE') != secucode or row.get('SECURITY_CODE') != stock['code'] or not industry:
+                raise ValueError('Invalid F10 identity or industry')
+            return {'code': stock['code'], 'name': row.get('SECURITY_NAME_ABBR') or stock['name'],
+                    'industry': industry.strip(), 'source': '东方财富 F10 公司资料（东方财富行业分类）'}
+        except (httpx.HTTPError, KeyError, TypeError, ValueError):
+            raise ProviderError('个股行业资料主源及 F10 备用源暂不可用') from None
 
 
 async def akshare_worker(kind, code, start, end, retry=True):
