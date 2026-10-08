@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, ExternalLink, FlaskConical, LoaderCircle, Search, X } from 'lucide-react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
+import { ThemeToggle } from './ThemeContext';
 import AccountMenu from './AccountMenu';
 import AdminPanel from './AdminPanel';
 import AiDrawer from './AiDrawer';
@@ -185,7 +186,7 @@ export default function App() {
   const running = collecting === code || !!job && ['queued', 'running'].includes(job.status);
   const openAssistant = useCallback((news?: Dashboard['news'][number]) => { if (data) setDrawer({ stock: data.stock, news }); }, [data]);
   return <div className="finance-shell">
-    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/"><Activity size={25} /><span>Fin<strong>Pulse</strong><small>财经研究</small></span></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票名称、代码或拼音</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
+    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/"><Activity size={25} /><span>Fin<strong>Pulse</strong><small>财经研究</small></span></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票名称、代码或拼音</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
     <nav className="finance-nav" aria-label="主导航"><div>{[{ id: 'dashboard', label: '行情与新闻' }, { id: 'briefing', label: '自选股早报' }, { id: 'lab', label: '连接状态' }, ...(user?.role === 'admin' ? [{ id: 'admin', label: '管理中心' }] : [])].map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>{item.label}</button>)}<span>沪深 A 股 · 真实股票库</span></div></nav>
     <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>历史日线收盘</span></div>{catalog.slice(0, 3).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待采集'}</small></span><strong className="mono">{number(cached?.stock.price)}</strong><span className={tone(cached?.stock.change ?? null)}>{percent(cached?.stock.change)}</span></button>; })}</div></div>
     <main className="finance-main"><div className="finance-heading"><div><p className="eyebrow">YOUR SIGNAL, IN CONTEXT</p><h1>{view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><span className="workspace-tag">LOCAL WORKSPACE <span>v0.3</span></span></div>

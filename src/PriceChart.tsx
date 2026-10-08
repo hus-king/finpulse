@@ -4,6 +4,7 @@ import { CandlestickChart, LineChart, BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, DataZoomComponent, MarkPointComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { Candle, News } from './types';
+import { useTheme } from './ThemeContext';
 
 echarts.use([CandlestickChart, LineChart, BarChart, GridComponent, TooltipComponent, DataZoomComponent, MarkPointComponent, CanvasRenderer]);
 
@@ -40,6 +41,7 @@ function rsi(values: number[], period = 14) {
 }
 
 export default function PriceChart({ candles: daily, news, mode, period, indicator, onEvent }: { candles: Candle[]; news: News[]; mode: string; period: string; indicator: string; onEvent: (id: string) => void }) {
+  const { theme } = useTheme();
   const root = useRef<HTMLDivElement>(null);
   const instance = useRef<ReturnType<typeof echarts.init> | null>(null);
   const lastView = useRef('');
@@ -57,6 +59,8 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
   useEffect(() => {
     const chart = instance.current;
     if (!chart) return;
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string) => styles.getPropertyValue(`--chart-${name}`).trim();
     const candles = period === '周 K' ? weekly(daily) : daily;
     const minute = period.endsWith('分钟');
     if (!candles.length) return;
@@ -71,7 +75,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
       let index = candles.findIndex(row => row.date >= article.time);
       if (period === '周 K') index = candles.findIndex((row, i) => row.date <= article.time && (i === candles.length - 1 ? daily.at(-1)!.date >= article.time : candles[i + 1].date > article.time));
       if (index < 0) return [];
-      return [{ name: article.title, newsId: article.id, coord: [dates[index], candles[index].high * 1.007], itemStyle: { color: article.score == null ? '#8896aa' : article.score > 0 ? '#d64a61' : article.score < 0 ? '#188475' : '#6575c5' } }];
+      return [{ name: article.title, newsId: article.id, coord: [dates[index], candles[index].high * 1.007], itemStyle: { color: article.score == null ? color('text') : article.score > 0 ? color('up') : article.score < 0 ? color('down') : color('marker-neutral') } }];
     });
     const cutoff = new Date(candles.at(-1)!.date.slice(0, 10) + 'T00:00:00Z');
     cutoff.setUTCMonth(cutoff.getUTCMonth() - (mode === '近 1 月' ? 1 : 3));
@@ -84,27 +88,27 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
     chart.setOption({
       backgroundColor: 'transparent', animation: false,
       textStyle: { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif' },
-      tooltip: { trigger: 'axis', renderMode: 'richText', axisPointer: { type: 'cross', label: { backgroundColor: '#536276' } }, backgroundColor: '#ffffff', borderColor: '#dde3eb', textStyle: { color: '#273247', fontSize: 12 } },
+      tooltip: { trigger: 'axis', renderMode: 'richText', axisPointer: { type: 'cross', label: { backgroundColor: color('crosshair') } }, backgroundColor: color('tooltip-bg'), borderColor: color('border'), textStyle: { color: color('tooltip-text'), fontSize: 12 } },
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
       grid: [{ left: 58, right: 22, top: 22, bottom: 112 }, { left: 58, right: 22, height: 58, bottom: 30 }],
       xAxis: [
-        { type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: '#dce4ed' } }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
-        { type: 'category', gridIndex: 1, data: dates, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6d7c90', fontSize: 10, formatter: (value: string) => minute ? value.slice(5, 16).replace(' ', '\n') : value.slice(5) }, splitLine: { show: false } },
+        { type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: color('border') } }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
+        { type: 'category', gridIndex: 1, data: dates, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: color('text'), fontSize: 10, formatter: (value: string) => minute ? value.slice(5, 16).replace(' ', '\n') : value.slice(5) }, splitLine: { show: false } },
       ],
       yAxis: [
-        { scale: true, splitNumber: 4, axisLabel: { color: '#748399', fontSize: 10, formatter: (v: number) => v.toFixed(v > 100 ? 0 : 2) }, splitLine: { lineStyle: { color: '#e8edf3', type: 'dashed' } }, axisLine: { show: false } },
-        { scale: indicator !== 'RSI', min: indicator === 'RSI' ? 0 : undefined, max: indicator === 'RSI' ? 100 : undefined, gridIndex: 1, splitNumber: 1, axisLabel: { color: '#6d7c90', fontSize: 9, formatter: (v: number) => indicator === 'MACD' || indicator === 'RSI' ? v.toFixed(1) : `${(v / 10000).toFixed(1)}万` }, splitLine: { show: false } },
+        { scale: true, splitNumber: 4, axisLabel: { color: color('text'), fontSize: 10, formatter: (v: number) => v.toFixed(v > 100 ? 0 : 2) }, splitLine: { lineStyle: { color: color('grid'), type: 'dashed' } }, axisLine: { show: false } },
+        { scale: indicator !== 'RSI', min: indicator === 'RSI' ? 0 : undefined, max: indicator === 'RSI' ? 100 : undefined, gridIndex: 1, splitNumber: 1, axisLabel: { color: color('text'), fontSize: 9, formatter: (v: number) => indicator === 'MACD' || indicator === 'RSI' ? v.toFixed(1) : `${(v / 10000).toFixed(1)}万` }, splitLine: { show: false } },
       ],
       dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], ...(resetZoom ? { startValue: firstVisible, endValue: candles.length - 1 } : {}), zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, preventDefaultMouseMove: false }],
       series: [
-        { name: period, type: 'candlestick', data: rows, itemStyle: { color: '#d8596d', color0: '#23a18a', borderColor: '#d8596d', borderColor0: '#23a18a' }, markPoint: { symbol: 'circle', symbolSize: 20, label: { formatter: 'N', color: '#ffffff', fontSize: 8, fontWeight: 'bold' }, data: markers } },
+        { name: period, type: 'candlestick', data: rows, itemStyle: { color: color('up'), color0: color('down'), borderColor: color('up'), borderColor0: color('down') }, markPoint: { symbol: 'circle', symbolSize: 20, label: { formatter: 'N', color: '#ffffff', fontSize: 8, fontWeight: 'bold' }, data: markers } },
         { name: 'MA5', type: 'line', data: average(candles, 5), showSymbol: false, lineStyle: { width: 1.4, color: '#e8c681' } },
         { name: 'MA10', type: 'line', data: average(candles, 10), showSymbol: false, lineStyle: { width: 1.4, color: '#7b9cf3' } },
         { name: 'MA20', type: 'line', data: average(candles, 20), showSymbol: false, lineStyle: { width: 1.4, color: '#b488dd' } },
-        ...(indicator === 'RSI' ? [{ name: 'RSI14', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: rsi(close), showSymbol: false, lineStyle: { width: 1.5, color: '#8a69c9' } }] : [{ name: indicator, type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: (indicator === 'MACD' ? macd : candles.map(row => row.volume)).map((value, i) => ({ value, itemStyle: { color: (indicator === 'MACD' ? value >= 0 : candles[i].close >= candles[i].open) ? '#d56676' : '#3a9b83', opacity: 0.7 } })) }]),
+        ...(indicator === 'RSI' ? [{ name: 'RSI14', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: rsi(close), showSymbol: false, lineStyle: { width: 1.5, color: '#8a69c9' } }] : [{ name: indicator, type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: (indicator === 'MACD' ? macd : candles.map(row => row.volume)).map((value, i) => ({ value, itemStyle: { color: (indicator === 'MACD' ? value >= 0 : candles[i].close >= candles[i].open) ? color('volume-up') : color('volume-down'), opacity: 0.7 } })) }]),
         ...(indicator === 'MACD' ? [{ name: 'DIF', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dif, showSymbol: false, lineStyle: { width: 1, color: '#e8c681' } }, { name: 'DEA', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dea, showSymbol: false, lineStyle: { width: 1, color: '#7b9cf3' } }] : []),
       ],
     }, { replaceMerge: ['series'] });
-  }, [daily, news, mode, period, indicator]);
+  }, [daily, news, mode, period, indicator, theme]);
   return <div className="price-chart" ref={root} role="img" aria-label="真实历史K线、移动均线与技术指标，Ctrl 加滚轮缩放，普通滚轮滚动页面" />;
 }

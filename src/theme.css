@@ -1,0 +1,743 @@
+/* Theme overrides are loaded after the existing light styles. */
+:root {
+  --theme-background: #f8fafc;
+  --theme-panel: #ffffff;
+  --theme-raised: #f0f3f7;
+  --theme-hover: #edf3f2;
+  --theme-text: #202a3a;
+  --theme-muted: #748297;
+  --theme-toggle-text: #526276;
+  --theme-border: #e3e8ef;
+  --theme-accent: #16856f;
+  --theme-accent-text: #16856f;
+  --theme-focus: #16856f;
+  --chart-text: #748399;
+  --chart-grid: #e8edf3;
+  --chart-border: #dce4ed;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-text: #273247;
+  --chart-crosshair: #536276;
+  --chart-up: #d8596d;
+  --chart-down: #23a18a;
+  --chart-volume-up: #d56676;
+  --chart-volume-down: #3a9b83;
+  --chart-marker-neutral: #6575c5;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  color: #d5d9e2;
+  background: #101419;
+  --theme-background: #101419;
+  --theme-panel: #181c25;
+  --theme-raised: #202632;
+  --theme-hover: #252d3a;
+  --theme-text: #d5d9e2;
+  --theme-heading: #e7eaf1;
+  --theme-muted: #9ba6b8;
+  --theme-toggle-text: #b4bfd1;
+  --theme-subtle: #8794a8;
+  --theme-border: #2a303d;
+  --theme-accent: #2962ff;
+  --theme-accent-hover: #2458e6;
+  --theme-accent-text: #86a9ff;
+  --theme-accent-soft: #1b2a4b;
+  --theme-accent-border: #354d7c;
+  --theme-focus: #86a9ff;
+  --theme-success: #52c5a4;
+  --theme-success-bg: #192e29;
+  --theme-warning: #e0b979;
+  --theme-warning-bg: #30291e;
+  --theme-warning-border: #50432e;
+  --theme-error: #ef99a5;
+  --theme-error-bg: #322129;
+  --theme-error-border: #5b3541;
+  --muted: var(--theme-muted);
+  --border: var(--theme-border);
+  --panel: var(--theme-panel);
+  --mint: var(--theme-accent-text);
+  --up: #f26978;
+  --down: #35bd96;
+  --chart-text: #9ba6b8;
+  --chart-grid: #2a303d;
+  --chart-border: #394353;
+  --chart-tooltip-bg: #242b38;
+  --chart-tooltip-text: #e7eaf1;
+  --chart-crosshair: #778499;
+  --chart-up: #f26978;
+  --chart-down: #35bd96;
+  --chart-volume-up: #c55b6a;
+  --chart-volume-down: #339d81;
+  --chart-marker-neutral: #8e9ad5;
+}
+
+/* The toggle uses the current palette in both themes. */
+button.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 7px;
+  background: var(--theme-raised);
+  color: var(--theme-toggle-text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+button.theme-toggle:hover {
+  color: var(--theme-toggle-text);
+  background: var(--theme-hover);
+  border-color: var(--theme-accent-text);
+}
+
+button.theme-toggle:focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 3px;
+}
+
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] .finance-shell {
+  background: var(--theme-background);
+}
+
+:root[data-theme="dark"] :is(.finance-header, .finance-nav, .ticker-bar) {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] :is(.panel, .admin-stats > span) {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  box-shadow: 0 2px 8px #00000012;
+}
+
+:root[data-theme="dark"] :is(.finance-brand > span, .finance-heading h1,
+  .live-quote h2, .portfolio-panel h2, .live-news h2, .live-news-list h3,
+  .research-overview h2, .community-title h2, .returns-panel h2,
+  .connection-card h2, .digest-panel h2, .subscription-panel h2,
+  .digest-section h3, .digest-sources h3, .delivery-result h3,
+  .admin-intro h2, .panel-heading h2, .daily-run-result h3,
+  .research-modal h2, .catalog-list strong, .audit-records h3) {
+  color: var(--theme-heading);
+}
+
+:root[data-theme="dark"] :is(.finance-brand, .finance-search svg,
+  .ticker-label svg, .finance-heading .eyebrow, .live-news .eyebrow,
+  .research-overview > .eyebrow, .digest-panel .eyebrow) {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .finance-search {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] .finance-search:hover {
+  background: var(--theme-hover);
+  border-color: var(--theme-accent-border);
+}
+
+:root[data-theme="dark"] :is(.finance-brand small, .finance-search kbd,
+  .research-badge, .finance-nav span, .ticker-label span, .ticker-card small,
+  .finance-heading > div > p:last-child, .workspace-tag, .rail-caption,
+  .portfolio-row small, .rail-empty, .live-quote h2 small,
+  .live-quote header p, .live-price-row small, .live-price-row dt,
+  .live-chart-toolbar > span, .chart-footer, .chart-empty p,
+  .pipeline-summary, .pipeline-summary svg, .news-kicker,
+  .news-kicker > span:first-child, .news-actions > span,
+  .overview-score > span, .overview-stats span, .research-overview > p,
+  .community-title > span, .community-ratios span, .community-card > p:not(.community-limitations),
+  .community-empty, .community-empty > p, .community-empty small,
+  .community-card details, .community-source small,
+  .community-samples article small, .community-samples article p,
+  .community-diagnostics p, .returns-panel header > span,
+  .returns-table th, .returns-note, .finance-footer, .supported-caption,
+  .catalog-list small, .audit-records p, .connection-card dt,
+  .connection-card > p, .reply-metadata, .digest-note, .digest-time,
+  .digest-section h3 span, .digest-section > p, .digest-item > span,
+  .digest-item small, .subscription-panel > p, .scheduler-status p,
+  .admin-intro p, .admin-stats > span, .admin-table th,
+  .admin-table td small, .audit-list time, .sample-label,
+  .minute-status, .minute-caption, .loading-state,
+  .stock-search-loading, .empty-card, .empty-card h3) {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.ticker-label, .ticker-card > span:first-child,
+  .finance-nav button, .live-price-row dd, .overview-stats strong,
+  .returns-table td:first-child, .connection-card dd,
+  .subscription-toggle, .scheduler-status, .topic-options,
+  .morning-admin-fields, .digest-item > p, .news-chain,
+  .rail-note, .rail-note h3, .rail-note svg) {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.finance-nav button:hover,
+  .finance-nav button.active, .ticker-card.selected > span:first-child,
+  .add-watch, .rail-note button, .indicator-switch button.active,
+  .pipeline-summary button, .news-tabs button.active,
+  .live-news-list h3 a:hover, .news-actions button,
+  .overview-score > strong, .admin-stats strong,
+  .community-card details a, .community-source,
+  .catalog-list > div > button:last-child, .audit-records a,
+  .digest-item a:hover) {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.finance-nav button.active, .news-tabs button.active) {
+  border-color: var(--theme-accent);
+}
+
+:root[data-theme="dark"] :is(.ticker-card, .portfolio-row, .add-watch,
+  .live-chart-toolbar, .chart-footer, .news-tabs, .live-news-list article,
+  .overview-stats, .community-card > .source-note,
+  .returns-table th, .returns-table td, .catalog-list > div,
+  .audit-records article, .connection-card dl > div,
+  .digest-section, .digest-item, .digest-sources, .delivery-result,
+  .admin-table th, .admin-table td, .audit-list > div,
+  .minute-caption, .community-samples article) {
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] :is(.workspace-tag > span, .industry-tag) {
+  background: var(--theme-raised);
+  color: var(--theme-muted);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] :is(.icon-button, .subtle-button,
+  .indicator-switch button, .news-tabs button, .remove-stock) {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.icon-button:hover, .subtle-button:hover,
+  .portfolio-row > button:first-child:hover, .catalog-list > div:hover,
+  .ticker-card:hover, .add-watch:hover) {
+  background: var(--theme-hover);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .portfolio-row.active {
+  background: var(--theme-accent-soft);
+}
+
+:root[data-theme="dark"] .portfolio-row.active::before {
+  background: var(--theme-accent);
+}
+
+:root[data-theme="dark"] .remove-stock {
+  opacity: .8;
+}
+
+:root[data-theme="dark"] .remove-stock:hover {
+  color: var(--theme-error);
+}
+
+:root[data-theme="dark"] .portfolio-panel .portfolio-row small.up {
+  color: var(--up);
+}
+
+:root[data-theme="dark"] .portfolio-panel .portfolio-row small.down {
+  color: var(--down);
+}
+
+:root[data-theme="dark"] .segmented {
+  background: var(--theme-background);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .segmented button {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] .segmented button.active {
+  background: var(--theme-raised);
+  color: var(--theme-heading);
+}
+
+:root[data-theme="dark"] :is(.live-chart-toolbar select,
+  .pipeline-options select, .briefing-actions select,
+  .briefing-preferences select, .morning-admin-fields select,
+  .morning-admin-fields input:not([type="checkbox"])) {
+  background: var(--theme-raised);
+  color: var(--theme-text);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .chart-empty {
+  background: var(--theme-panel);
+}
+
+:root[data-theme="dark"] .chart-empty :is(svg, h3) {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.pipeline-bar, .auto-collect-note) {
+  background: #182338;
+  border-color: var(--theme-accent-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.pipeline-bar strong, .auto-collect-note strong) {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.pipeline-bar small, .pipeline-options label) {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.primary-button, .send-button, .brand-icon) {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] :is(.primary-button:hover, .send-button:hover) {
+  background: var(--theme-accent-hover);
+  border-color: var(--theme-accent-hover);
+}
+
+:root[data-theme="dark"] .outline-button {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .outline-button:hover {
+  background: var(--theme-hover);
+  border-color: var(--theme-accent-border);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.pipeline-warning, .briefing-warnings,
+  .minute-warning, .search-error, .search-source-warning) {
+  background: var(--theme-warning-bg);
+  border-color: var(--theme-warning-border);
+  color: var(--theme-warning);
+}
+
+:root[data-theme="dark"] :is(.error-box, .collection-stage.failed) {
+  background: var(--theme-error-bg);
+  border-color: var(--theme-error-border);
+  color: var(--theme-error);
+}
+
+:root[data-theme="dark"] :is(.error-box button,
+  .live-news-list .news-analysis-error) {
+  color: var(--theme-error);
+}
+
+:root[data-theme="dark"] .community-card > .community-limitations {
+  color: var(--theme-warning);
+}
+
+/* The original notices have important colors, so these two require parity. */
+:root[data-theme="dark"] .channel-hint {
+  color: var(--theme-warning) !important;
+}
+
+:root[data-theme="dark"] .saved-notice {
+  color: var(--theme-success) !important;
+}
+
+:root[data-theme="dark"] .live-news h2 > span {
+  background: var(--theme-raised);
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] .live-news-list article > p {
+  color: #b1bac9;
+}
+
+:root[data-theme="dark"] :is(.news-score, .news-score.unrated,
+  .keyword-tags span, .recommendation-reasons span, .role-badge,
+  .audit-status, .neutral) {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.news-score.up, .positive) {
+  color: var(--up);
+  background: #35212b;
+  border-color: #593340;
+}
+
+:root[data-theme="dark"] :is(.news-score.down, .negative) {
+  color: var(--down);
+  background: #192f2a;
+  border-color: #2e5045;
+}
+
+:root[data-theme="dark"] .news-chain svg {
+  color: var(--theme-subtle);
+}
+
+:root[data-theme="dark"] .community-track {
+  background: var(--theme-raised);
+}
+
+:root[data-theme="dark"] .community-track span:first-child {
+  background: var(--up);
+}
+
+:root[data-theme="dark"] .community-track span:nth-child(2) {
+  background: #5d687a;
+}
+
+:root[data-theme="dark"] .community-track span:last-child {
+  background: var(--down);
+}
+
+:root[data-theme="dark"] .research-assistant-card {
+  background: linear-gradient(140deg, #1c2944, #181f2d);
+  border-color: var(--theme-accent-border);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .research-assistant-card h2 {
+  color: var(--theme-heading);
+}
+
+:root[data-theme="dark"] .research-assistant-card :is(.eyebrow, p),
+:root[data-theme="dark"] .briefing-rail-link small {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.research-assistant-card button,
+  .briefing-rail-link, .briefing-rail-link strong) {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.returns-table th, .connection-card pre,
+  .ranking-explanation, .daily-run-result, .minute-status) {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] :is(.connection-card pre, .ranking-explanation,
+  .daily-run-result, .daily-stock-results span, .minute-market-state) {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.collection-stage, .daily-stock-results span) {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.collection-stage.ready,
+  .collection-stage.completed, .audit-status.retained) {
+  background: var(--theme-success-bg);
+  border-color: #315044;
+  color: var(--theme-success);
+}
+
+:root[data-theme="dark"] :is(.collection-stage.ready .status-dot,
+  .collection-stage.completed .status-dot) {
+  background: var(--theme-success);
+}
+
+:root[data-theme="dark"] :is(.collection-stage.pending .status-dot,
+  .collection-stage.running .status-dot) {
+  background: var(--theme-warning);
+}
+
+:root[data-theme="dark"] .collection-stage.failed .status-dot {
+  background: var(--theme-error);
+}
+
+:root[data-theme="dark"] :is(.minute-status.trading .minute-market-state,
+  .account-ready) {
+  color: var(--theme-success);
+}
+
+:root[data-theme="dark"] .minute-status.trading .status-dot {
+  background: var(--theme-success);
+}
+
+:root[data-theme="dark"] .status-dot {
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .status-dot.pending {
+  background: var(--theme-subtle);
+}
+
+:root[data-theme="dark"] :is(.priority-score, .role-badge.admin,
+  .audit-status.merged, .tiny-tag) {
+  background: var(--theme-accent-soft);
+  border-color: var(--theme-accent-border);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .audit-status.filtered {
+  background: var(--theme-warning-bg);
+  color: var(--theme-warning);
+}
+
+:root[data-theme="dark"] .recommendation-rank {
+  color: var(--theme-subtle);
+}
+
+:root[data-theme="dark"] .digest-item a {
+  color: var(--theme-heading);
+}
+
+/* Dialogs and account menus share the same raised panel palette. */
+:root[data-theme="dark"] :is(.drawer-overlay, .modal-overlay) {
+  background: #080b12b3;
+}
+
+:root[data-theme="dark"] :is(.research-modal, .stock-modal, .info-modal,
+  .account-menu, .auth-dialog) {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+  box-shadow: 0 24px 75px #00000066;
+}
+
+:root[data-theme="dark"] .account-button {
+  background: var(--theme-accent-soft);
+  border-color: var(--theme-accent-border);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .account-button:hover {
+  background: #24375d;
+}
+
+:root[data-theme="dark"] .account-button.signed-in {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.account-avatar, .icon-square) {
+  background: var(--theme-accent-soft);
+  border-color: var(--theme-accent-border);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.admin-login-button, .auth-mode-switch,
+  .auth-dialog > .eyebrow, .auth-password button) {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.account-menu-heading strong, .auth-dialog h2) {
+  color: var(--theme-heading);
+}
+
+:root[data-theme="dark"] :is(.account-created,
+  .account-menu-heading > div > span, .auth-dialog > p,
+  .auth-dialog > .auth-footnote, .auth-field, .auth-tabs button) {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] .account-logout {
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .account-logout:hover {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .auth-tabs {
+  background: var(--theme-background);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .auth-tabs button.active {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.auth-field input,
+  .research-modal .stock-search, .stock-search) {
+  background: var(--theme-background);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.research-modal input, .stock-search input) {
+  background: transparent;
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.auth-field input::placeholder,
+  .stock-search input::placeholder, .chat-input textarea::placeholder) {
+  color: var(--theme-subtle);
+}
+
+:root[data-theme="dark"] .auth-field input:focus {
+  border-color: var(--theme-focus);
+  box-shadow: 0 0 0 2px #86a9ff1a;
+}
+
+:root[data-theme="dark"] :is(.stock-search:focus-within,
+  .research-modal .stock-search:focus-within, .chat-input:focus-within) {
+  border-color: var(--theme-focus);
+  box-shadow: 0 0 0 2px #86a9ff1a;
+}
+
+/* AI content remains readable at each nesting level. */
+:root[data-theme="dark"] .ai-drawer {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] :is(.drawer-header, .chat-form, .response-meta,
+  .causal-chain, .uncertainty, .chat-entry.assistant) {
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] :is(.drawer-header h2, .assistant-intro h3,
+  .context-card h4, .analysis-result h4) {
+  color: var(--theme-heading);
+}
+
+:root[data-theme="dark"] :is(.drawer-header p, .assistant-intro p,
+  .context-card > p, .context-card .article-source-note,
+  .context-card details, .suggestions > span,
+  .chat-entry.user > .chat-author, .response-meta,
+  .uncertainty, .chat-form > p) {
+  color: var(--theme-muted);
+}
+
+:root[data-theme="dark"] :is(.assistant-intro .eyebrow, .live-label,
+  .context-card > .eyebrow, .context-card a, .chat-author,
+  .response-meta button, .thinking) {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.context-card, .analysis-result,
+  .suggestions > button, .chat-entry.user) {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .suggestions > button:hover {
+  background: var(--theme-hover);
+  border-color: var(--theme-accent-border);
+}
+
+:root[data-theme="dark"] .suggestions > button > svg:last-child {
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] :is(.chat-content, .chat-entry.user .chat-content,
+  .causal-chain p) {
+  background: transparent;
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .causal-chain > div > span {
+  background: var(--theme-accent-soft);
+  border-color: var(--theme-accent-border);
+  color: var(--theme-accent-text);
+}
+
+:root[data-theme="dark"] .uncertainty {
+  background: transparent;
+}
+
+:root[data-theme="dark"] .chat-form {
+  background: var(--theme-panel);
+}
+
+:root[data-theme="dark"] .chat-input {
+  background: var(--theme-background);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .chat-input textarea {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] input[type="checkbox"] {
+  accent-color: var(--theme-accent);
+}
+
+:root[data-theme="dark"] :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 3px;
+}
+
+:root[data-theme="dark"] ::selection {
+  background: #2962ff80;
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] * {
+  scrollbar-color: #465166 transparent;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #465166;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #64738d;
+}
+
+/* Keep the new header control compact without losing its accessible name. */
+@media (max-width: 1200px) {
+  .header-inner .theme-toggle {
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  .header-inner .theme-toggle {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    margin-left: auto;
+  }
+
+  .header-inner .theme-toggle > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .header-inner .account-control {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .header-inner {
+    gap: 10px;
+  }
+
+  .header-inner .admin-login-button {
+    position: relative;
+    width: 24px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .header-inner .admin-login-button > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
