@@ -77,7 +77,7 @@ def _price(value) -> int:
     return result
 
 
-def _quote(cached: dict, allow_error=False) -> dict:
+def cached_quote(cached: dict, allow_error=False) -> dict:
     try:
         if (cached.get('error') and not allow_error) or not cached.get('candles'):
             raise ValueError('missing or failed quote')
@@ -102,7 +102,7 @@ def _quote(cached: dict, allow_error=False) -> dict:
 
 
 def valid_quote(cached: dict, now: datetime) -> dict:
-    quote = _quote(cached)
+    quote = cached_quote(cached)
     now = now.astimezone(SHANGHAI)
     stamp, fetched = datetime.fromisoformat(quote['as_of']), datetime.fromisoformat(quote['fetched_at'])
     if stamp.date() != now.date() or not -60 <= (now - stamp).total_seconds() <= 180 or not 0 <= (now - fetched).total_seconds() <= 90:
@@ -195,7 +195,7 @@ def value_account(account: dict, quotes: dict[str, dict], now: datetime) -> dict
     positions = []
     for code, position in account['positions'].items():
         try:
-            quote = _quote(quotes.get(code, {}), allow_error=True)
+            quote = cached_quote(quotes.get(code, {}), allow_error=True)
             status = 'fresh'
             try:
                 valid_quote(quotes[code], now)

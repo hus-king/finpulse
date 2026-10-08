@@ -30,6 +30,10 @@ from .auth import AuthError, auth_error_handler, authorize_model_request, router
 from .database import create_auth_store
 from .minute_market import MinuteMarketService
 from .market_bundle import MarketBundleService
+from .paper_store import PaperStore
+from .paper_trading import PaperTradingService
+from .paper_rules import PaperError
+from .paper_api import router as paper_router, paper_error_handler
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.local.json"
@@ -48,6 +52,7 @@ async def lifespan(application):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)
     application.state.minute_market = MinuteMarketService(research_store)
+    application.state.paper_trading = PaperTradingService(PaperStore(research_store), application.state.research.catalog, application.state.minute_market)
     application.state.market_bundle = MarketBundleService(application.state.research, application.state.minute_market)
     application.state.research.briefing = MorningService(application.state.research)
     application.state.scheduler = start_scheduler(application.state.research)
@@ -63,9 +68,11 @@ async def lifespan(application):
 app = FastAPI(title="FinPulse Research API", version="0.3.0", lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("FINPULSE_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",") if host.strip()])
 app.add_exception_handler(AuthError, auth_error_handler)
+app.add_exception_handler(PaperError, paper_error_handler)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(research_router)
+app.include_router(paper_router)
 
 
 @app.exception_handler(pymysql.OperationalError)
