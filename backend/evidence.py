@@ -31,7 +31,7 @@ def build_overview(news):
         counts[state] += 1
         base = {'news_id': row['id'], 'title': row['title'], 'url': row.get('url'), 'score': analysis['sentiment_score'], 'confidence': analysis['confidence'], 'horizon': analysis['horizon']}
         for field, target in (('positive_factors', opportunities), ('negative_factors', risks), ('watch_points', watch)):
-            if field == 'positive_factors' and state not in ('positive','mixed') or field == 'negative_factors' and state not in ('negative','mixed'):
+            if state == 'insufficient' and field != 'watch_points':
                 continue
             for text in analysis[field]:
                 if text not in [item['text'] for item in target]:

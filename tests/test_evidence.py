@@ -59,3 +59,10 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(overview['status'],'insufficient')
         self.assertEqual(overview['opportunities'],[])
         self.assertEqual(overview['counts']['stale'],1)
+
+    def test_positive_event_still_preserves_its_execution_risks(self):
+        from backend.evidence import build_overview
+        row={'id':'order','title':'重大订单落地','analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION,'negative_factors':['交付延迟可能影响收入确认']}}
+        overview=build_overview([row])
+        self.assertEqual(overview['status'],'positive')
+        self.assertEqual(overview['risks'][0]['text'],'交付延迟可能影响收入确认')

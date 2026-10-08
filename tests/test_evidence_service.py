@@ -59,3 +59,20 @@ class EvidenceServiceTests(unittest.IsolatedAsyncioTestCase):
         for change in ({'time':'2020-01-01'},{'text_source':'search_fragments'},{'date_status':'metadata_only'}):
             await self.service.analyze_document(self.stock,{**self.item,**change})
         self.assertEqual(self.model.await_count,4)
+
+    async def test_truncated_model_output_recovers_with_one_bounded_retry(self):
+        from fastapi import HTTPException
+        self.stock['business_profile']={'main_business':'炼油','status':'ok'}
+        self.model.side_effect=[HTTPException(502,'模型输出达到长度上限，请增加模型输出预算。'),{'content':json.dumps(BASE),'model':'test'}]
+        result=await self.service.analyze_document(self.stock,self.item)
+        self.assertEqual(result['analysis']['assessment'],'positive')
+        self.assertEqual(self.model.await_count,2)
+        self.assertLessEqual(self.model.call_args.kwargs['max_tokens'],8192)
+
+    async def test_provider_rate_limit_is_not_retried_as_format_failure(self):
+        from fastapi import HTTPException
+        self.stock['business_profile']={'main_business':'炼油','status':'ok'}
+        self.model.side_effect=HTTPException(502,'请求额度或频率受限（上游 HTTP 429）。')
+        with self.assertRaises(HTTPException):
+            await self.service.analyze_document(self.stock,self.item)
+        self.assertEqual(self.model.await_count,1)

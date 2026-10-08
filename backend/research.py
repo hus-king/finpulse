@@ -211,7 +211,13 @@ class ResearchService:
         payload = {'stock_name': stock['name'], 'stock_code': stock['code'], 'exchange': stock['exchange'], 'title': item['title'], 'content': content, 'category': item.get('tag'), 'published_date': item['time'], 'url': item['url'], 'text_source': item['text_source'], 'date_status': item['date_status'], 'analysis_time': now_iso(), **relation_context}
         messages = [{'role': 'system', 'content': NEWS_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
         for attempt in range(2):
-            result = await self.completion(messages, max_tokens=4096)
+            try:
+                result = await self.completion(messages, max_tokens=4096 if attempt == 0 else 8192)
+            except HTTPException as exc:
+                if attempt == 0 and exc.status_code == 502 and '长度上限' in str(exc.detail):
+                    messages.append({'role':'user','content':'上一轮输出被截断。请精简文字，仍保留全部必要字段、三项因果链和每个列表最多三项，只返回完整JSON。'})
+                    continue
+                raise
             try:
                 analysis = parse_json(result['content'], EvidenceAnalysis)
                 analysis['version'] = PROMPT_VERSION
