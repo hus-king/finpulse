@@ -76,6 +76,46 @@ REASONS = {
 }
 
 
+TRAD_PAIRS = [
+    ('萬', '万'), ('億', '亿'), ('貴', '贵'), ('暫', '暂'), ('買', '买'), ('賣', '卖'),
+    ('業', '业'), ('績', '绩'), ('營', '营'), ('銷', '销'), ('額', '额'), ('幣', '币'),
+    ('證', '证'), ('券', '券'), ('網', '网'), ('訊', '讯'), ('報', '报'), ('告', '告'),
+    ('評', '评'), ('級', '级'), ('標', '标'), ('準', '准'), ('創', '创'), ('產', '产'),
+    ('團', '团'), ('聯', '联'), ('華', '华'), ('國', '国'), ('臺', '台'), ('廣', '广'),
+    ('總', '总'), ('經', '经'), ('濟', '济'), ('會', '会'), ('機', '机'), ('構', '构'),
+    ('發', '发'), ('達', '达'), ('轉', '转'), ('讓', '让'), ('購', '购'), ('換', '换'),
+    ('籌', '筹'), ('劃', '划'), ('規', '规'), ('審', '审'), ('處', '处'), ('罰', '罚'),
+    ('減', '减'), ('增', '增'), ('質', '质'), ('凍', '冻'), ('結', '结'), ('訴', '诉'),
+    ('訟', '讼'), ('違', '违'), ('約', '约'), ('債', '债'), ('務', '务'), ('還', '还'),
+    ('償', '偿'), ('預', '预'), ('測', '测'), ('類', '类'), ('價', '价'), ('盤', '盘'),
+    ('點', '点'), ('開', '开'), ('關', '关'), ('門', '门'), ('間', '间'), ('時', '时'),
+    ('綫', '线'), ('線', '线'), ('勢', '势'), ('倉', '仓'), ('庫', '库'), ('監', '监'),
+    ('離', '离'), ('職', '职'), ('辭', '辞'), ('執', '执'), ('險', '险'), ('複', '复'),
+    ('復', '复'), ('單', '单'), ('雙', '双'), ('號', '号'), ('頭', '头'), ('體', '体'),
+    ('統', '统'), ('實', '实'), ('際', '际'), ('導', '导'), ('師', '师'), ('員', '员'),
+    ('製', '制'), ('造', '造'), ('設', '设'), ('備', '备'), ('軟', '软'), ('件', '件'),
+    ('應', '应'), ('態', '态'), ('獨', '独'), ('補', '补'), ('貼', '贴'), ('稅', '税'),
+    ('費', '费'), ('虧', '亏'), ('損', '损'), ('潤', '润'), ('淨', '净'), ('擴', '扩'),
+    ('張', '张'), ('縮', '缩'), ('穩', '稳'), ('憂', '忧'), ('慮', '虑'), ('衝', '冲'),
+    ('擊', '击'), ('響', '响'), ('壓', '压'), ('詳', '详'), ('細', '细'), ('節', '节'),
+    ('錄', '录'), ('顯', '显'), ('見', '见'), ('聞', '闻'), ('視', '视'), ('頻', '频'),
+    ('圖', '图'), ('數', '数'), ('據', '据'), ('調', '调'), ('優', '优'), ('維', '维'),
+    ('護', '护'), ('質', '质'), ('於', '于'), ('對', '对'), ('進', '进'), ('東', '东'),
+    ('車', '车'), ('電', '电'), ('鐵', '铁'), ('鋼', '钢'), ('鋁', '铝'), ('銅', '铜'),
+    ('鋰', '锂'), ('礦', '矿'), ('藍', '蓝'), ('籌', '筹'), ('庫', '库'), ('醫', '医'),
+    ('藥', '药'), ('生', '生'), ('物', '物'), ('科', '科'), ('技', '技'), ('軍', '军'),
+    ('農', '农'), ('糧', '粮'), ('食', '食'), ('酒', '酒'), ('類', '类'), ('飲', '饮'),
+    ('料', '料'), ('為', '为'), ('這', '这'), ('個', '个'), ('與', '与'), ('無', '无'),
+    ('從', '从'), ('體', '体'), ('現', '现'), ('將', '将'), ('獲', '获'), ('得', '得')
+]
+TRANS_TABLE = {ord(a): ord(b) for a, b in TRAD_PAIRS if a != b}
+
+TITLE_SUFFIX_PATTERN = re.compile(
+    r'[\s_\-|—–]+(?:东方财富.*|新浪.*|腾讯.*|网易.*|搜狐.*|凤凰.*|同花顺.*|金融界.*|证券时报.*|证券日报.*|中国证券报.*|上海证券报.*|中证网.*|上证报.*|第一财经.*|财联社.*|界面.*|雪球.*|moomoo.*|富途.*|格隆汇.*|21财经.*|21经济.*|海报新闻.*|中新经纬.*|澎湃.*|财闻网.*|CFi.*|Noticias.*|时间线.*|财富号.*|手机网.*|客户端.*|财经网.*|财经.*|信息_相关_显示.*)$',
+    re.IGNORECASE
+)
+
+
 def normalize_url(url):
     try:
         parts = urlsplit(url)
@@ -85,7 +125,19 @@ def normalize_url(url):
         return ""
     tracking = {"from", "spm", "gubaurl", "guba", "name", "source", "ref", "oid", "vt", "cid", "node_id", "clickid"}
     query = [(k, v) for k, v in parse_qsl(parts.query) if not k.lower().startswith("utm_") and k.lower() not in tracking]
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, urlencode(query), ""))
+    netloc = parts.netloc.lower()
+    path = parts.path
+
+    # Canonicalize mobile / WAP subdomains for common financial portals
+    if netloc in ("wap.eastmoney.com", "stock.eastmoney.com", "mguba.eastmoney.com") and path.startswith("/a/"):
+        netloc = "finance.eastmoney.com"
+    elif netloc in ("finance.sina.cn", "m.sina.cn") and "/finance/" in path:
+        netloc = "finance.sina.com.cn"
+    elif netloc == "m.cls.cn":
+        netloc = "www.cls.cn"
+
+    scheme = "https" if parts.scheme in ("http", "https") else parts.scheme.lower()
+    return urlunsplit((scheme, netloc, path, urlencode(query), ""))
 
 
 def source_page_kind(url):
@@ -103,7 +155,7 @@ def source_page_kind(url):
         or (host == 'investing.com' or host.endswith('.investing.com')) and path.startswith(('/equities/', '/commodities/', '/indices/'))
         or host == 'stockanalysis.com' and path.startswith('/quote/')
         or (host == 'yahoo.com' or host.endswith('.yahoo.com')) and path.startswith('/quote/')
-        or (host == 'futunn.com' or host.endswith('.futunn.com')) and path.startswith('/stock/')
+        or host == 'futunn.com' or host.endswith('.futunn.com') and path.startswith('/stock/')
         or (host == 'moomoo.com' or host.endswith('.moomoo.com')) and re.match(r'^/(?:[a-z]{2,8}/)?stock/', path)
         or host == 'data.eastmoney.com' and path.startswith('/zjlx/')
         or host.endswith('.finance.sina.com.cn') and '/vcb_allbulletin/' in path):
@@ -112,9 +164,10 @@ def source_page_kind(url):
 
 
 def core_title(title):
-    title = unicodedata.normalize("NFKC", html.unescape(title))
-    title = re.sub(r"_新浪财经_新浪网.*$|\s*[—–]\s*Noticias.*$", "", title)
-    title = re.sub(r"\s*-\s*(?:财闻网|海报新闻|21经济网|CFi.*|雪球|moomoo).*$", "", title, flags=re.I)
+    title = unicodedata.normalize("NFKC", html.unescape(title or ""))
+    title = title.translate(TRANS_TABLE)
+    title = TITLE_SUFFIX_PATTERN.sub("", title)
+    title = re.sub(r"^[【\[(（][^】\])）]+[】\])）]\s*", "", title)
     return title.strip()
 
 
@@ -122,6 +175,7 @@ def clean_text(raw, title=""):
     """Keep source text order; record removed characters and fragment gaps."""
     raw = raw or ""
     text = unicodedata.normalize("NFKC", html.unescape(raw))
+    text = text.translate(TRANS_TABLE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"[\u200b-\u200d\ufeff]", "", text).replace("\r", "")
     short_title = core_title(title)
@@ -226,7 +280,8 @@ def same_event(left, right):
     jaccard = len(ls & rs)/max(1, len(ls | rs))
     sequence = SequenceMatcher(None, lt, rt).ratio()
     distance = (simhash(lt) ^ simhash(rt)).bit_count()
-    matched = left["url"] == right["url"] or (jaccard >= .40 and sequence >= .65) or (distance <= 8 and sequence >= .65)
+    is_sub = (lt in rt or rt in lt) and len(min(lt, rt, key=len)) >= 8
+    matched = left["url"] == right["url"] or (jaccard >= .40 and sequence >= .65) or (distance <= 8 and sequence >= .65) or is_sub
     return matched, {"title_jaccard": round(jaccard, 3), "title_sequence": round(sequence, 3), "simhash_distance": distance}
 
 
@@ -244,7 +299,7 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
             url = normalize_url(raw.get("url", ""))
             full_text = extracts.get(url)
             text, stats = clean_text(full_text if full_text is not None else raw.get("content", ""), raw.get("title", ""))
-            extracted_date = body_publication_date(text) if full_text is not None else None
+            extracted_date = body_publication_date(full_text) if full_text is not None else None
             text_source = "extracted_body" if full_text is not None else "search_fragments"
             # Dynamic news pages can expose a headline followed only by sidebar
             # stories. Do not present that extraction as the article's body.
@@ -257,7 +312,7 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
             # A fallback fragment must not hide an older publication header
             # discovered in the extracted page.
             meta = metadata_date(raw.get("published_date"))
-            body_header = body_publication_date(text)
+            body_header = body_publication_date(text) or extracted_date
             body = body_header or extracted_date
 
             # 正文头部日期置信度高于搜索引擎爬取日期，直接采用正文头部日期
@@ -340,6 +395,14 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
                         matched = True
                     if matched:
                         previous["sources"].append({"id": item["id"], "title": title, "url": url, "date": item["effective_date"]})
+                        # 优质正文继承：若新条目已提取完整正文，而原保留项仅为搜索片段，则升级为完整正文与校验日期
+                        if item["text_source"] == "extracted_body" and previous.get("text_source") != "extracted_body":
+                            previous["cleaned_text"] = item["cleaned_text"]
+                            previous["text_source"] = "extracted_body"
+                            previous["text_stats"] = item["text_stats"]
+                            if item.get("effective_date") and item.get("date_status") == "body_verified":
+                                previous["effective_date"] = item["effective_date"]
+                                previous["date_status"] = "body_verified"
                         entry.update(status="merged", canonical_id=previous["id"], reason_codes=["duplicate_event"], reasons=[REASONS["duplicate_event"]], duplicate_metrics=metrics)
                         break
                 else:

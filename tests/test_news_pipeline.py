@@ -136,7 +136,81 @@ class NewsPipelineTests(unittest.TestCase):
         unrelated_audit = next(r for r in result["audit"] if r["url"] == url_unrelated)
         self.assertIn("not_primary_entity", unrelated_audit["reason_codes"])
 
+    def test_traditional_and_simplified_titles_with_media_suffixes_are_merged(self):
+        left = {
+            "stock": "贵州茅台",
+            "category": "company_news",
+            "effective_date": "2026-10-06",
+            "url": "https://www.moomoo.com/hant/news/post/1000627402",
+            "title": "貴州茅台：今日暫停！"
+        }
+        right = {
+            "stock": "贵州茅台",
+            "category": "company_news",
+            "effective_date": "2026-10-05",
+            "url": "https://wap.eastmoney.com/a/202610063888722080.html",
+            "title": "贵州茅台：今日暂停！ _ 东方财富网"
+        }
+        matched, metrics = same_event(left, right)
+        self.assertTrue(matched)
+        self.assertEqual(metrics["title_jaccard"], 1.0)
+        self.assertEqual(metrics["title_sequence"], 1.0)
+
+    def test_wap_and_pc_url_canonicalization_matches_same_document(self):
+        u1 = "https://wap.eastmoney.com/a/202610063888722080.html?spm=123"
+        u2 = "http://finance.eastmoney.com/a/202610063888722080.html"
+        self.assertEqual(normalize_url(u1), normalize_url(u2))
+
+    def test_quality_inheritance_upgrades_search_fragment_to_extracted_body(self):
+        url1 = "https://www.moomoo.com/hant/news/post/1000627402"
+        url2 = "https://wap.eastmoney.com/a/202610063888722080.html"
+        raw = {
+            "date_range": ["2026-10-01", "2026-10-08"],
+            "searches": [
+                {
+                    "stock": "贵州茅台",
+                    "response": {
+                        "results": [
+                            {
+                                "title": "貴州茅台：今日暫停！",
+                                "url": url1,
+                                "published_date": "2026-10-06",
+                                "content": "近日，貴州茅台旗下官微發佈公告，計劃於2026年10月6日全天對i茅台APP進行維護升級。"
+                            },
+                            {
+                                "title": "贵州茅台：今日暂停！ _ 东方财富网",
+                                "url": url2,
+                                "published_date": "2026-10-05",
+                                "content": "贵州茅台今日暂停摘要"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "extract": {
+                "response": {
+                    "results": [
+                        {
+                            "url": url2,
+                            "raw_content": "发布时间：2026-10-06 09:00:00\n贵州茅台：今日暂停！\n近日贵州茅台旗下官微发布公告，为持续优化i茅台APP体验，计划于2026年10月6日全天维护升级。在此期间APP将暂停使用。"
+                        }
+                    ]
+                }
+            }
+        }
+        result = clean_report(raw)
+        # Should merge into 1 retained article
+        self.assertEqual(result["summary"]["retained"], 1)
+        self.assertEqual(result["summary"]["merged"], 1)
+        item = result["items"][0]
+        # Quality inheritance: extracted body should replace fragment
+        self.assertEqual(item["text_source"], "extracted_body")
+        self.assertEqual(len(item["sources"]), 2)
+        self.assertEqual(item["effective_date"], "2026-10-06")
+        self.assertEqual(item["date_status"], "body_verified")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
