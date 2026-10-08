@@ -12,6 +12,10 @@ const money = (value: number | null) => `¥ ${formatMoney(value)}`;
 const signed = (value: number) => `${value > 0 ? '+' : ''}${formatMoney(value)}`;
 const tone = (value: number) => value > 0 ? 'up' : value < 0 ? 'down' : '';
 const date = (value: string | null) => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—';
+// These rejections run after the transaction's successful-request lookup.
+// Auth, CSRF, routing and schema failures cannot resolve an earlier uncertain request.
+const definitiveRejections = new Set(['UNKNOWN_STOCK', 'UNSUPPORTED_STOCK', 'MARKET_CLOSED', 'CALENDAR_UNKNOWN',
+  'QUOTE_UNAVAILABLE', 'QUOTE_STALE', 'INVALID_SIDE', 'INVALID_QUANTITY', 'INSUFFICIENT_POSITION', 'T_PLUS_ONE', 'INSUFFICIENT_CASH']);
 
 function pendingIntent(owner?: string): PaperIntent | null {
   if (!owner) return null;
@@ -26,7 +30,7 @@ function pendingIntent(owner?: string): PaperIntent | null {
 }
 
 export default function PaperTradingPanel({ initialCode }: { initialCode: string }) {
-  const { user, loading: authLoading, requestLogin } = useAuth();
+  const { user, loading: authLoading, requestLogin, refreshSession } = useAuth();
   const [restored] = useState(() => pendingIntent(user?.id));
   const [account, setAccount] = useState<PaperAccount | null>(null);
   const [history, setHistory] = useState<PaperHistory | null>(null);
@@ -145,10 +149,12 @@ export default function PaperTradingPanel({ initialCode }: { initialCode: string
       setRefreshNonce(value => value + 1);
     } catch (error) {
       if (controller.signal.aborted) return;
-      const uncertain = !(error instanceof ApiError) || error.status >= 500 || error.code === 'IDEMPOTENCY_CONFLICT';
+      const uncertain = !(error instanceof ApiError) || error.status >= 500 || error.code === 'IDEMPOTENCY_CONFLICT'
+        || unknown && !definitiveRejections.has(error.code ?? '');
       if (!uncertain) { intent.current = null; saveIntent(null); }
       setUnknown(uncertain);
       setTradeError(uncertain ? '成交结果尚未确认。请用原请求编号重试确认，服务器不会重复成交；也可刷新查看成交记录。' : (error as Error).message);
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) await refreshSession();
     } finally {
       busy.current = false;
       if (!controller.signal.aborted) setSubmitting(false);

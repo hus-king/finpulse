@@ -30,7 +30,7 @@ class PaperTradingService:
         stock = self._stock(code)
         try:
             snapshot = await self.minute_market.snapshot(stock, 1, force=refresh)
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, AttributeError):
             # Bad cached data cannot be promoted to an executable quote.
             snapshot = {'refreshing': False, 'next_poll_seconds': 30}
         raw = await asyncio.to_thread(self.store.records.get, 'minute_market', code + ':1', default={})
@@ -55,8 +55,8 @@ class PaperTradingService:
                 'refreshing': snapshot.get('refreshing', False), 'next_poll_seconds': snapshot.get('next_poll_seconds', 30)}
 
     async def submit(self, owner: str, request_id: str, code: str, side: str, quantity: int) -> dict:
-        stock = self._stock(code)
         def apply(account, cached):
+            stock = self._stock(code)  # Only validate a new order, after successful UUID replay.
             now = self.clock()  # Recheck after the account lock, even across session boundaries.
             market = session_state(now)
             if not market['can_trade']:

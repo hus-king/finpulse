@@ -111,7 +111,7 @@
 
 - [x] 写使用说明：20 万、规则、费用、分钟报价局限、休市行为、数据持久化、手动启动方式及对应测试命令；README 链接 docs，其他 Markdown 继续放 docs。
 - [x] 运行 `.venv/bin/python -m unittest discover -s tests -v`、`node --test tests/chart_math.test.mjs tests/paper_math.test.mjs`、`npm run build`、`git diff --check`；输出全部测试成功且构建成功才进入发布。
-- [ ] 完整审查资金边界、事务、幂等、隔离和页面请求竞态；按用户选定执行方式完成所需独立审查。修复具体问题并重跑受影响检查，记录最终证据。
+- [x] 完整审查资金边界、事务、幂等、隔离和页面请求竞态；按用户选定执行方式完成所需独立审查。修复具体问题并重跑受影响检查，记录最终证据。
 - [ ] 提交最终代码和说明；fetch origin 后确认 main 没有并行变更，必要时安全 rebase 并验证，不 force push；推送 GitHub。
 - [ ] 检查服务器当前发布、服务状态和健康；打包 git archive、dist 和含 commit／静态资源 SHA256 的 release.json；传入新 release 目录，链接共享配置，保留旧静态资源以兼容已打开页面。
 - [ ] 发布前再次确认 current 未被他人更新；原子切换 symlink，重启已有 finpulse.service，核对服务 active、/api/health、模拟盘接口访客 401 和首页资源哈希。失败则原子切回前一目录并重启验证恢复。

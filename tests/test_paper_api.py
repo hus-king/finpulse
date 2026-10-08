@@ -137,6 +137,33 @@ class PaperAPITests(unittest.TestCase):
         self.assertEqual(response.json()['code'],'MARKET_CLOSED')
         self.assertEqual(self.client.get('/api/paper/account').json()['cash_fen'],20_000_000)
 
+    def test_replay_survives_stock_removed_from_catalog(self):
+        headers = self.register()
+        key = str(uuid.uuid4())
+        first = self.trade(headers, request_id=key)
+        self.assertEqual(first.status_code, 200)
+        with patch.object(app.state.paper_trading.catalog, 'get', return_value=None):
+            again = self.trade(headers, request_id=key)
+            self.assertEqual(again.status_code, 200, again.text)
+            self.assertEqual(again.json(), first.json())
+            self.assertEqual(self.trade(headers).json()['code'], 'UNKNOWN_STOCK')
+        self.assertEqual(len(self.client.get('/api/paper/trades').json()['items']), 1)
+
+    def test_malformed_cache_roots_disable_quote_and_preserve_account_valuation(self):
+        headers = self.register()
+        self.assertEqual(self.trade(headers).status_code, 200)
+        for raw in [None, [], 'invalid']:
+            with self.subTest(raw=raw):
+                app.state.research.store.put('minute_market', '000001:1', raw)
+                result = self.client.get('/api/paper/quote/000001')
+                self.assertEqual(result.status_code, 200, result.text)
+                self.assertFalse(result.json()['can_trade'])
+                self.assertEqual(result.json()['quote_status'], 'unavailable')
+                self.assertEqual(self.trade(headers).json()['code'], 'QUOTE_UNAVAILABLE')
+                account = self.client.get('/api/paper/account').json()
+                self.assertEqual(account['market_value_fen'], 100_000)
+                self.assertEqual(account['positions'][0]['valuation_status'], 'estimated')
+
     def test_disabled_between_auth_and_transaction_cannot_fill(self):
         headers = self.register()
         service = app.state.paper_trading

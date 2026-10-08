@@ -79,6 +79,8 @@ def _price(value) -> int:
 
 def cached_quote(cached: dict, allow_error=False) -> dict:
     try:
+        if not isinstance(cached, dict):
+            raise ValueError('invalid quote cache shape')
         if (cached.get('error') and not allow_error) or not cached.get('candles'):
             raise ValueError('missing or failed quote')
         bar = cached['candles'][-1]

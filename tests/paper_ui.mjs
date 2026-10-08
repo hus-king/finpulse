@@ -61,11 +61,15 @@ try {
   await page.getByRole('status').filter({hasText:'模拟卖出成功'}).waitFor();
   await page.waitForFunction(()=>document.querySelector('[data-testid="paper-equity"]')?.textContent.includes('200,039.45'));
   await page.getByRole('button',{name:'买入',exact:true}).click();
-  let intercepted = false, lostId;
+  let intercepted = false, rejectedRetry = false, lostId;
   await page.route('**/api/paper/trades',async route=>{
     if (route.request().method()==='POST' && !intercepted) {
       intercepted=true; lostId=route.request().postDataJSON().request_id;
       await route.fetch(); await route.abort('failed');
+    } else if (route.request().method()==='POST' && !rejectedRetry) {
+      rejectedRetry=true;
+      assert.equal(route.request().postDataJSON().request_id,lostId);
+      await route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({code:'CSRF_FAILED',detail:'登录状态已更新，请刷新页面。'})});
     } else await route.continue();
   });
   await page.getByRole('button',{name:'确认模拟买入',exact:true}).click();
@@ -75,7 +79,17 @@ try {
   await page.getByRole('navigation').getByRole('button',{name:'模拟盘',exact:true}).click();
   await page.getByRole('button',{name:'重试确认成交',exact:true}).waitFor({timeout:5000});
   await context.request.post(base+'/__test/clock',{data:{now:'2026-10-09T16:00:00+08:00'}});
+  const csrfRejected = page.waitForResponse(response=>response.url().endsWith('/api/paper/trades') && response.status()===403);
   await page.getByRole('button',{name:'重试确认成交',exact:true}).click();
+  await csrfRejected;
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('button',{name:'重试确认成交',exact:true}).count(),1,'CSRF rejection must retain the original uncertain request');
+  assert.equal(await page.getByLabel('交易股数').isDisabled(),true);
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button',{name:'模拟盘',exact:true}).click();
+  const retried = page.waitForRequest(request=>request.url().endsWith('/api/paper/trades') && request.method()==='POST');
+  await page.getByRole('button',{name:'重试确认成交',exact:true}).click();
+  assert.equal((await retried).postDataJSON().request_id,lostId);
   await page.getByRole('status').filter({hasText:'模拟买入成功'}).waitFor();
   const history = await (await context.request.get(base+'/api/paper/trades')).json();
   assert.equal(history.items.filter(trade=>trade.request_id===lostId).length,1);
@@ -123,7 +137,7 @@ try {
   assert.match(await page.locator('[data-testid="paper-equity"]').innerText(),/200,000\.00/);
   assert.equal(await page.locator('[data-testid="paper-holding-000001"]').count(),0);
   assert.deepEqual(errors,[]);
-  console.log('PASS: 200k, buy/sell, T+1, lost-response replay across reload and close, stale account response ordering, stock switching, theme/mobile, account isolation');
+  console.log('PASS: 200k, buy/sell, T+1, lost-response replay across CSRF rejection/reload/close, stale account response ordering, stock switching, theme/mobile, account isolation');
 } catch(error) {
   await page.screenshot({path:output+'/paper-failure.png',fullPage:true}).catch(()=>{});
   throw error;

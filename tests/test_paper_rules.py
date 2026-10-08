@@ -148,6 +148,15 @@ class PaperRulesTests(unittest.TestCase):
             else:
                 self.assert_error('QUOTE_STALE', valid_quote, data, NOW)
 
+    def test_malformed_cache_roots_are_unavailable_and_use_last_fill_for_valuation(self):
+        account, _ = apply_trade(new_account(), STOCK, 'buy', 100, quote(), NOW)
+        for raw in [None, [], 'invalid']:
+            with self.subTest(raw=raw):
+                self.assert_error('QUOTE_UNAVAILABLE', valid_quote, raw, NOW)
+                result = value_account(account, {'000001': raw}, NOW)
+                self.assertEqual(result['market_value_fen'], 100_000)
+                self.assertEqual(result['positions'][0]['valuation_status'], 'estimated')
+
     def test_collection_freshness_exact_boundaries(self):
         for age, allowed in [(90,True),(91,False),(-1,False)]:
             data = cache(); data['fetched_at'] = (NOW-timedelta(seconds=age)).isoformat()
