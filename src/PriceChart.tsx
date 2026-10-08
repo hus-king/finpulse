@@ -11,6 +11,11 @@ import type { ChartStyle, ChartOverlay } from './chartMath';
 
 echarts.use([CandlestickChart, LineChart, BarChart, GridComponent, TooltipComponent, DataZoomComponent, MarkPointComponent, CanvasRenderer]);
 
+const tooltipNumber = (value: unknown) => Array.isArray(value) && value.length === 0 ? ''
+  : typeof value === 'number' && Number.isFinite(value)
+    ? (Math.abs(value) < 0.005 ? 0 : value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—';
+
 export default function PriceChart({ candles: daily, news, mode, period, indicator, chartStyle = 'candles', overlay = 'MA', onEvent }: {
   candles: Candle[]; news: News[]; mode: string; period: string; indicator: string;
   chartStyle?: ChartStyle; overlay?: ChartOverlay; onEvent: (id: string) => void;
@@ -108,6 +113,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
       lineStyle: { width: 1.5, color: overlayColors[2] }, itemStyle: { color: overlayColors[2] },
     }] : [{
       id: `indicator-${indicator}`, name: indicator, type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+      ...(indicator === '成交量' ? { tooltip: { valueFormatter: (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—' } } : {}),
       data: (indicator === 'MACD' ? macd : candles.map(row => row.volume)).map((value, i) => ({
         value, itemStyle: { color: (indicator === 'MACD' ? value >= 0 : candles[i].close >= candles[i].open) ? color('volume-up') : color('volume-down'), opacity: 0.7 },
       })),
@@ -119,7 +125,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
     chart.setOption({
       backgroundColor: 'transparent', animation: false,
       textStyle: { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif' },
-      tooltip: { trigger: 'axis', renderMode: 'richText', axisPointer: { type: 'cross', label: { backgroundColor: color('crosshair') } }, backgroundColor: color('tooltip-bg'), borderColor: color('border'), textStyle: { color: color('tooltip-text'), fontSize: 12 } },
+      tooltip: { trigger: 'axis', renderMode: 'richText', valueFormatter: tooltipNumber, axisPointer: { type: 'cross', label: { backgroundColor: color('crosshair') } }, backgroundColor: color('tooltip-bg'), borderColor: color('border'), textStyle: { color: color('tooltip-text'), fontSize: 12 } },
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
       grid: [{ left: 58, right: 22, top: 22, bottom: 112 }, { left: 58, right: 22, height: 58, bottom: 30 }],
       xAxis: [
