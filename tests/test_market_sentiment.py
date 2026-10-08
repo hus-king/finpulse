@@ -75,3 +75,45 @@ class SentimentTests(unittest.IsolatedAsyncioTestCase):
             result = await service.get_sentiment()
         self.assertEqual(result['status'], 'ok')
         self.assertEqual(client.get.await_count, 2)
+
+    async def test_eastmoney_unavailable_uses_secondary_channel_fallback(self):
+        service = MarketSentimentService()
+        client = AsyncMock()
+        from unittest.mock import Mock
+        import httpx
+
+        sample_legu = '''
+        <table>
+        <tr><td>上涨</td><td>2000</td></tr>
+        <tr><td>下跌</td><td>3000</td></tr>
+        <tr><td>平盘</td><td>200</td></tr>
+        </table>
+        <div class="market-activity-meta">2026-10-08 15:00:00</div>
+        '''
+        sample_tx = 'v_s_sh000001="1~上证指数~000001~3800~-10~-0.2~100~5000000~~0~ZS~";v_s_sz399001="51~深证成指~399001~12000~-20~-0.3~100~6000000~~0~ZS~";'
+
+        def mock_get(url, **kwargs):
+            if 'eastmoney.com' in url:
+                raise httpx.ConnectError('Connection refused')
+            if 'legulegu.com' in url:
+                return Mock(status_code=200, text=sample_legu)
+            if 'qt.gtimg.cn' in url:
+                return Mock(status_code=200, text=sample_tx)
+            raise httpx.HTTPError('Not found')
+
+        client.get.side_effect = mock_get
+
+        with patch('backend.market_sentiment.httpx.AsyncClient') as factory:
+            factory.return_value.__aenter__.return_value = client
+            result = await service.get_sentiment()
+
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['advancing'], 2000)
+        self.assertEqual(result['declining'], 3000)
+        self.assertEqual(result['flat'], 200)
+        self.assertEqual(result['total'], 5200)
+        # 5000000 + 6000000 万元 = 11,000,000 万元 = 110,000,000,000 元
+        self.assertEqual(result['turnover_cny'], 110000000000.0)
+        self.assertIn('备用', result['source'])
+        self.assertEqual(result['level'], 'fear')
+
