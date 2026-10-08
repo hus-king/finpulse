@@ -1,9 +1,9 @@
 """Industry-wide search topics and evidence rules, independent of stock names."""
 import re
 
-PROFILE_VERSION = 'industry-v2'
+PROFILE_VERSION = 'industry-v3'
 PROFILE_NOTE = '行业分类来自个股资料；未取得主营业务细分和收入占比，行业关联不等于已确认的公司经营影响。'
-EVENT = re.compile(r'政策|监管|供需|需求|订单|价格|上涨|下跌|回落|增长|下降|调整|产能|产量|销量|库存|出口|进口|关税|补贴|采购|集采|审批|营收|利润|成本|融资|利率|限制|禁止|供应|减产|增产|招标|中标|投资|开工|投产')
+EVENT = re.compile(r'政策|监管|供需|需求|订单|价格|上涨|下跌|回落|增长|下降|调整|产能|产量|销量|库存|出口|进口|关税|补贴|采购|集采|审批|营收|利润|成本|融资|利率|限制|禁止|供应|减产|增产|招标|中标|投资|开工|投产|规划|方案|量产')
 
 # Patterns match source industry classifications; new classifications always
 # retain a generic topic even when none of these optional factors match.
@@ -32,6 +32,14 @@ RULES = [
     (r'家电|家具|家居|零售|商贸|纺织|服装', [('消费政策', ['消费', '补贴', '以旧换新', '关税']), ('消费需求', ['零售', '家电', '家具', '纺织', '服装'])]),
     (r'旅游|酒店|餐饮|休闲', [('旅游需求', ['旅游', '酒店', '餐饮', '出行']), ('旅游政策', ['旅游政策', '签证', '免税', '文旅'])]),
     (r'传媒|游戏|出版|影视|文化', [('文化政策', ['游戏版号', '出版', '影视', '传媒', '文化政策']), ('文化需求', ['票房', '游戏', '广告市场', '电影'])]),
+]
+
+# A business headline may omit its sector (e.g. "new line commissioned").
+# These narrow fallbacks require sector and business evidence in the same
+# sentence of the cleaned main body, not merely a tag or related-news block.
+BODY_FACTOR_RULES = [
+    (r'轨交|轨道|铁路设备|铁路装备', r'轨道交通|轨交|动车组|列车|高铁|地铁|铁路', r'采购|订单|招标|中标|固定资产投资|建设|产能|产量|生产|投产|设备设计', '轨交装备需求'),
+    (r'自动化|机器人|通用设备|专用设备|仪器仪表', r'自动化|机器人|工业母机|机床|工业装备', r'设备更新|投资|采购|订单|产能|产量|销量|量产|投产|需求[^。；;\n]{0,12}增长|供需|政策|出口管制|原材料成本', '设备更新需求'),
 ]
 
 
@@ -81,6 +89,15 @@ def match_industry(industry, title, content):
             factors.append('行业动态')
         for label, terms in factors_for(industry):
             if contains(title, terms) and contains(body, terms):
+                factors.append(label)
+    if EVENT.search(title) and EVENT.search(body):
+        sentences = re.split(r'[。；;\n]', body[:1500])
+        for classifier, sector, evidence, label in BODY_FACTOR_RULES:
+            if not re.search(classifier, industry):
+                continue
+            if any(not re.search(r'招聘|求职|面试|警方|诈骗', sentence)
+                   and re.search(sector, sentence) and re.search(evidence, sentence)
+                   for sentence in sentences):
                 factors.append(label)
     factors = list(dict.fromkeys(factors))
     return {'factors': factors, 'reason': f'目标公司所属行业为{industry}；材料涉及' + '、'.join(factors) + '，属于间接行业关联，具体业务影响需核验。' if factors else ''}

@@ -95,6 +95,20 @@ class IndustryClassificationTests(unittest.TestCase):
                 self.assertFalse(match_industry(industry, title, body)['factors'])
 
 
+    def test_generic_business_headline_requires_sector_and_business_evidence_in_main_body(self):
+        title = '新产线投产，制造企业扩大投资'
+        body = '企业新产线投产。轨道交通控制设备的生产能力提升，列车装备订单增加。'
+        self.assertIn('轨交装备需求', match_industry('轨交设备Ⅱ', title, body)['factors'])
+        self.assertFalse(match_industry('轨交设备Ⅱ', title, '企业新产线投产，食品加工订单增加。')['factors'])
+        self.assertFalse(match_industry('轨交设备Ⅱ', title, '企业调整食堂。轨道交通协会举办招聘面试。')['factors'])
+
+    def test_device_market_growth_and_iot_policy_have_event_and_factor_context(self):
+        relation = match_industry('自动化设备', '角接触轴承市场展望：自动化需求加速增长', '自动化设备订单增长，工业机器人应用需求增长，轴承企业投资扩大生产。')
+        self.assertTrue(relation['factors'])
+        relation = match_industry('通信设备', '九部门物联网行动方案重塑通信产业', '行动方案推动物联网连接规模增长，通信设备产业需求扩大。')
+        self.assertTrue(relation['factors'])
+
+
 class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
