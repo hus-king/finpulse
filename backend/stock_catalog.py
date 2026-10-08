@@ -8,7 +8,7 @@ from pypinyin import Style, lazy_pinyin
 
 from . import providers
 from .catalog import CATALOG
-from .news_cleaning import SHANGHAI, STOCK_ENTITIES
+from .news_cleaning import SHANGHAI, STOCK_ENTITIES, get_stock_aliases
 
 BOARDS = {'sh': 'SH', 'star': 'SH', 'sz': 'SZ'}
 
@@ -82,5 +82,5 @@ class StockCatalog:
         return {'items': items, 'total': len(self.items), 'data_source': 'live', 'scope': '沪深 A 股（含创业板、科创板）', 'sources': {board: {'source': record['source'], 'as_of': record['as_of'], 'count': len(record['items'])} for board, record in self.boards.items() if record}, 'warnings': [f'{board}: {error}；保留已缓存股票' for board, error in self.errors.items()]}
 
     def entities(self, stock):
-        aliases = STOCK_ENTITIES.get(stock['name'], {}).get('aliases', [])
-        return {stock['name']: {'code': stock['code'], 'aliases': list(dict.fromkeys([stock['name'], stock['code'], *aliases]))}}
+        aliases = get_stock_aliases(stock['name'], {'code': stock['code'], 'aliases': [stock['name'], stock['code']]})
+        return {stock['name']: {'code': stock['code'], 'aliases': aliases}}

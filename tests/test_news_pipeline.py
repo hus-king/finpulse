@@ -74,6 +74,69 @@ class NewsPipelineTests(unittest.TestCase):
         self.assertIsNone(snapshot["close"])
         self.assertEqual(snapshot["status"], "unavailable")
 
+    def test_body_header_date_takes_precedence_over_crawler_metadata(self):
+        url = "https://example.com/xugong-capital"
+        title = "股票行情快报：徐工机械（000425）9月30日主力资金净买入1.31亿元_主力研究"
+        # Crawler metadata is 2026-10-08, but body header is 2026-09-30
+        raw = {
+            "date_range": ["2026-09-25", "2026-10-08"],
+            "searches": [{
+                "stock": "徐工机械",
+                "response": {
+                    "results": [{
+                        "title": title,
+                        "url": url,
+                        "published_date": "2026-10-08",
+                        "content": "发布时间：2026-09-30 15:30:00\n徐工机械主力资金今日呈现净买入格局，资金流动对个股形成持续支撑。"
+                    }]
+                }
+            }]
+        }
+        result = clean_report(raw)
+        self.assertEqual(len(result["items"]), 1)
+        item = result["items"][0]
+        self.assertEqual(item["effective_date"], "2026-09-30")
+        self.assertEqual(item["date_status"], "body_verified")
+        self.assertNotIn("date_conflict", item.get("reason_codes", []))
+
+    def test_relaxed_entity_matching_retains_brand_root_and_body_references(self):
+        # 1. Title contains brand root '徐工' instead of full '徐工机械'
+        url_car = "https://example.com/crane"
+        title_car = "徐工汽车起重机新车申报：国六柴油动力 能抢占工程车市场吗？ - 搜狐时间线"
+        # 2. Unrelated news without any entity references
+        url_unrelated = "https://example.com/unrelated"
+        title_unrelated = "某公司招聘新员工"
+        raw = {
+            "date_range": ["2026-09-25", "2026-10-08"],
+            "searches": [{
+                "stock": "徐工机械",
+                "response": {
+                    "results": [
+                        {
+                            "title": title_car,
+                            "url": url_car,
+                            "published_date": "2026-09-30",
+                            "content": "徐工汽车起重机新款车型完成工信部新车申报，搭载国六柴油发动机，引发行业关注。"
+                        },
+                        {
+                            "title": title_unrelated,
+                            "url": url_unrelated,
+                            "published_date": "2026-09-30",
+                            "content": "某公司发布秋季招聘启事，涉及销售及行政多岗位。"
+                        }
+                    ]
+                }
+            }]
+        }
+        result = clean_report(raw)
+        retained_titles = [item["title"] for item in result["items"]]
+        self.assertIn(title_car, retained_titles)
+        self.assertNotIn(title_unrelated, retained_titles)
+        # Verify unrelated was filtered due to entity mismatch
+        unrelated_audit = next(r for r in result["audit"] if r["url"] == url_unrelated)
+        self.assertIn("not_primary_entity", unrelated_audit["reason_codes"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

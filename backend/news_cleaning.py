@@ -18,7 +18,46 @@ STOCK_ENTITIES = {
     "中芯国际": {"code": "688981", "aliases": ["中芯国际", "中芯國際", "SMIC", "688981"]},
     "平安银行": {"code": "000001", "aliases": ["平安银行", "平安銀行", "000001"]},
     "比亚迪": {"code": "002594", "aliases": ["比亚迪", "比亞迪", "BYD", "002594"]},
+    "徐工机械": {"code": "000425", "aliases": ["徐工机械", "徐工", "000425", "XCMG"]},
+    "美的集团": {"code": "000333", "aliases": ["美的集团", "美的", "000333"]},
+    "格力电器": {"code": "000651", "aliases": ["格力电器", "格力", "000651"]},
+    "立讯精密": {"code": "002475", "aliases": ["立讯精密", "立讯", "002475"]},
+    "三一重工": {"code": "600031", "aliases": ["三一重工", "三一", "600031"]},
+    "中国石油": {"code": "601857", "aliases": ["中国石油", "中石油", "601857", "PetroChina"]},
+    "中国石化": {"code": "600028", "aliases": ["中国石化", "中石化", "600028", "Sinopec"]},
+    "紫金矿业": {"code": "601899", "aliases": ["紫金矿业", "紫金", "601899"]},
+    "赛力斯": {"code": "601127", "aliases": ["赛力斯", "601127", "SERES"]},
+    "五粮液": {"code": "000858", "aliases": ["五粮液", "000858"]},
 }
+
+GENERIC_ROOT_BLACKLIST = {
+    '中国', '中华', '北京', '上海', '广东', '深圳', '浙江', '江苏', '山东', '四川',
+    '发展', '科技', '投资', '控股', '实业', '重工', '化工', '能源', '国际', '联合', '创新'
+}
+
+CORPORATE_SUFFIXES = (
+    '机械', '股份', '科技', '集团', '重工', '控股', '生物', '医药', '电子',
+    '证券', '软件', '信息', '材料', '电气', '环境', '精工', '精密', '特钢',
+    '重机', '建工', '电器', '光伏', '动力', '汽车', '智能', '网络', '通信',
+    '新能', '水务', '银行', '保险', '矿业', '钢铁', '石化', '造纸'
+)
+
+
+def get_stock_aliases(stock_name, entity_info=None):
+    """Retrieve official, user-specified, and dynamically derived core brand aliases."""
+    base_aliases = list((entity_info or {}).get('aliases', []))
+    code = (entity_info or {}).get('code', '')
+    known = STOCK_ENTITIES.get(stock_name, {}).get('aliases', [])
+    derived = []
+    for suffix in CORPORATE_SUFFIXES:
+        if stock_name.endswith(suffix) and len(stock_name) - len(suffix) >= 2:
+            base = stock_name[:-len(suffix)]
+            if base not in GENERIC_ROOT_BLACKLIST:
+                derived.append(base)
+    if len(stock_name) >= 3 and stock_name[-1].upper() in ('A', 'B'):
+        derived.append(stock_name[:-1])
+    return list(dict.fromkeys([stock_name, code, *base_aliases, *known, *derived]))
+
 REASONS = {
     "quote_page": "行情、历史价格或评级聚合页面，不是独立新闻",
     "news_index": "新闻或公告索引页面，不是独立文章",
@@ -127,7 +166,12 @@ def body_publication_date(text):
     # Only publication headers count. Years mentioned in an article are not publication dates.
     pattern = r"(20\d{2})[-年/.](\d{1,2})[-月/.](\d{1,2})日?"
     head = text[:1800]
-    matches = [re.search(r"(?:发布时间|发布日期|时间[：:]|来源[：:])[^\n]{0,80}?"+pattern, head), re.search(r"(?m)^\s*"+pattern, head), re.search(r"(?m)^[^。\n]{0,20}\s+"+pattern+r"\s+\d{1,2}:\d{2}", head[:500])]
+    matches = [
+        re.search(r"(?:发布时间|发布日期|发表时间|更新时间|时间[：:]|来源[：:])[^\n]{0,80}?" + pattern, head),
+        re.search(r"(?m)^\s*" + pattern, head),
+        re.search(r"(?m)^[^。\n]{0,30}\s+" + pattern + r"(?:\s+\d{1,2}:\d{2})?", head[:600]),
+        re.search(r"(?m)^" + pattern + r"\s+\d{1,2}:\d{2}", head[:600]),
+    ]
     for match in matches:
         if match:
             try:
@@ -211,17 +255,41 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
                 stats['extraction_mismatch'] = True
                 text_source = 'search_fragments'
             # A fallback fragment must not hide an older publication header
-            # discovered in the extracted page. Conflicts stay quarantined.
-            meta, body = metadata_date(raw.get("published_date")), body_publication_date(text) or extracted_date
-            effective = body or meta
+            # discovered in the extracted page.
+            meta = metadata_date(raw.get("published_date"))
+            body_header = body_publication_date(text)
+            body = body_header or extracted_date
+
+            # 正文头部日期置信度高于搜索引擎爬取日期，直接采用正文头部日期
+            if body_header:
+                effective = body_header
+                date_status = "body_verified"
+            elif body:
+                effective = body
+                date_status = "body_verified" if not meta or body == meta else "conflict"
+            elif meta:
+                effective = meta
+                date_status = "metadata_only"
+            else:
+                effective = None
+                date_status = "missing"
+
             kind, label, tier = category(raw.get("title", ""), text)
-            direct = any(alias.lower() in raw.get('title', '').lower() for alias in entities[stock]['aliases'])
+            aliases = get_stock_aliases(stock, entities.get(stock))
+            # 宽松实体消歧：
+            # 1. 标题直接包含标的名称、代码、品牌根词（如“徐工”）或别名
+            # 2. 或正文开头（前 350 字）明确提及标的名称或股票代码
+            direct_in_title = any(alias and alias.lower() in raw.get('title', '').lower() for alias in aliases)
+            head_content = (text or '')[:350].lower()
+            direct_in_body = (stock.lower() in head_content or (entities[stock]['code'] and entities[stock]['code'] in head_content))
+            direct = direct_in_title or direct_in_body
+
             scope = 'industry' if search.get('news_scope') == 'industry' and not direct else 'company'
             industry = (industry_profile or {}).get('industry')
             relation = match_industry(industry, raw.get('title', ''), text) if scope == 'industry' else {'factors': [], 'reason': '标题直接涉及目标公司。'}
             if scope == 'industry':
                 kind, label, tier = 'industry_news', '行业新闻', 'industry'
-            item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": entities[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": "conflict" if body and meta and body != meta else "body_verified" if body else "metadata_only" if meta else "missing", "text_source": text_source, "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
+            item = {"id": f"g{group_index+1}-r{rank}", "stock": stock, "stock_code": entities[stock]["code"], "title": raw.get("title", ""), "url": url, "original_url": raw.get("url"), "search_rank": rank, "search_group": group_index+1, "search_relevance": raw.get("score"), "published_date_metadata": meta.isoformat() if meta else None, "published_date_body": body.isoformat() if body else None, "effective_date": effective.isoformat() if effective else None, "date_status": date_status, "text_source": text_source, "cleaned_text": text, "text_stats": stats, "category": kind, "category_label": label, "tier": tier}
             item.update(news_scope=scope, industry=industry if valid_industry(industry) else None,
                         related_factors=relation['factors'], relevance_reason=relation['reason'], stale=search.get('cache_status') == 'stale')
             reasons = []
@@ -229,7 +297,7 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
             if source_kind:
                 reasons.append(source_kind)
             title = raw.get("title", "")
-            if not re.search(r'[\u4e00-\u9fff]{2,}', title) and not any(alias.isascii() and not alias.isdigit() and alias.lower() in title.lower() for alias in entities[stock]['aliases']):
+            if not re.search(r'[\u4e00-\u9fff]{2,}', title) and not any(alias.isascii() and not alias.isdigit() and alias.lower() in title.lower() for alias in aliases):
                 reasons.append('garbled_title')
             if not url:
                 reasons.append("invalid_url")
@@ -250,7 +318,7 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
                 reasons.append('not_industry_event')
             elif scope == 'company' and not direct:
                 reasons.append("not_primary_entity")
-            if re.search(r"股票股价|股价行情|历史行情|详细报价|詳細報價|即時報價|股票预测|股票預測|RT Quote", title, flags=re.I):
+            if re.search(r"股票股价|股价行情|历史行情|详细报价|詳細報價|即時報价|股票预测|股票預測|RT Quote", title, flags=re.I):
                 if 'quote_page' not in reasons:
                     reasons.append("quote_page")
             if re.search(r"规模最大|公司概况|公司简介|公司介紹|企业介绍", title):
@@ -258,7 +326,7 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
                     reasons.append("company_profile")
             if not effective:
                 reasons.append("missing_date")
-            if body and meta and body != meta:
+            if date_status == "conflict":
                 reasons.append("date_conflict")
             if effective and not start <= effective <= end:
                 reasons.append("out_of_range")
@@ -278,4 +346,4 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
                     retained.append({**item, "sources": [{"id": item["id"], "title": title, "url": url, "date": item["effective_date"]}]})
             audit.append(entry)
     counts = Counter(entry["status"] for entry in audit)
-    return {"date_range": raw_report["date_range"], "summary": {"input": len(audit), "retained": counts["retained"], "filtered": counts["filtered"], "merged": counts["merged"], "company_events": sum(item["tier"] == "company" for item in retained), "industry_events": sum(item['news_scope'] == 'industry' for item in retained), "auxiliary_events": sum(item["tier"] == "auxiliary" for item in retained)}, "items": retained, "audit": audit, "limitations": ["规则清洗试验，尚未进行全面人工标注评估", "只有取得正文的条目才能核对正文日期；搜索片段可能截断", "日期冲突保守隔离，不自动改正来源日期", "不同日期和不同编号的事件不因标题相似而合并", "机构观点、行情快讯和衍生品事件单独标记，不能当作公司经营公告", "保留新闻与行情并列展示，不据此推断新闻导致价格变化", "行业事件只表示间接关联，需结合目标公司的主营业务核验影响"]}
+    return {"date_range": raw_report["date_range"], "summary": {"input": len(audit), "retained": counts["retained"], "filtered": counts["filtered"], "merged": counts["merged"], "company_events": sum(item["tier"] == "company" for item in retained), "industry_events": sum(item['news_scope'] == 'industry' for item in retained), "auxiliary_events": sum(item["tier"] == "auxiliary" for item in retained)}, "items": retained, "audit": audit, "limitations": ["规则清洗试验，尚未进行全面人工标注评估", "只有取得正文的条目才能核对正文日期；搜索片段可能截断", "正文头部发布日期置信度优先于搜索元数据，已校验正文日期的条目直接采用正文日期", "不同日期和不同编号的事件不因标题相似而合并", "机构观点、行情快讯和衍生品事件单独标记，不能当作公司经营公告", "保留新闻与行情并列展示，不据此推断新闻导致价格变化", "行业事件只表示间接关联，需结合目标公司的主营业务核验影响"]}
