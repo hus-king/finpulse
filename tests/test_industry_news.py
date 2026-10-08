@@ -20,7 +20,7 @@ from backend.research_api import analyze_saved
 
 STOCK = {'code': '601857', 'name': '中国石油', 'exchange': 'SH', 'industry': 'A 股'}
 ANALYSIS = {'sentiment_score': 0, 'summary': '原油供需出现变化', 'causal_chain': ['来源披露原油价格变化', '可能影响相关业务经营条件', '市场预期仍需进一步核验'], 'uncertainty': '行业间接关联，缺少主营收入占比'}
-REPLY = {'content': json.dumps(ANALYSIS, ensure_ascii=False), 'model': 'test', 'elapsed_ms': 1, 'usage': {}, 'request_id': 'test'}
+REPLY = {'content': json.dumps({**ANALYSIS, 'assessment':'positive' if ANALYSIS['sentiment_score'] else 'neutral', 'confidence':'medium', 'horizon':'medium', 'positive_factors':['公司披露业务进展'] if ANALYSIS['sentiment_score'] else [], 'negative_factors':[], 'watch_points':['执行进度'], 'sentiment_score':ANALYSIS['sentiment_score']*25}, ensure_ascii=False), 'model': 'test', 'elapsed_ms': 1, 'usage': {}, 'request_id': 'test'}
 
 
 def news(title='国际原油价格回落', url='https://example.com/oil', day='2026-10-08', **extra):
@@ -119,6 +119,9 @@ class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
         self.model = AsyncMock(return_value=REPLY)
         self.service = ResearchService(self.store, self.model)
         self.service.catalog.items[STOCK['code']] = STOCK
+        business_patch = patch('backend.providers.business_profile', new=AsyncMock(return_value={'code':STOCK['code'],'main_business':'测试主营业务','source':'test'}))
+        business_patch.start()
+        self.addCleanup(business_patch.stop)
         self.profile_patch = patch('backend.providers.stock_profile', new=AsyncMock(return_value={**STOCK, 'industry': '石油行业', 'source': 'test'}))
         self.profile_patch.start()
         self.addCleanup(self.profile_patch.stop)

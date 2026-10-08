@@ -88,6 +88,13 @@ class IndustryNewsService:
                 'fetched_at': datetime.fromtimestamp(record['fetched_at'], SHANGHAI).isoformat() if record.get('fetched_at') else None,
                 'note': PROFILE_NOTE}
 
+    async def business(self, stock):
+        record = await self._shared('company_business', stock['code'], lambda: providers.business_profile(stock), 7 * 86400)
+        data = record.get('data') or {}
+        return {**data, 'code':stock['code'], 'status':record.get('status','unavailable'),
+                'version':'business-v1', 'error':record.get('error'),
+                'fetched_at':datetime.fromtimestamp(record['fetched_at'],SHANGHAI).isoformat() if record.get('fetched_at') else None}
+
     async def search(self, topic, start, end):
         key = hashlib.sha256('\n'.join([PROFILE_VERSION, topic['industry'], topic['query'], start, end]).encode()).hexdigest()
         async def fetch():

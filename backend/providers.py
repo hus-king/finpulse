@@ -48,12 +48,50 @@ async def tavily(endpoint, payload):
 
 
 async def search_news(stock, start, end):
-    return await tavily('search', {'query': f'{stock["name"]} {stock["code"]} 公司 公告 新闻', 'topic': 'news', 'search_depth': 'advanced', 'max_results': 12, 'start_date': start, 'end_date': end, 'include_raw_content': False, 'include_answer': False, 'include_usage': True})
+    topics = ['公告 业绩 财报 分红 回购', '订单 产能 产品 经营 进展', '风险 诉讼 处罚 减持 债务', '主营产品 上下游 竞争对手 行业政策']
+    responses = await asyncio.gather(*(tavily('search', {**({'include_domains':['cninfo.com.cn','sse.com.cn','szse.cn']} if index == 0 else {}), 'query': f'{stock["name"]} {stock["code"]} {topic}',
+        'topic': 'news', 'search_depth': 'advanced', 'max_results': 12, 'start_date': start, 'end_date': end,
+        'include_raw_content': True, 'include_answer': False, 'include_usage': True}) for index, topic in enumerate(topics)), return_exceptions=True)
+    results, seen, warnings = [], set(), []
+    for topic, response in zip(topics, responses):
+        if isinstance(response, Exception):
+            warnings.append('检索主题“' + topic + '”暂不可用')
+            continue
+        for row in response['results']:
+            if row.get('url') not in seen:
+                seen.add(row.get('url'))
+                results.append(row)
+    if len(warnings) == len(topics):
+        raise ProviderError('公司多主题新闻源均不可用')
+    return {'results': results, 'topics': topics, 'warnings': warnings}
+
+
+async def business_profile(stock):
+    secucode = stock['code'] + ('.SH' if stock['code'].startswith('6') else '.SZ')
+    params = {'reportName':'RPT_F10_ORG_BASICINFO', 'columns':'SECUCODE,SECURITY_CODE,MAIN_BUSINESS',
+              'filter':f'(SECUCODE="{secucode}")', 'pageNumber':1, 'pageSize':1, 'source':'HSF10', 'client':'PC'}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            response = await client.get('https://datacenter.eastmoney.com/securities/api/data/v1/get', params=params)
+            response.raise_for_status()
+            payload = response.json()
+        rows = payload['result']['data']
+        if payload.get('success') is not True or len(rows) != 1:
+            raise ValueError('Invalid record count')
+        row = rows[0]
+        text = row.get('MAIN_BUSINESS')
+        if row.get('SECUCODE') != secucode or row.get('SECURITY_CODE') != stock['code'] or not isinstance(text,str) or len(text.strip()) < 4 or text.strip() in ('None','未知','暂无'):
+            raise ValueError('Business facts or identity missing')
+        return {'code':stock['code'], 'main_business':text.strip()[:2400], 'revenue_segments':None,
+                'source':'东方财富 F10 主营业务资料', 'url':f'https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/Index?type=web&code={("SH" if stock["code"].startswith("6") else "SZ") + stock["code"]}',
+                'note':'主营描述来自资料源；分部收入、利润占比和实际敞口未取得，不以经营范围推定业务权重。'}
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        raise ProviderError('公司主营业务资料暂不可用') from None
 
 
 async def search_industry_news(query, start, end):
     return await tavily('search', {'query': query, 'topic': 'news', 'search_depth': 'advanced', 'max_results': 8,
-        'start_date': start, 'end_date': end, 'include_raw_content': False, 'include_answer': False, 'include_usage': True})
+        'start_date': start, 'end_date': end, 'include_raw_content': True, 'include_answer': False, 'include_usage': True})
 
 
 async def stock_profile(stock):

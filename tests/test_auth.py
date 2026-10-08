@@ -99,7 +99,7 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(self.client.post("/api/chat", headers=headers, json=CHAT).status_code, 200)
             self.assertEqual(upstream.await_count, 1)
         analysis = {"sentiment_score": 0, "summary": "测试摘要", "causal_chain": ["事实", "影响", "预期"], "uncertainty": "仅用于权限测试"}
-        with patch("backend.app.completion", new=AsyncMock(return_value={**result, "content": json.dumps(analysis)})) as upstream:
+        with patch("backend.app.completion", new=AsyncMock(return_value={**result, "content": json.dumps({**analysis,'assessment':'neutral','confidence':'low','horizon':'unclear','positive_factors':[],'negative_factors':[],'watch_points':[]})})) as upstream:
             self.assertEqual(self.client.post("/api/analyze", headers=headers, json=ANALYZE).status_code, 200)
             self.assertEqual(upstream.await_count, 1)
 

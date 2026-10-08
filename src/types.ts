@@ -30,7 +30,7 @@ export interface MarketBundle {
   errors: Record<string, string>; next_poll_seconds: number; fetched_at: string;
   market_sentiment?: MarketSentiment;
 }
-export interface Analysis { sentiment_score: number; summary: string; causal_chain: string[]; uncertainty: string }
+export interface Analysis { sentiment_score: number | null; version?: string; assessment?: 'positive'|'negative'|'neutral'|'mixed'|'insufficient'; confidence?: 'high'|'medium'|'low'; horizon?: 'short'|'medium'|'long'|'unclear'; positive_factors?: string[]; negative_factors?: string[]; watch_points?: string[]; summary: string; causal_chain: string[]; uncertainty: string }
 export interface News {
   id: string; title: string; source: string; url: string; content: string; score: number | null; tag: string; time: string;
   analysis: Analysis | null; analysis_status: string; analysis_error?: string;
@@ -44,7 +44,11 @@ export interface IndustryProfile {
   source?: string; fetched_at: string | null; version: string; error?: string | null; note: string;
 }
 export interface Pipeline { date_range: string[]; statuses: Record<string, string>; counts: Record<string, number>; warnings: string[]; collection_id?: string; job_status?: string; stages?: Record<string, string> }
+export interface OverviewEvidence { news_id:string; title:string; url:string; text:string; score:number|null; confidence:string; horizon:string }
+export interface ResearchOverview { status:string; counts:Record<string,number>; analyzed:number; total:number; score_range:[number,number]|null; opportunities:OverviewEvidence[]; risks:OverviewEvidence[]; watch_points:OverviewEvidence[]; note:string }
 export interface Dashboard {
+  research_overview?:ResearchOverview;
+  business_profile?:{main_business?:string; source?:string; url?:string; fetched_at?:string; status:string; note?:string; revenue_segments:null};
   industry_profile?: IndustryProfile;
   daily_request?: { refreshing: boolean; error: string | null; next_poll_seconds: number; market: { label: string } };
   stock: Stock; candles: Candle[]; news: News[]; as_of: string | null; revision?: string; pipeline: Pipeline | null;

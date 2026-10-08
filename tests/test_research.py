@@ -22,7 +22,7 @@ from backend.research_store import ResearchStore
 
 ORIGIN = {'Origin': 'http://localhost'}
 ANALYSIS = {'sentiment_score': 1, 'summary': '公司披露经营进展', 'causal_chain': ['公司披露新项目', '可能增加业务收入', '实际市场反应有待观察'], 'uncertainty': '仅基于来源材料；不构成价格预测'}
-REPLY = {'content': json.dumps(ANALYSIS, ensure_ascii=False), 'model': 'test', 'elapsed_ms': 1, 'usage': {}, 'request_id': 'test', 'source': 'test'}
+REPLY = {'content': json.dumps({**ANALYSIS, 'assessment':'positive' if ANALYSIS['sentiment_score'] else 'neutral', 'confidence':'medium', 'horizon':'medium', 'positive_factors':['公司披露业务进展'] if ANALYSIS['sentiment_score'] else [], 'negative_factors':[], 'watch_points':['执行进度'], 'sentiment_score':ANALYSIS['sentiment_score']*25}, ensure_ascii=False), 'model': 'test', 'elapsed_ms': 1, 'usage': {}, 'request_id': 'test', 'source': 'test'}
 
 
 def news_sample():
@@ -36,7 +36,8 @@ def mock_industry_sources(test):
     async def profile(stock):
         industry = stock.get('industry')
         return {**stock, 'industry': industry if industry and industry != 'A 股' else '测试行业', 'source': 'test industry source'}
-    for target, mock in [('backend.providers.stock_profile', AsyncMock(side_effect=profile)),
+    for target, mock in [('backend.providers.business_profile', AsyncMock(return_value={'code':'600519','main_business':'测试主营业务','source':'test'})),
+                         ('backend.providers.stock_profile', AsyncMock(side_effect=profile)),
                          ('backend.providers.search_industry_news', AsyncMock(return_value={'results': []}))]:
         source_patch = patch(target, new=mock)
         source_patch.start()
@@ -108,7 +109,7 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(response.status_code, 202)
             self.assertEqual(self.wait_job(response.json()['id'])['status'], 'completed')
             data = self.client.get('/api/dashboard/600519').json()
-            self.assertEqual(data['news'][0]['score'], 1)
+            self.assertEqual(data['news'][0]['score'], 25)
             self.assertEqual(data['news'][0]['url'], 'https://example.com/news/1')
             self.assertEqual(self.client.get('/api/research/600519/audit').json()['summary']['input'], 1)
             again = self.client.post('/api/research/600519/refresh', headers=headers, json={})
@@ -117,7 +118,7 @@ class ResearchTests(unittest.TestCase):
             item = data['news'][0]
             self.assertEqual(self.client.post(f'/api/news/600519/{item["id"]}/analyze', headers=headers, json={}).status_code, 200)
             self.assertEqual(model.await_count, 1)
-        self.assertEqual(ResearchStore(self.auth).get('dashboard', '600519')['news'][0]['score'], 1)
+        self.assertEqual(ResearchStore(self.auth).get('dashboard', '600519')['news'][0]['score'], 25)
 
     def test_market_news_and_individual_analyses_are_visible_before_job_finishes(self):
         headers = self.register()
@@ -311,12 +312,12 @@ class StagedCollectionTests(unittest.IsolatedAsyncioTestCase):
                 early = self.store.get('dashboard', '600519')
                 self.assertEqual(early['candles'], [])
                 self.assertEqual(early['pipeline']['stages']['market'], 'pending')
-                self.assertEqual(early['news'][0]['score'], 1)
+                self.assertEqual(early['news'][0]['score'], 25)
                 self.assertFalse(task.done())
                 gate.set()
                 final = await asyncio.wait_for(task, 3)
                 self.assertEqual(final['candles'], self.market['candles'])
-                self.assertEqual(final['news'][0]['score'], 1)
+                self.assertEqual(final['news'][0]['score'], 25)
                 self.assertNotEqual(early['revision'], final['revision'])
                 self.service.completion.assert_awaited_once()
             finally:

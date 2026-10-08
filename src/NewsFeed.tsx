@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpen, ChevronRight, Download, ExternalLink, LoaderCircle, Sparkles } from 'lucide-react';
+import AnalysisEvidence from './AnalysisEvidence';
+import { newsLabel } from './analysisPresentation';
 import { dateTime } from './format';
 import type { Dashboard, News } from './types';
 
@@ -10,7 +12,8 @@ export default function NewsFeed({ data, openAssistant }: { data: Dashboard; ope
   const visible = data.news.filter(row => {
     const kind = row.news_scope ?? 'company';
     const scopeMatches = scope === '全部范围' || kind === (scope === '公司新闻' ? 'company' : 'industry');
-    const sentimentMatches = sentiment === '全部' || (sentiment === '利好' ? (row.score ?? 0) > 0 : sentiment === '利空' ? (row.score ?? 0) < 0 : sentiment === '待研判' ? row.score == null : row.score === 0);
+    const state = row.analysis?.assessment;
+    const sentimentMatches = sentiment === '全部' || (sentiment === '利好' ? (row.score ?? 0) > 0 : sentiment === '利空' ? (row.score ?? 0) < 0 : sentiment === '中性' ? state === 'neutral' : sentiment === '正负并存' ? state === 'mixed' : sentiment === '待补证' ? state === 'insufficient' : sentiment === '旧版' ? !!row.analysis && !state : !row.analysis);
     return scopeMatches && sentimentMatches;
   });
   const profile = data.industry_profile;
@@ -32,12 +35,14 @@ export default function NewsFeed({ data, openAssistant }: { data: Dashboard; ope
       <span>{profile?.industry ? `${profile.source ?? '个股资料'} · ${dateTime(profile.fetched_at)}${profile.status === 'stale' ? ' · 沿用上次行业资料' : ''}` : profile ? '本轮仅更新公司新闻，已有行业材料会标明更新时间' : '公司新闻与行业事件一起检索，新增股票同样支持'}</span>
       {profile?.industry && <small>行业事件为间接关联，具体业务影响请结合原文及公司资料核验。</small>}
     </div>
+    {data.business_profile?.main_business && <details className="business-profile"><summary>研判依据：主营业务资料</summary><p>{data.business_profile.main_business}</p><small>{data.business_profile.source} · {dateTime(data.business_profile.fetched_at ?? null)}{data.business_profile.status === 'stale' ? ' · 沿用上次资料' : ''}</small><p>{data.business_profile.note}</p><a href={data.business_profile.url} target="_blank" rel="noopener noreferrer">查看业务资料来源</a></details>}
     <div className="news-tabs news-scope-tabs" role="group" aria-label="新闻范围">{['全部范围', '公司新闻', '行业新闻'].map(item => <button key={item} aria-pressed={scope === item} className={scope === item ? 'active' : ''} onClick={() => setScope(item)}>{item}{item === '公司新闻' ? ` ${companyCount}` : item === '行业新闻' ? ` ${industryCount}` : ''}</button>)}</div>
-    <div className="news-tabs" role="group" aria-label="新闻倾向">{['全部', '利好', '中性', '利空', '待研判'].map(item => <button key={item} aria-pressed={sentiment === item} className={sentiment === item ? 'active' : ''} onClick={() => setSentiment(item)}>{item}</button>)}</div>
+    <div className="news-tabs" role="group" aria-label="新闻倾向">{['全部', '利好', '中性', '利空', '正负并存', '待补证', '待研判', '旧版'].map(item => <button key={item} aria-pressed={sentiment === item} className={sentiment === item ? 'active' : ''} onClick={() => setSentiment(item)}>{item}</button>)}</div>
     {visible.length ? <div className="live-news-list">{visible.map((news, index) => <article className={index === 0 ? 'feature-news' : ''} key={news.id}>
-      <div className="news-kicker"><span>{news.source}</span><time>{news.time}</time><span className="news-scope-badge">{news.news_scope === 'industry' ? '行业新闻' : '公司新闻'}</span><span>{news.tag !== '行业新闻' ? news.tag : news.industry}</span><span className={`news-score ${news.score == null ? 'unrated' : news.score > 0 ? 'up' : news.score < 0 ? 'down' : ''}`}>{news.score == null ? news.analysis_status === 'running' ? 'AI 研判中' : news.analysis_status === 'failed' ? '研判失败' : '待研判' : `AI ${news.score > 0 ? '+' : ''}${news.score}`}</span></div>
+      <div className="news-kicker"><span>{news.source}</span><time>{news.time}</time><span className="news-scope-badge">{news.news_scope === 'industry' ? '行业新闻' : '公司新闻'}</span><span>{news.tag !== '行业新闻' ? news.tag : news.industry}</span><span className={`news-score ${news.score == null ? 'unrated' : news.score > 0 ? 'up' : news.score < 0 ? 'down' : ''}`}>{newsLabel(news)}</span></div>
       <h3><a href={news.url} target="_blank" rel="noopener noreferrer">{news.title}<ExternalLink size={13} /></a></h3>
       <p>{news.analysis?.summary ?? news.content.slice(0, 190)}</p>
+      {news.analysis && <AnalysisEvidence analysis={news.analysis} />}
       {news.news_scope === 'industry' && <div className="news-industry-relation"><strong>关联因素：{news.related_factors?.join('、') || news.industry || '行业动态'}</strong><p>{news.relevance_reason || '行业间接关联，尚需核验对目标公司的实际影响。'}</p></div>}
       {(news.stale || news.refresh_pending) && <p className="news-stale" role="status">{news.refresh_pending ? '行业检索进行中，暂展示上次材料' : '本轮更新失败，沿用上次材料'}；发布日期为 {news.time}。</p>}
       {news.analysis && <div className="news-chain">{news.analysis.causal_chain.map((step, i) => <span key={i}>{i > 0 && <ChevronRight size={12} />}{step}</span>)}</div>}

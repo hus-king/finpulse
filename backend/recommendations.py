@@ -4,6 +4,8 @@ import math
 import re
 from datetime import datetime
 
+from .prompts import PROMPT_VERSION
+from .evidence import score_label
 from .catalog import DEFAULT_WATCHLIST, stock_by_code
 from .news_cleaning import SHANGHAI, normalize_url, source_page_kind, same_event
 
@@ -13,7 +15,7 @@ TOPICS = {
     '行业政策': r'政策|监管|行业|产业|补贴|关税',
     '风险事件': r'处罚|诉讼|调查|违约|风险|暴雷|退市|减值',
 }
-VERSION = 'briefing-rank-v3-industry'
+VERSION = 'briefing-rank-v4-evidence'
 
 
 def duplicate_event(left, right):
@@ -65,7 +67,7 @@ def build_digest(store, owner, now=None):
             topics = [topic for topic, pattern in TOPICS.items() if re.search(pattern, text)]
             freshness = 30 * math.exp(-age / 3)
             relevance = 25 if row.get('tier', 'company') == 'company' else 12
-            magnitude = abs(row.get('score') or 0) / 2
+            magnitude = min(1,abs(row.get('score') or 0) / (100 if analysis.get('version') == PROMPT_VERSION else 2))
             importance = 20 * max(magnitude, .8 if topics else .3)
             evidence = 15 if row.get('text_source') in ('extract', 'extracted', 'extracted_body', 'akshare') else 7
             if row.get('date_status') == 'body_verified':
@@ -84,10 +86,10 @@ def build_digest(store, owner, now=None):
             if set(topics) & set(interests):
                 reasons.append('匹配你的关注主题')
             item = {key: row.get(key) for key in ('id', 'title', 'time', 'score', 'source', 'tag', 'text_source')}
-            item.update(url=url, summary=analysis.get('summary'), uncertainty=analysis.get('uncertainty'), code=code, name=stock['name'], topics=topics, priority=round(sum(components.values()) / 105 * 100, 1), components=components, reasons=reasons, related_stocks=[{'code': code, 'name': stock['name']}])
+            item.update(url=url, score_label=score_label(analysis,row.get('score')), summary=analysis.get('summary'), uncertainty=analysis.get('uncertainty'), code=code, name=stock['name'], topics=topics, priority=round(sum(components.values()) / 105 * 100, 1), components=components, reasons=reasons, related_stocks=[{'code': code, 'name': stock['name']}])
             item.update(news_scope=row.get('news_scope', 'company'), industry=row.get('industry'),
                         related_factors=row.get('related_factors', []), relevance_reason=row.get('relevance_reason'), stale=bool(row.get('stale')),
-                        company_impacts=[{'code': code, 'name': stock['name'], 'score': row.get('score'), 'summary': analysis.get('summary'),
+                        company_impacts=[{'code': code, 'name': stock['name'], 'score': row.get('score'), 'score_label':score_label(analysis,row.get('score')), 'summary': analysis.get('summary'),
                                           'uncertainty': analysis.get('uncertainty'), 'relevance_reason': row.get('relevance_reason'),
                                           'news_scope': row.get('news_scope', 'company'), 'stale': bool(row.get('stale')), 'refresh_pending': bool(row.get('refresh_pending'))}])
             candidates.append(item)
@@ -102,6 +104,7 @@ def build_digest(store, owner, now=None):
                 if duplicate['news_scope'] == 'industry' or item['news_scope'] == 'industry':
                     # A shared document is not a shared target-company rating.
                     duplicate['score'] = None
+                    duplicate['score_label'] = '查看各公司独立研判'
                     duplicate['summary'] = '同一事件关联多个自选股，影响请查看各公司的独立研判。'
                     duplicate['uncertainty'] = '各公司的业务关联和影响方向需分别核验。'
         else:

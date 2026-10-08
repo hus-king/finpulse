@@ -81,7 +81,7 @@ class AddStockTests(unittest.TestCase):
             self.assertEqual(job['status'], 'completed')
             snapshot = self.client.get('/api/dashboard/600036').json()
             self.assertEqual(snapshot['stock']['name'], '招商银行')
-            self.assertEqual(snapshot['news'][0]['score'], 1)
+            self.assertEqual(snapshot['news'][0]['score'], 25)
             self.assertEqual(snapshot['candles'][0]['close'], 40)
             self.assertIn('600036', self.client.get('/api/watchlist').json()['codes'])
             self.assertEqual(self.client.get('/api/briefing/preview').json()['sections'][-1]['name'], '招商银行')

@@ -12,3 +12,17 @@
 .company-impacts strong { font-size: 12px; color: var(--theme-text); }
 .company-impacts p { font-size: 12px; color: var(--theme-muted); line-height: 1.8; margin-top: 6px; }
 @media (max-width: 760px) { .industry-profile { margin-left: 20px; margin-right: 20px; } }
+
+.news-tabs { flex-wrap: wrap; }
+.evidence-meta { color: var(--theme-muted); font-size: 12px; line-height: 1.6; }
+.analysis-evidence details, .business-profile { font-size: 12px; line-height: 1.7; margin: 12px 0; }
+.analysis-evidence summary, .business-profile summary { cursor: pointer; color: var(--theme-muted); }
+.analysis-evidence ul { padding-left: 18px; }
+.business-profile { margin: 12px 25px; padding: 10px 15px; border: 1px solid var(--border); border-radius: 8px; }
+.overview-assessment { display: block; margin-top: 18px; font-size: 23px; }
+.overview-evidence { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 16px; }
+.overview-evidence h3 { font-size: 13px; margin: 0 0 9px; }
+.overview-evidence button { display: block; width: 100%; padding: 8px 0; border: 0; background: none; text-align: left; color: var(--theme-text); cursor: pointer; line-height: 1.6; }
+.overview-evidence button:hover { color: var(--theme-accent-text); }
+.overview-evidence small { display: block; color: var(--theme-muted); font-size: 11px; margin-top: 3px; }
+.overview-note { font-size: 11px; line-height: 1.7; }

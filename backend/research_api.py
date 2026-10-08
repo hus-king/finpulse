@@ -69,7 +69,7 @@ async def market_sentiment(request: Request, response: Response, refresh: bool =
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     days: int = Field(default=30, ge=1, le=90)
-    max_articles: int = Field(default=3, ge=1, le=8)
+    max_articles: int = Field(default=6, ge=1, le=8)
     include_community: bool = False
 
 
@@ -232,7 +232,7 @@ async def analyze_saved(code: str, news_id: str, response: Response, user=Depend
             item = next((row for row in dashboard['news'] if row['id'] == news_id), None)
             if not item:
                 raise HTTPException(404, '新闻不存在或已更新，请刷新列表。')
-            reply = await research.analyze_document({**dashboard['stock'], 'industry_profile': dashboard.get('industry_profile')}, item)
+            reply = await research.analyze_document({**dashboard['stock'], 'industry_profile': dashboard.get('industry_profile'), 'business_profile':dashboard.get('business_profile')}, item)
             item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'], analysis_prompt_version=reply['prompt_version'])
             from .research import forward_returns
             dashboard['backtest'] = forward_returns(dashboard['news'], dashboard['candles'])
@@ -319,7 +319,7 @@ class ScheduleSettings(BaseModel):
     morning_time: str = Field(default='08:30', pattern=r'^(?:[01]\d|2[0-3]):[0-5]\d$')
     every_day: bool = True
     lookback_days: int = Field(default=7, ge=1, le=30)
-    max_articles: int = Field(default=3, ge=1, le=8)
+    max_articles: int = Field(default=6, ge=1, le=8)
 
 
 @router.get('/admin/briefing/status')
