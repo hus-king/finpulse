@@ -59,3 +59,5 @@ node tests/paper_ui.mjs
 脚本支持 PAPER_UI_BASE_URL、PAPER_UI_OUTPUT、PLAYWRIGHT_CORE_PATH 和 CHROME_PATH。测试专属时钟控制只存在于 tests/paper_ui_server.py，测试服务只监听本机回环地址。服务退出后删除临时数据库。
 
 实际服务器沿用现有部署与服务；需要手动启动时执行 `sudo systemctl start finpulse.service`，不需要为模拟盘添加定时任务或设置开机启动。部署步骤见[服务器部署与开发流程](服务器部署与开发流程.md)。
+
+发布版本和验证结果见[模拟盘发布记录](superpowers/reports/2026-10-09-paper-trading-release.md)。成交记录每 30 秒随账户刷新回到最近一页，已展开的更早记录需要再次加载；历史记录不会被删除。
