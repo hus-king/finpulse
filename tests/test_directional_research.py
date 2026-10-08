@@ -184,3 +184,13 @@ class AnalyzeAllTests(unittest.IsolatedAsyncioTestCase):
         saved=self.store.get('dashboard','600028')
         self.assertEqual(sum(n['analysis_status']=='completed' for n in saved['news']),2)
         self.assertFalse(any(n['analysis_status']=='running' for n in saved['news']))
+
+    async def test_saved_noise_is_excluded_from_batch_and_company_score(self):
+        saved=self.store.get('dashboard','600028')
+        saved['news'].append({**self.item,'id':'noise','title':'股票代码验证怎么做','analysis_status':'pending','analysis':None,'score':None})
+        self.store.put('dashboard','600028',saved)
+        result=await self.service.analyze_all('600028')
+        self.assertEqual(self.model.await_count,9)
+        self.assertEqual(len(result['news']),10)
+        self.assertEqual(result['excluded_news'][0]['id'],'noise')
+        self.assertEqual(result['research_overview']['total'],10)

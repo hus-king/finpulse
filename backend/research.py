@@ -19,7 +19,7 @@ from .stock_catalog import StockCatalog
 from .daily_market import DailyMarketService, quote_order
 from .industry import PROFILE_NOTE, PROFILE_VERSION, build_topics, select_analyses
 from .industry_news import IndustryNewsService
-from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url
+from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url, material_kind, REASONS
 from .evidence import build_overview, rank_events, is_scored
 from .prompts import EvidenceAnalysis, CommunityAnalysis, COMMUNITY_SYSTEM, NEWS_SYSTEM, PROMPT_VERSION, parse_json
 
@@ -59,8 +59,9 @@ def forward_returns(news, candles):
     """Use next trading day's close after publication day, not an intraday assumption."""
     items = []
     for article in news:
-        index = next((i for i, bar in enumerate(candles) if bar['date'] > article['time']), None)
-        row = {'news_id': article['id'], 'title': article['title'], 'score': article.get('score'), 'publication_date': article['time'], 'base_date': candles[index]['date'] if index is not None else None, 'return_3d': None, 'return_5d': None}
+        published=article.get('time')
+        index = next((i for i, bar in enumerate(candles) if published and bar['date'] > published), None)
+        row = {'news_id': article['id'], 'title': article.get('title','未保存标题'), 'score': article.get('score'), 'publication_date': published, 'base_date': candles[index]['date'] if index is not None else None, 'return_3d': None, 'return_5d': None}
         for days in (3, 5):
             if index is not None and index + days < len(candles):
                 row[f'return_{days}d'] = round((candles[index + days]['close'] / candles[index]['close'] - 1) * 100, 2)
@@ -632,10 +633,26 @@ class ResearchService:
         if not stock:
             raise HTTPException(404, '暂不支持该股票。')
         result = self.store.get('dashboard', code, default={'stock': {**stock, 'price': None, 'change': None}, 'quote': {'status': 'not_collected', 'is_realtime': False}, 'candles': [], 'news': [], 'sentiment': {'status': 'not_collected', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': []}, 'as_of': None, 'data_source': 'live', 'pipeline': None, 'backtest': forward_returns([], [])})
+        excluded={row['id']:row for row in result.get('excluded_news',[])}
+        eligible=[]
+        for row in result.get('news',[]):
+            kind=material_kind(row)
+            if kind:
+                excluded[row['id']]={key:row.get(key) for key in ('id','title','url')}
+                excluded[row['id']]['reason']=REASONS[kind]
+            else:
+                eligible.append(row)
+        result['news']=eligible
+        if excluded:
+            result['excluded_news']=list(excluded.values())
+            pipeline=result.get('pipeline')
+            if pipeline:
+                pipeline.setdefault('counts',{}).update(retained=len(eligible),excluded_materials=len(excluded))
         daily = self.store.get('daily_market', code, default={})
         if daily.get('candles') and (not result.get('candles') or quote_order(daily.get('quote', {})) >= quote_order(result.get('quote', {}))):
             result['quote'], result['candles'] = daily['quote'], daily['candles']
             result['stock'] = {**result.get('stock', stock), 'price': daily['quote'].get('price'), 'change': daily['quote'].get('change')}
             result['backtest'] = forward_returns(result.get('news', []), daily['candles'])
+        result['backtest'] = forward_returns(result.get('news',[]),result.get('candles',[]))
         result['research_overview'] = build_overview(result.get('news', []))
         return result

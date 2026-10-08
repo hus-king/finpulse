@@ -47,6 +47,7 @@ export interface Pipeline { date_range: string[]; statuses: Record<string, strin
 export interface OverviewEvidence { news_id:string; title:string; url:string; text:string; score:number|null; confidence:string; horizon:string; date?:string }
 export interface ResearchOverview { status:string; counts:Record<string,number>; analyzed:number; total:number; net_score:number|null; score_series:Omit<OverviewEvidence,'text'>[]; score_range:[number,number]|null; opportunities:OverviewEvidence[]; risks:OverviewEvidence[]; watch_points:OverviewEvidence[]; note:string }
 export interface Dashboard {
+  excluded_news?:{id:string;title:string;url:string;reason:string}[];
   research_overview?:ResearchOverview;
   business_profile?:{main_business?:string; source?:string; url?:string; fetched_at?:string; status:string; note?:string; revenue_segments:null};
   industry_profile?: IndustryProfile;

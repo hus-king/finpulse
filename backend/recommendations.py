@@ -7,7 +7,7 @@ from datetime import datetime
 from .prompts import PROMPT_VERSION
 from .evidence import score_label
 from .catalog import DEFAULT_WATCHLIST, stock_by_code
-from .news_cleaning import SHANGHAI, normalize_url, source_page_kind, same_event
+from .news_cleaning import SHANGHAI, normalize_url, material_kind, same_event
 
 TOPICS = {
     '业绩财报': r'业绩|财报|净利|营收|盈利|亏损',
@@ -59,7 +59,7 @@ def build_digest(store, owner, now=None):
             url = normalize_url(row.get('url', ''))
             if not url.startswith(('https://', 'http://')):
                 continue
-            if source_page_kind(url):
+            if material_kind(row):
                 filtered += 1
                 continue
             analysis = row.get('analysis') or {}

@@ -59,6 +59,7 @@ def get_stock_aliases(stock_name, entity_info=None):
     return list(dict.fromkeys([stock_name, code, *base_aliases, *known, *derived]))
 
 REASONS = {
+    "non_news_material": "软件下载、技术教程或异常镜像页面，不是财经新闻",
     "quote_page": "行情、历史价格或评级聚合页面，不是独立新闻",
     "news_index": "新闻或公告索引页面，不是独立文章",
     "not_primary_entity": "标题的主要对象不是这只股票",
@@ -144,8 +145,14 @@ def source_page_kind(url):
     """Known quote/financial/profile paths are not individual news articles."""
     parts = urlsplit(url)
     host, path = parts.hostname or '', parts.path.lower()
-    if host == 'www.qcc.com' and path.startswith('/firm/'):
+    if (host == 'qcc.com' or host.endswith('.qcc.com')) and path.startswith('/firm/'):
         return 'company_profile'
+    if host == 'www.fscinda.com' and path.startswith('/product/'):
+        return 'company_profile'
+    if host.endswith('.finance.sina.com.cn') and '/vcb_allnewsstock/' in path:
+        return 'news_index'
+    if (host == 'msn.com' or host.endswith('.msn.com')) and '/money/watchlist' in path:
+        return 'quote_page'
     if host.endswith('.finance.sina.com.cn') and '/vci_corpmanager/' in path:
         return 'company_profile'
     if host == 'data.eastmoney.com' and re.fullmatch(r'/notice/\d{6}\.html', path):
@@ -160,6 +167,18 @@ def source_page_kind(url):
         or host == 'data.eastmoney.com' and path.startswith('/zjlx/')
         or host.endswith('.finance.sina.com.cn') and '/vcb_allbulletin/' in path):
         return 'quote_page'
+    return None
+
+
+def material_kind(row):
+    kind=source_page_kind(row.get('url') or '')
+    if kind:
+        return kind
+    title=core_title(row.get('title',''))
+    host=urlsplit(row.get('url') or '').hostname or ''
+    if (host.startswith('www.www.')
+        or re.search(r'安卓网|(?:软件|游戏)下载(?:站|网)|股票代码(?:验证|校验)|深度研究方法论',title)):
+        return 'non_news_material'
     return None
 
 
@@ -348,7 +367,7 @@ def clean_report(raw_report, extracts=None, entities=None, industry_profile=None
             item.update(news_scope=scope, industry=industry if valid_industry(industry) else None,
                         related_factors=relation['factors'], relevance_reason=relation['reason'], stale=search.get('cache_status') == 'stale')
             reasons = []
-            source_kind = source_page_kind(url)
+            source_kind = material_kind({"url":url,"title":raw.get("title","")})
             if source_kind:
                 reasons.append(source_kind)
             title = raw.get("title", "")
