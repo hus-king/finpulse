@@ -16,6 +16,11 @@ export default function NewsFeed({ data, openAssistant }: { data: Dashboard; ope
   const profile = data.industry_profile;
   const companyCount = data.news.filter(row => row.news_scope !== 'industry').length;
   const industryCount = data.news.length - companyCount;
+  const industryStatus = data.pipeline?.statuses?.industry_news;
+  const industryEmpty = scope === '行业新闻' && industryCount === 0;
+  const industryPending = data.pipeline?.stages?.industry === 'pending';
+  const emptyTitle = industryEmpty ? industryPending ? '正在检索与清洗行业新闻' : industryStatus === 'unavailable' || industryStatus === 'partial' ? '行业新闻更新未完成' : !profile ? '当前快照尚未采集行业新闻' : '本轮暂无通过清洗的行业新闻' : data.news.length ? '该分类暂无新闻' : data.pipeline?.stages?.news === 'pending' ? '正在检索与清洗新闻' : '尚无通过清洗的新闻';
+  const emptyDescription = industryEmpty ? industryPending ? '公司新闻已取得时会先展示，行业查询仍在后台处理。' : industryStatus === 'unavailable' || industryStatus === 'partial' ? '行业数据源或处理任务失败，请查看采集警告后重试。' : !profile ? '点击上方「采集并分析」，会同时识别行业并检索行业事件。' : '检索结果须通过日期、独立原文和行业事件关联校验；可在清洗记录中查看过滤原因。' : data.news.length ? '试试其他范围或倾向筛选。' : '采集后展示通过来源、日期和事件关联校验的公司及行业新闻。';
   function exportNews() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `finpulse-${data.stock.code}.json`; link.click(); URL.revokeObjectURL(url);
@@ -38,6 +43,6 @@ export default function NewsFeed({ data, openAssistant }: { data: Dashboard; ope
       {news.analysis && <div className="news-chain">{news.analysis.causal_chain.map((step, i) => <span key={i}>{i > 0 && <ChevronRight size={12} />}{step}</span>)}</div>}
       <div className="news-actions"><span>{news.text_source === 'extracted_body' ? '已提取正文' : '搜索片段'} · {news.date_status === 'body_verified' ? '正文日期已核对' : '来源元数据日期'}{news.sources.length > 1 ? ` · ${news.sources.length} 个合并来源` : ''}</span><button disabled={news.analysis_status === 'running'} onClick={() => openAssistant(news)}>{news.analysis_status === 'running' ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />}{news.analysis ? '查看研判 / 追问' : news.analysis_status === 'running' ? '自动研判中' : '生成 AI 研判'}<ArrowRight size={13} /></button></div>
       {news.analysis_error && <p className="news-analysis-error">研判失败：{news.analysis_error}</p>}
-    </article>)}</div> : <div className="empty-card"><BookOpen size={27} /><h3>{data.news.length ? '该分类暂无新闻' : data.pipeline?.stages?.news === 'pending' ? '正在检索与清洗新闻' : '尚无通过清洗的新闻'}</h3><p>{data.news.length ? '试试其他范围或倾向筛选。' : '采集后展示通过来源、日期和事件关联校验的公司及行业新闻。'}</p></div>}
+    </article>)}</div> : <div className="empty-card"><BookOpen size={27} /><h3>{emptyTitle}</h3><p>{emptyDescription}</p></div>}
   </section>;
 }

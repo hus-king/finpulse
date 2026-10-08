@@ -1,9 +1,9 @@
 """Industry-wide search topics and evidence rules, independent of stock names."""
 import re
 
-PROFILE_VERSION = 'industry-v1'
+PROFILE_VERSION = 'industry-v2'
 PROFILE_NOTE = '行业分类来自个股资料；未取得主营业务细分和收入占比，行业关联不等于已确认的公司经营影响。'
-EVENT = re.compile(r'政策|监管|供需|需求|订单|价格|上涨|下跌|回落|增长|下降|调整|产能|产量|销量|库存|出口|进口|关税|补贴|采购|集采|审批|营收|利润|成本|融资|利率|限制|禁止|供应|减产|增产')
+EVENT = re.compile(r'政策|监管|供需|需求|订单|价格|上涨|下跌|回落|增长|下降|调整|产能|产量|销量|库存|出口|进口|关税|补贴|采购|集采|审批|营收|利润|成本|融资|利率|限制|禁止|供应|减产|增产|招标|中标|投资|开工|投产')
 
 # Patterns match source industry classifications; new classifications always
 # retain a generic topic even when none of these optional factors match.
@@ -21,6 +21,8 @@ RULES = [
     (r'煤炭', [('煤炭价格', ['煤价', '动力煤', '焦煤', '焦炭']), ('煤炭供需', ['煤炭', '煤矿', '电煤', '煤炭进口'])]),
     (r'光伏|风电|电力设备', [('能源设备', ['光伏', '硅料', '风电', '电网']), ('能源政策', ['可再生能源', '新能源消纳', '电力设备', '储能政策'])]),
     (r'电力|燃气|公用事业', [('公用事业价格', ['电价', '气价', '天然气', '煤价']), ('公用事业政策', ['电力市场', '电力需求', '燃气', '供电'])]),
+    (r'轨交|轨道|铁路设备|铁路装备', [('轨交装备需求', ['铁路固定资产投资', '铁路投资', '高铁建设', '动车组采购', '列车采购', '铁路建设', '轨交设备', '轨道交通建设', '动车组产能', '动车组订单', '地铁建设', '城轨建设']), ('轨交政策', ['铁路规划', '铁路招标', '列车采购', '轨道交通政策'])]),
+    (r'自动化|机器人|通用设备|专用设备|仪器仪表', [('设备更新需求', ['设备更新', '工业机器人销量', '工业机器人订单', '机器人量产', '自动化设备订单', '工业母机', '制造业投资', '工业装备']), ('设备产业政策', ['智能制造', '设备更新政策', '工业装备'])]),
     (r'航空|机场', [('燃油成本', ['航空燃油', '航油', '油价', '原油']), ('航空需求', ['航空', '机场', '客运', '机票'])]),
     (r'航运|港口|物流|运输|铁路', [('运输需求', ['航运', '港口', '物流', '货运', '铁路']), ('运输价格', ['运价', '运费', '燃油', '集装箱'])]),
     (r'白酒|酿酒|食品|饮料', [('消费需求', ['白酒', '食品', '饮料', '消费', '动销']), ('食品政策', ['食品安全', '消费税', '酿酒', '食品行业'])]),
@@ -37,6 +39,11 @@ def valid_industry(value):
     return isinstance(value, str) and 2 <= len(value.strip()) <= 60 and value.strip() not in ('A 股', 'A股', '-', '--', '未知', '其他', 'None', 'nan')
 
 
+def industry_keyword(industry):
+    # Classification levels (e.g. 银行Ⅱ) are labels, not words used in articles.
+    return re.sub(r'[ⅠⅡⅢⅣⅤ]+$', '', industry.strip()).strip()
+
+
 def factors_for(industry):
     if not valid_industry(industry):
         return []
@@ -51,7 +58,7 @@ def build_topics(industry):
     if not valid_industry(industry):
         return []
     industry = industry.strip()
-    topics = [{'industry': industry, 'label': '行业动态', 'query': f'{industry} 行业 政策 供需 价格 新闻', 'version': PROFILE_VERSION}]
+    topics = [{'industry': industry, 'label': '行业动态', 'query': f'{industry_keyword(industry)} 行业 政策 供需 价格 新闻', 'version': PROFILE_VERSION}]
     factors = factors_for(industry)
     if factors:
         terms = list(dict.fromkeys(term for _, aliases in factors for term in aliases))[:8]
@@ -69,7 +76,8 @@ def match_industry(industry, title, content):
     def contains(text, terms):
         return any(term.casefold() in text.casefold() for term in terms)
     if EVENT.search(title) and EVENT.search(body):
-        if industry in title and industry in body:
+        keyword = industry_keyword(industry)
+        if keyword and keyword in title and keyword in body:
             factors.append('行业动态')
         for label, terms in factors_for(industry):
             if contains(title, terms) and contains(body, terms):

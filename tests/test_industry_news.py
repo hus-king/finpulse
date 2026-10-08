@@ -65,6 +65,36 @@ class IndustryCleaningTests(unittest.TestCase):
         self.assertEqual(result['summary']['merged'], 1)
 
 
+class IndustryClassificationTests(unittest.TestCase):
+    def test_classification_level_suffix_is_not_a_required_news_keyword(self):
+        topics = build_topics('专用设备Ⅱ')
+        self.assertNotIn('Ⅱ', topics[0]['query'])
+        self.assertEqual(topics[0]['industry'], '专用设备Ⅱ')
+        relation = match_industry('专用设备Ⅱ', '专用设备行业订单增长', '专用设备行业订单增长，生产需求增加，设备制造商正在调整产能。')
+        self.assertIn('行业动态', relation['factors'])
+
+    def test_rail_and_automation_topics_have_their_own_factors(self):
+        for industry, title, body, term in (
+            ('轨交设备Ⅱ', '全国铁路固定资产投资同比增长', '全国铁路固定资产投资同比增长，动车组采购订单增加，轨道交通建设需求改善。', '动车组'),
+            ('自动化设备', '工业机器人销量增长带动设备更新', '工业机器人销量增长，制造业设备更新需求增加，自动化设备订单改善。', '工业机器人'),
+        ):
+            with self.subTest(industry=industry):
+                topics = build_topics(industry)
+                self.assertEqual(len(topics), 2)
+                self.assertIn(term, topics[1]['query'])
+                self.assertTrue(match_industry(industry, title, body)['factors'])
+                self.assertFalse(match_industry(industry, '互联网公司发布招聘计划', body)['factors'])
+
+
+    def test_sector_mentions_do_not_turn_policing_or_recruitment_into_equipment_news(self):
+        for industry, title, body in (
+            ('轨交设备Ⅱ', '铁路警方调整投资诈骗案件举报方式', '铁路警方调整投资诈骗案件举报方式，旅客可通过新的窗口进行举报，办理流程详见通知。'),
+            ('自动化设备', '制造业招聘需求增长', '制造业招聘需求增长，办公室调整面试安排，招聘人员公布了新的岗位要求。'),
+        ):
+            with self.subTest(industry=industry):
+                self.assertFalse(match_industry(industry, title, body)['factors'])
+
+
 class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
