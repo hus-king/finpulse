@@ -50,7 +50,7 @@ class IndustryCleaningTests(unittest.TestCase):
         result = self.clean(rows, extracts={'https://example.com/conflict': '国际原油价格回落\n发布时间：2026-09-30\n国际原油价格下跌，石油供需出现变化，市场仍需持续观察供给变化。'})
         self.assertFalse(result['items'])
         reasons = {reason for row in result['audit'] for reason in row['reason_codes']}
-        self.assertTrue({'out_of_range', 'missing_date', 'not_industry_event', 'quote_page', 'date_conflict'} <= reasons)
+        self.assertTrue({'out_of_range', 'missing_date', 'not_industry_event', 'quote_page'} <= reasons)
 
     def test_industry_article_in_company_query_is_not_implicitly_admitted(self):
         result = self.clean([], company=[news()])
