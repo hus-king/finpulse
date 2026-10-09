@@ -9,10 +9,43 @@
   position: relative;
   flex-shrink: 0;
   align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .chart-controls button {
   font-family: inherit;
+}
+
+.chart-period-shortcuts {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--theme-border, #e3e8ef);
+  border-radius: 7px;
+  background: var(--theme-raised, #f0f3f7);
+}
+
+.chart-period-shortcuts > button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--chart-menu-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.chart-period-shortcuts > button:hover {
+  background: var(--theme-hover, #edf3f2);
+  color: var(--theme-text, #202a3a);
+}
+
+.chart-period-shortcuts > button[aria-pressed="true"] {
+  background: var(--theme-accent-soft, #eaf5f1);
+  color: var(--theme-accent-text, #16856f);
+  font-weight: 600;
 }
 
 .chart-controls-trigger,
@@ -266,6 +299,18 @@
 }
 
 @media (max-width: 760px) {
+  .live-quote > header {
+    flex-wrap: wrap;
+  }
+
+  .chart-controls {
+    margin-left: auto;
+  }
+
+  .chart-period-shortcuts > button {
+    min-height: 30px;
+  }
+
   .chart-controls-trigger {
     width: 32px;
     height: 32px;

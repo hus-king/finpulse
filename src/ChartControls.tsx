@@ -67,6 +67,12 @@ export default function ChartControls({ visible, toggleVisible, chartStyle, setC
   return <div className="chart-controls" ref={container} onBlur={event => {
     if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
+    <div className="chart-period-shortcuts" role="group" aria-label="行情快捷切换">
+      {['分时', '日 K', '周 K'].map(value => <button type="button" key={value}
+        aria-pressed={period === value} onClick={() => { setPeriod(value); setOpen(false); }}>
+        {value.replace(' ', '')}
+      </button>)}
+    </div>
     <button type="button" ref={trigger} className={`chart-controls-trigger ${visible ? '' : 'is-collapsed'}`}
       aria-label="图表工具" title={visible ? '图表工具' : '图表工具 · 图表已隐藏'}
       aria-expanded={open} aria-haspopup="dialog" aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)}>
