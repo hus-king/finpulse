@@ -25,7 +25,7 @@ from .research_api import router as research_router
 from .briefing import start_scheduler
 from .morning import MorningService
 from .prompts import PROMPT_VERSION, EvidenceAnalysis, NEWS_SYSTEM, parse_json
-from .providers import read_config
+from .providers import read_config, tavily_keys
 from .auth import AuthError, auth_error_handler, authorize_model_request, router as auth_router, admin_router
 from .database import create_auth_store
 from .minute_market import MinuteMarketService
@@ -178,9 +178,9 @@ def health():
     market_warm_enabled = bool(warming and not warming.done())
     try:
         config = load_config()
-        return {"status": "ok", "configured": True, "model": config.model, "provider": urlparse(config.base_url).hostname, "data_source": "live", "tavily_configured": bool(read_config().get('tavily_api_key')), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
+        return {"status": "ok", "configured": True, "model": config.model, "provider": urlparse(config.base_url).hostname, "data_source": "live", "tavily_configured": bool(tavily_keys()), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
     except HTTPException:
-        return {"status": "ok", "configured": False, "model": None, "provider": None, "data_source": "live", "tavily_configured": bool(read_config().get('tavily_api_key')), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
+        return {"status": "ok", "configured": False, "model": None, "provider": None, "data_source": "live", "tavily_configured": bool(tavily_keys()), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
 
 
 @app.get("/api/stocks")

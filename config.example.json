@@ -3,6 +3,7 @@
   "api_key": "replace-with-your-key",
   "model": "replace-with-your-model",
   "tavily_api_key": "",
+  "tavily_backup_api_key": "",
   "tavily_base_url": "https://api.tavily.com",
   "scheduler": {
     "enabled": false,

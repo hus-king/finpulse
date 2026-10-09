@@ -3,6 +3,7 @@ import asyncio
 import json
 import math
 import sys
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,30 +22,58 @@ def read_config():
         return {}
 
 
+def tavily_keys(config=None):
+    if config is None:
+        config = read_config()
+    primary = config.get('tavily_api_key') or []
+    backup = config.get('tavily_backup_api_key') or config.get('tavily_backup_api_keys') or []
+    raw = []
+    for item in [primary, backup]:
+        if isinstance(item, str):
+            raw.extend(re.split(r'[,;\s]+', item.strip()))
+        elif isinstance(item, (list, tuple)):
+            raw.extend(item)
+    keys, seen = [], set()
+    for k in raw:
+        k = str(k).strip()
+        if k and k not in seen:
+            seen.add(k)
+            keys.append(k)
+    return keys
+
+
 class ProviderError(Exception):
     pass
 
 
 async def tavily(endpoint, payload):
     config = read_config()
-    key = config.get('tavily_api_key', '')
+    keys = tavily_keys(config)
     base = config.get('tavily_base_url', 'https://api.tavily.com').rstrip('/')
     parsed = urlsplit(base)
-    if not key:
+    if not keys:
         raise ProviderError('Tavily 未配置密钥')
     if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ProviderError('Tavily 地址配置不合法')
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(55, connect=10)) as client:
-            response = await client.post(base + '/' + endpoint, headers={'Authorization': 'Bearer ' + key}, json=payload)
-        if not response.is_success:
-            raise ProviderError(f'Tavily 请求失败（HTTP {response.status_code}）')
-        body = response.json()
-        if not isinstance(body.get('results'), list):
-            raise ProviderError('Tavily 响应格式异常')
-        return body
-    except (httpx.RequestError, ValueError):
-        raise ProviderError('Tavily 网络请求失败或响应无法解析') from None
+    last_error = None
+    for key in keys:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(55, connect=10)) as client:
+                response = await client.post(base + '/' + endpoint, headers={'Authorization': 'Bearer ' + key}, json=payload)
+            if not response.is_success:
+                last_error = ProviderError(f'Tavily 请求失败（HTTP {response.status_code}）')
+                continue
+            body = response.json()
+            if not isinstance(body.get('results'), list):
+                last_error = ProviderError('Tavily 响应格式异常')
+                continue
+            return body
+        except (httpx.RequestError, ValueError):
+            last_error = ProviderError('Tavily 网络请求失败或响应无法解析')
+            continue
+    if last_error:
+        raise last_error
+    raise ProviderError('Tavily 所有密钥均不可用')
 
 
 async def search_news(stock, start, end):
