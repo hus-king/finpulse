@@ -129,7 +129,7 @@ export default function PriceChart({ candles: daily, news, mode, period, indicat
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
       grid: [{ left: 58, right: 22, top: 22, bottom: 112 }, { left: 58, right: 22, height: 58, bottom: 30 }],
       xAxis: [
-        { type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: color('border') } }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
+        { type: 'category', data: dates, boundaryGap: true, axisLine: { lineStyle: { color: color('border') } }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { label: { show: false } } },
         { type: 'category', gridIndex: 1, data: dates, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: color('text'), fontSize: 10, formatter: (value: string) => minute ? value.slice(5, 16).replace(' ', '\n') : value.slice(5) }, splitLine: { show: false } },
       ],
       yAxis: [

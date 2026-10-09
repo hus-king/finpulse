@@ -31,9 +31,21 @@ export default function IntradayChart({session,loading}:{session:Session;loading
     chart.setOption({animation:false,backgroundColor:'transparent',
       textStyle:{fontFamily:'Segoe UI, Microsoft YaHei, sans-serif'},
       grid:[{left:58,right:56,top:20,bottom:106},{left:58,right:56,height:55,bottom:30}],
-      tooltip:{trigger:'axis',renderMode:'richText',axisPointer:{type:'cross',label:{backgroundColor:color('crosshair')}},backgroundColor:color('tooltip-bg'),borderColor:color('border'),textStyle:{color:color('tooltip-text'),fontSize:12}},
+      tooltip:{trigger:'axis',renderMode:'richText',axisPointer:{type:'cross',label:{backgroundColor:color('crosshair')}},backgroundColor:color('tooltip-bg'),borderColor:color('border'),textStyle:{color:color('tooltip-text'),fontSize:12},
+        formatter:(params: unknown)=>{
+          const list=Array.isArray(params)?params:[params];
+          const first=list[0] as {dataIndex?:number;axisValue?:string}|undefined;
+          const time=first?.axisValue??(first?.dataIndex!=null?session.times[first.dataIndex]:'');
+          if(!time) return '';
+          const row=byTime.get(time);
+          if(!row) return `${time}\n暂无分时数据`;
+          const diff=reference!=null?row.close-reference:null;
+          const pct=reference!=null?(diff!/reference)*100:null;
+          const pctText=pct!=null?` (${pct>=0?'+':''}${pct.toFixed(2)}%)`:'';
+          return `${time}\n● 分钟价格  ${row.close.toFixed(2)}${pctText}\n● 分钟成交量  ${row.volume.toLocaleString()} 股`;
+        }},
       axisPointer:{link:[{xAxisIndex:'all'}]},
-      xAxis:[{...axis,axisLabel:{show:false}},{...axis,gridIndex:1,axisLabel:{color:color('text'),fontSize:9,interval:(i:number)=>ticks.has(i),formatter:(value:string,i:number)=>i===120?'11:30/13:00':value}}],
+      xAxis:[{...axis,axisLabel:{show:false},axisPointer:{label:{show:false}}},{...axis,gridIndex:1,axisLabel:{color:color('text'),fontSize:9,interval:(i:number)=>ticks.has(i),formatter:(value:string,i:number)=>i===120?'11:30/13:00':value}}],
       yAxis:[{type:'value',min,max,splitNumber:4,axisLabel:{show:!!reference||!!traded.length,color:color('text'),fontSize:10,formatter:(v:number)=>v.toFixed(2)},axisLine:{show:false},splitLine:{lineStyle:{color:color('grid'),type:'dashed'}}},
         {type:'value',gridIndex:1,min:0,splitNumber:1,axisLabel:{color:color('text'),fontSize:9,formatter:(v:number)=>`${(v/10000).toFixed(1)}万`},splitLine:{show:false},axisLine:{show:false}},
         {type:'value',gridIndex:0,position:'right',min:reference?(min/reference-1)*100:0,max:reference?(max/reference-1)*100:1,splitNumber:4,axisLabel:{show:!!reference,color:color('text'),fontSize:9,formatter:(v:number)=>`${v>0?'+':''}${v.toFixed(2)}%`},axisLine:{show:false},splitLine:{show:false}}],
