@@ -1,9 +1,12 @@
-"""One awaited response: daily history and minute periods derived from 1m bars."""
+"""Shared cached snapshots, progressive loading and optional full-source waits."""
 import asyncio
+import logging
 import time
 from datetime import datetime, timedelta
 
 from .news_cleaning import SHANGHAI
+from .catalog import DEFAULT_WATCHLIST
+from .trading_calendar import market_state
 
 PERIODS = (1, 5, 15, 30, 60)
 
@@ -43,19 +46,34 @@ class MarketBundleService:
         self.store = research.store
         self.wait_seconds = wait_seconds
         self.tasks = {}
+        self.snapshot_tasks = {}
+        self.recent_views = {}
+        self.warm_task = None
+        self.warm_index = 0
         self.closed = False
 
-    async def get(self, stock, force=False):
+    async def get(self, stock, force=False, wait=True):
         code = stock['code']
         if self.closed:
             raise RuntimeError('Market service is closed')
-        if code not in self.tasks:
-            if len(self.tasks) >= 32:
+        self.recent_views.pop(code, None)
+        self.recent_views[code] = time.monotonic()
+        if len(self.recent_views) > 50:
+            self.recent_views.pop(next(iter(self.recent_views)))
+        tasks = self.tasks if wait else self.snapshot_tasks
+        if code not in tasks:
+            if len(self.tasks) + len(self.snapshot_tasks) >= 32:
                 from fastapi import HTTPException
                 raise HTTPException(429, '行情请求繁忙，请稍后重试。')
-            self.tasks[code] = asyncio.create_task(self._build(stock, force))
+            tasks[code] = asyncio.create_task(self._build(stock, force) if wait else self._snapshot(stock, force))
         # A viewer leaving must not cancel acquisition shared by other viewers.
-        return await asyncio.shield(self.tasks[code])
+        return await asyncio.shield(tasks[code])
+
+    async def _snapshot(self, stock, force):
+        try:
+            return await self._assemble(stock, schedule=True, force=force)
+        finally:
+            self.snapshot_tasks.pop(stock['code'], None)
 
     async def _settle(self, service, stock, minute=False, force=False):
         await (service.snapshot(stock, 1, force=force) if minute else service.snapshot(stock, force=force))
@@ -83,42 +101,76 @@ class MarketBundleService:
             daily_error, minute_error = await asyncio.gather(
                 self._settle(self.research.daily_market, stock, force=force),
                 self._settle(self.minute_market, stock, minute=True, force=force))
-            daily_state, base, dashboard = await asyncio.gather(
-                self.research.daily_market.snapshot(stock, schedule=False),
-                self.minute_market.snapshot(stock, 1, schedule=False),
-                asyncio.to_thread(self.research.dashboard, stock['code']))
-            if daily_error:
-                daily_state['error'] = daily_error
-            dashboard['daily_request'] = daily_state
-            sentiment = self.research.market_sentiment.snapshot()
-            if sentiment is not None:
-                dashboard['market_sentiment'] = sentiment
-            minute_error = minute_error or base.get('error')
-            minutes = {}
-            now = datetime.fromisoformat(base['market']['server_time'])
-            for period in PERIODS:
-                bars = aggregate_minutes(base['candles'], period)
-                forming = base['forming'] if period == 1 else bool(bars and base['market']['is_trading'] and datetime.fromisoformat(bars[-1]['date']).replace(tzinfo=SHANGHAI) > now)
-                minutes[str(period)] = {**base, 'period': period, 'candles': bars, 'forming': forming,
-                    'error': minute_error, 'status': 'unavailable' if not bars else 'stale' if minute_error else base['status'],
-                    'derived_from': '1m', 'partial_bars': sum(bool(bar.get('partial')) for bar in bars),
-                    'note': '由同一份 1 分钟数据生成；较大周期不额外请求上游，缺失分钟不补造。'}
-            errors = {key: error for key, error in [('daily', daily_state.get('error')), ('minute', minute_error)] if error}
-            status = 'ok' if dashboard['candles'] and base['candles'] and not errors else 'partial'
-            result = {'dashboard': dashboard, 'minutes': minutes, 'status': status, 'errors': errors,
-                      'next_poll_seconds': 30, 'fetched_at': datetime.now(SHANGHAI).isoformat()}
-            # Persist all periods and daily data, without copying/overwriting
-            # news, analyses or private user preferences.
-            await asyncio.to_thread(self.store.put, 'market_bundle', stock['code'], {
-                'daily': {'candles': dashboard['candles'], 'quote': dashboard['quote']},
-                **{key: value for key, value in result.items() if key != 'dashboard'}})
-            return result
+            return await self._assemble(stock, daily_error=daily_error, minute_error=minute_error)
         finally:
             self.tasks.pop(stock['code'], None)
 
+    async def _assemble(self, stock, schedule=False, force=False, daily_error=None, minute_error=None):
+        daily_state, base, dashboard = await asyncio.gather(
+            self.research.daily_market.snapshot(stock, schedule=schedule, force=force),
+            self.minute_market.snapshot(stock, 1, schedule=schedule, force=force),
+            asyncio.to_thread(self.research.dashboard, stock['code']))
+        if daily_error:
+            daily_state['error'] = daily_error
+        dashboard['daily_request'] = daily_state
+        sentiment = self.research.market_sentiment.snapshot()
+        if sentiment is not None:
+            dashboard['market_sentiment'] = sentiment
+        minute_error = minute_error or base.get('error')
+        minutes = {}
+        now = datetime.fromisoformat(base['market']['server_time'])
+        for period in PERIODS:
+            bars = aggregate_minutes(base['candles'], period)
+            forming = base['forming'] if period == 1 else bool(bars and base['market']['is_trading'] and datetime.fromisoformat(bars[-1]['date']).replace(tzinfo=SHANGHAI) > now)
+            minutes[str(period)] = {**base, 'period': period, 'candles': bars, 'forming': forming,
+                'error': minute_error, 'status': 'unavailable' if not bars else 'stale' if minute_error else base['status'],
+                'derived_from': '1m', 'partial_bars': sum(bool(bar.get('partial')) for bar in bars),
+                'note': '由同一份 1 分钟数据生成；较大周期不额外请求上游，缺失分钟不补造。'}
+        errors = {key: error for key, error in [('daily', daily_state.get('error')), ('minute', minute_error)] if error}
+        status = 'ok' if dashboard['candles'] and base['candles'] and not errors else 'partial'
+        result = {'dashboard': dashboard, 'minutes': minutes, 'status': status, 'errors': errors,
+                  'next_poll_seconds': 2 if daily_state['refreshing'] or base['refreshing'] else 30, 'fetched_at': datetime.now(SHANGHAI).isoformat()}
+        # Persist all periods and daily data, without copying/overwriting
+        # news, analyses or private user preferences.
+        await asyncio.to_thread(self.store.put, 'market_bundle', stock['code'], {
+            'daily': {'candles': dashboard['candles'], 'quote': dashboard['quote']},
+            **{key: value for key, value in result.items() if key != 'dashboard'}})
+        return result
+
+    def start_warming(self):
+        if not self.closed and self.warm_task is None:
+            self.warm_task = asyncio.create_task(self._warm_loop())
+
+    async def warm_once(self):
+        # One speculative source at a time; leave the second source slot for
+        # demand and do not queue preloads behind active viewers.
+        if self.closed or self.minute_market.tasks:
+            return None
+        cutoff = time.monotonic() - 1800
+        recent = [code for code, viewed in reversed(list(self.recent_views.items())) if viewed >= cutoff]
+        codes = list(dict.fromkeys([*recent, *DEFAULT_WATCHLIST]))[:8]
+        code = codes[self.warm_index % len(codes)]
+        self.warm_index += 1
+        stock = self.research.catalog.get(code)
+        if stock:
+            await self.minute_market.snapshot(stock, 1)
+            return code
+        return None
+
+    async def _warm_loop(self):
+        while not self.closed:
+            try:
+                await self.warm_once()
+            except Exception as exc:
+                logging.getLogger(__name__).warning('Minute preload unavailable (%s)', type(exc).__name__)
+            state = market_state(self.minute_market.clock())
+            await asyncio.sleep(5 if state['is_trading'] else 60)
+
     async def close(self):
         self.closed = True
-        tasks = list(self.tasks.values())
+        tasks = [*self.tasks.values(), *self.snapshot_tasks.values()]
+        if self.warm_task:
+            tasks.append(self.warm_task)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

@@ -23,12 +23,12 @@ def private(response):
 
 @router.get('/market/{code}/bundle')
 async def market_bundle(code: str, request: Request, response: Response,
-                        refresh: bool = False, research=Depends(service)):
+                        refresh: bool = False, wait: bool = True, research=Depends(service)):
     private(response)
     stock = research.catalog.get(code)
     if not stock:
         raise HTTPException(404, '未找到已核验的股票，请先搜索该股票。')
-    return await request.app.state.market_bundle.get(stock, force=refresh)
+    return await request.app.state.market_bundle.get(stock, force=refresh, wait=wait)
 
 
 @router.get('/market/{code}/daily')

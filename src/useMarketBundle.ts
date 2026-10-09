@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import type { Dashboard, MarketBundle } from './types';
+import { marketCache } from './marketCache';
 
 export default function useMarketBundle(code: string, onSnapshot: (data: Dashboard) => void) {
-  const [data, setData] = useState<MarketBundle | null>(null);
+  const [data, setData] = useState<MarketBundle | null>(() => marketCache.get(code));
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
-  const cache = useRef(new Map<string, MarketBundle>());
   const force = useRef(false);
   const refresh = useCallback(() => { force.current = true; setRevision(value => value + 1); }, []);
 
   useEffect(() => {
-    setData(cache.current.get(code) ?? null); setError('');
+    setData(marketCache.get(code)); setError('');
     let stopped = false, generation = 0, timer: number | undefined;
     let abort: AbortController | null = null;
     let forceOnce = force.current;
@@ -25,13 +25,12 @@ export default function useMarketBundle(code: string, onSnapshot: (data: Dashboa
       setLoading(true);
       let delay = 30;
       try {
-        const next = await api<MarketBundle>(`/api/market/${code}/bundle${forceOnce ? '?refresh=true' : ''}`, undefined, request.signal);
+        const next = await api<MarketBundle>(`/api/market/${code}/bundle?wait=false${forceOnce ? '&refresh=true' : ''}`, undefined, request.signal);
         forceOnce = false;
         if (stopped || request.signal.aborted || current !== generation) return;
-        cache.current.set(code, next);
-        if (cache.current.size > 15) cache.current.delete(cache.current.keys().next().value!);
+        marketCache.put(next);
         setData(next); onSnapshot(next.dashboard); setError('');
-        delay = Math.max(30, next.next_poll_seconds);
+        delay = Math.max(2, next.next_poll_seconds);
       } catch (e) {
         if (!stopped && !request.signal.aborted && current === generation) setError((e as Error).message);
       } finally {

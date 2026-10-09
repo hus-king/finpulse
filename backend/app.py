@@ -56,6 +56,10 @@ async def lifespan(application):
     application.state.market_bundle = MarketBundleService(application.state.research, application.state.minute_market)
     application.state.research.briefing = MorningService(application.state.research)
     application.state.scheduler = start_scheduler(application.state.research)
+    # Default to the designated background instance; local/test instances do
+    # not unexpectedly start upstream work. A separate override is available.
+    if os.environ.get('FINPULSE_MARKET_WARM_ENABLED', str(int(application.state.research.briefing.instance_enabled))) == '1':
+        application.state.market_bundle.start_warming()
     try:
         yield
     finally:
@@ -170,11 +174,13 @@ async def _completion(messages, max_tokens=1100):
 def health():
     scheduler = getattr(app.state, 'scheduler', None)
     scheduler_enabled = bool(scheduler and scheduler.running and app.state.research.briefing.settings()['enabled'])
+    warming = getattr(getattr(app.state, 'market_bundle', None), 'warm_task', None)
+    market_warm_enabled = bool(warming and not warming.done())
     try:
         config = load_config()
-        return {"status": "ok", "configured": True, "model": config.model, "provider": urlparse(config.base_url).hostname, "data_source": "live", "tavily_configured": bool(read_config().get('tavily_api_key')), "scheduler_enabled": scheduler_enabled}
+        return {"status": "ok", "configured": True, "model": config.model, "provider": urlparse(config.base_url).hostname, "data_source": "live", "tavily_configured": bool(read_config().get('tavily_api_key')), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
     except HTTPException:
-        return {"status": "ok", "configured": False, "model": None, "provider": None, "data_source": "live", "tavily_configured": bool(read_config().get('tavily_api_key')), "scheduler_enabled": scheduler_enabled}
+        return {"status": "ok", "configured": False, "model": None, "provider": None, "data_source": "live", "tavily_configured": bool(read_config().get('tavily_api_key')), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
 
 
 @app.get("/api/stocks")

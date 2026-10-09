@@ -228,8 +228,138 @@ class BundleServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(call.args[1] == 1 for call in self.fetch.await_args_list))
         self.daily.assert_awaited_once()
 
+    async def test_progressive_returns_before_sources_and_shows_daily_while_minute_waits(self):
+        daily_gate, minute_gate = asyncio.Event(), asyncio.Event()
+        async def daily(*args):
+            await daily_gate.wait()
+            return MARKET
+        async def minute(*args):
+            await minute_gate.wait()
+            return MINUTES
+        self.daily.side_effect, self.fetch.side_effect = daily, minute
+        first = await asyncio.wait_for(self.bundle.get(STOCK, wait=False), 2)
+        self.assertEqual(first['status'], 'partial')
+        self.assertEqual(first['dashboard']['candles'], [])
+        self.assertEqual(first['minutes']['1']['candles'], [])
+        self.assertTrue(first['dashboard']['daily_request']['refreshing'])
+        self.assertTrue(first['minutes']['1']['refreshing'])
+        self.assertEqual(first['next_poll_seconds'], 2)
+        daily_gate.set()
+        await asyncio.wait_for(self.research.daily_market.tasks[STOCK['code']], 2)
+        partial = await asyncio.wait_for(self.bundle.get(STOCK, wait=False), 2)
+        self.assertEqual(partial['dashboard']['candles'], [DAILY])
+        self.assertEqual(partial['minutes']['1']['candles'], [])
+        self.assertTrue(partial['minutes']['1']['refreshing'])
+        minute_gate.set()
+        await asyncio.wait_for(self.minute.tasks[STOCK['code'] + ':1'], 2)
+        ready = await self.bundle.get(STOCK, wait=False)
+        self.assertEqual(ready['status'], 'ok')
+        self.assertEqual(ready['next_poll_seconds'], 30)
+        self.assertTrue(all(not item['refreshing'] for item in ready['minutes'].values()))
+        self.daily.assert_awaited_once()
+        self.fetch.assert_awaited_once_with(STOCK, 1)
+
+    async def test_progressive_cached_response_never_waits_for_refresh_and_twenty_viewers_share_sources(self):
+        before = await self.bundle.get(STOCK)
+        self.now += timedelta(seconds=61)
+        gate, daily_started, minute_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        async def daily(*args):
+            daily_started.set()
+            await gate.wait()
+            return MARKET
+        async def minute(*args):
+            minute_started.set()
+            await gate.wait()
+            return MINUTES
+        self.daily.side_effect, self.fetch.side_effect = daily, minute
+        results = await asyncio.wait_for(asyncio.gather(*[
+            self.bundle.get(STOCK, force=True, wait=False) for _ in range(20)]), 2)
+        await asyncio.wait_for(asyncio.gather(daily_started.wait(), minute_started.wait()), 2)
+        self.assertFalse(gate.is_set())
+        for result in results:
+            self.assertEqual(result['dashboard']['candles'], before['dashboard']['candles'])
+            self.assertEqual(result['minutes']['60']['candles'], before['minutes']['60']['candles'])
+            self.assertEqual(result['next_poll_seconds'], 2)
+        self.assertEqual(self.daily.await_count, 2)
+        self.assertEqual(self.fetch.await_count, 2)
+        gate.set()
+
+    async def test_progressive_second_backend_returns_cache_without_waiting_for_source_lease(self):
+        await self.bundle.get(STOCK)
+        self.now += timedelta(seconds=61)
+        gate, started = asyncio.Event(), asyncio.Event()
+        async def minute(*args):
+            started.set()
+            await gate.wait()
+            return MINUTES
+        self.fetch.side_effect = minute
+        waiting = asyncio.create_task(self.bundle.get(STOCK, force=True))
+        await asyncio.wait_for(started.wait(), 2)
+        other_fetch = AsyncMock(return_value=MINUTES)
+        other_minute = MinuteMarketService(self.store, clock=lambda: self.now, fetcher=other_fetch)
+        other = MarketBundleService(self.research, other_minute)
+        try:
+            cached = await asyncio.wait_for(other.get(STOCK, force=True, wait=False), 2)
+            self.assertEqual(cached['minutes']['1']['candles'], MINUTES)
+            self.assertFalse(waiting.done())
+            gate.set()
+            await waiting
+            other_fetch.assert_not_awaited()
+        finally:
+            gate.set()
+            await other.close()
+            await other_minute.close()
+
+    async def test_background_warming_prioritizes_recent_stock_and_only_fetches_minutes(self):
+        await self.bundle.get(STOCK, wait=False)
+        await asyncio.gather(*list(self.minute.tasks.values()), *list(self.research.daily_market.tasks.values()))
+        self.now = datetime(2026, 10, 9, 10, tzinfo=SHANGHAI)
+        self.fetch.return_value = [bar('2026-10-09 09:59:00')]
+        self.daily.reset_mock()
+        warmed = await self.bundle.warm_once()
+        self.assertEqual(warmed, STOCK['code'])
+        await asyncio.gather(*list(self.minute.tasks.values()))
+        self.assertEqual(self.fetch.await_count, 2)
+        self.assertEqual(self.store.get('minute_market', STOCK['code'] + ':1')['candles'][-1]['date'], '2026-10-09 09:59:00')
+        self.daily.assert_not_awaited()
+
+    async def test_background_warming_yields_to_active_source_and_stops_on_close(self):
+        gate, started = asyncio.Event(), asyncio.Event()
+        async def minute(*args):
+            started.set()
+            await gate.wait()
+            return MINUTES
+        self.fetch.side_effect = minute
+        await self.bundle.get(STOCK, wait=False)
+        await asyncio.wait_for(started.wait(), 2)
+        self.assertIsNone(await self.bundle.warm_once())
+        self.fetch.assert_awaited_once()
+        self.bundle.start_warming()
+        await self.bundle.close()
+        self.assertTrue(self.bundle.warm_task.done())
+        self.assertIsNone(await self.bundle.warm_once())
+        gate.set()
+
 
 class BundleApiTests(unittest.TestCase):
+    def test_progressive_http_returns_partial_while_sources_are_blocked(self):
+        async def blocked(*args, **kwargs):
+            await asyncio.Event().wait()
+        with tempfile.TemporaryDirectory() as directory:
+            app.state.auth_store = AuthStore(Path(directory) / 'api.db')
+            try:
+                with TestClient(app, base_url='http://localhost') as client:
+                    app.state.research.daily_market.clock = lambda: NOW
+                    app.state.minute_market.clock = lambda: NOW
+                    with patch('backend.providers.daily_market', new=AsyncMock(side_effect=blocked)), patch('backend.providers.akshare_worker', new=AsyncMock(side_effect=blocked)), patch('backend.providers.search_news', new_callable=AsyncMock) as news:
+                        result = client.get('/api/market/000001/bundle?wait=false').json()
+                        self.assertEqual(result['status'], 'partial')
+                        self.assertTrue(result['minutes']['1']['refreshing'])
+                        self.assertEqual(result['next_poll_seconds'], 2)
+                        news.assert_not_awaited()
+            finally:
+                del app.state.auth_store
+
     def test_single_http_response_without_login_news_or_model(self):
         with tempfile.TemporaryDirectory() as directory:
             app.state.auth_store = AuthStore(Path(directory) / 'api.db')
