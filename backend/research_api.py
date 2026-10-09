@@ -252,7 +252,8 @@ async def analyze_saved(code: str, news_id: str, response: Response, user=Depend
             if not item:
                 raise HTTPException(404, '新闻不存在或已更新，请刷新列表。')
             reply = await research.analyze_document({**dashboard['stock'], 'industry_profile': dashboard.get('industry_profile'), 'business_profile':dashboard.get('business_profile')}, item)
-            item.update(analysis=reply['analysis'], score=reply['analysis']['sentiment_score'], analysis_status='completed', analyzed_at=reply['analyzed_at'], model=reply['model'], analysis_prompt_version=reply['prompt_version'], analysis_context_key=reply['context_key'])
+            from .analysis_cache import attach_analysis
+            attach_analysis(item, reply)
             item.pop('analysis_error',None)
             if item.pop('refresh_pending',False):
                 item['stale']=True

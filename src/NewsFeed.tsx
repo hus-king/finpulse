@@ -44,6 +44,7 @@ export default function NewsFeed({ data, openAssistant, analyzeAll, running, sta
       <div className="news-kicker"><span>{news.source}</span><time>{news.time}</time><span className="news-scope-badge">{news.news_scope === 'industry' ? '行业新闻' : '公司新闻'}</span><span>{news.tag !== '行业新闻' ? news.tag : news.industry}</span><span className={`news-score ${!isScored(news) ? 'unrated' : (news.score ?? 0) > 0 ? 'up' : (news.score ?? 0) < 0 ? 'down' : ''}`}>{newsLabel(news)}</span></div>
       <h3><a href={news.url} target="_blank" rel="noopener noreferrer">{news.title}<ExternalLink size={13} /></a></h3>
       <p>{isScored(news) ? news.analysis?.summary : news.content.slice(0, 190)}</p>
+      {isScored(news) && news.cached && <p className="news-stale">复用已保存研判 · 原研判时间 {dateTime(news.analyzed_at ?? null)}</p>}
       {isScored(news) && news.analysis && <AnalysisEvidence analysis={news.analysis} />}
       {news.news_scope === 'industry' && <div className="news-industry-relation"><strong>关联因素：{news.related_factors?.join('、') || news.industry || '行业动态'}</strong><p>{news.relevance_reason || '行业间接关联，尚需核验对目标公司的实际影响。'}</p></div>}
       {(news.stale || news.refresh_pending) && <p className="news-stale" role="status">{news.refresh_pending ? '行业检索进行中，暂展示上次材料' : '本轮更新失败，沿用上次材料'}；发布日期为 {news.time}。</p>}

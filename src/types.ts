@@ -39,7 +39,7 @@ export interface Analysis { sentiment_score: number | null; version?: string; as
 export interface News {
   id: string; title: string; source: string; url: string; content: string; score: number | null; tag: string; time: string;
   analysis: Analysis | null; analysis_status: string; analysis_error?: string;
-  text_source: string; date_status: string; analyzed_at?: string;
+  text_source: string; date_status: string; analyzed_at?: string; cached?: boolean;
   sources: { title: string; url: string; date: string }[];
   news_scope?: 'company' | 'industry'; industry?: string | null;
   related_factors?: string[]; relevance_reason?: string; stale?: boolean; refresh_pending?: boolean;

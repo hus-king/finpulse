@@ -34,6 +34,21 @@ class ResearchStore:
         with self.db.transaction() as conn:
             conn.execute(sql, values)
 
+    def get_many(self, namespace, keys, owner=''):
+        keys = list(dict.fromkeys(keys))
+        result = {}
+        if not keys:
+            return result
+        with self.db.connection() as conn:
+            for offset in range(0, len(keys), 100):
+                batch = keys[offset:offset + 100]
+                placeholders = ','.join('?' for _ in batch)
+                rows = conn.execute(
+                    'SELECT record_key,payload FROM research_records WHERE namespace=? AND owner=? '
+                    f'AND record_key IN ({placeholders})', (namespace, owner, *batch)).fetchall()
+                result.update({row['record_key']: json.loads(row['payload']) for row in rows})
+        return result
+
     def list(self, namespace, owner=None, limit=100):
         with self.db.connection() as conn:
             rows = conn.execute('SELECT record_key,owner,payload FROM research_records WHERE namespace=?' + (' AND owner=?' if owner is not None else '') + ' ORDER BY updated_at DESC LIMIT ?', (namespace, owner, limit) if owner is not None else (namespace, limit)).fetchall()
