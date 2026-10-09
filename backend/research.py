@@ -49,6 +49,32 @@ def news_documents(code, cleaned):
              **{key: item[key] for key in ('news_scope', 'industry', 'related_factors', 'relevance_reason', 'stale')}} for item in items]
 
 
+def reuse_cleaned_material(cleaned, raw, previous_collection):
+    """Keep identical cached articles stable when a shorter range changes ranking."""
+    def signatures(report):
+        result = {}
+        for group in report.get('searches', []):
+            for row in group.get('response', {}).get('results', []):
+                url = normalize_url(row.get('url', ''))
+                material = {'provider': group.get('provider'), 'scope': group.get('news_scope', 'company'),
+                            'topic': group.get('topic'), 'row': {**row, 'url': url}}
+                result.setdefault(url, []).append(json.dumps(material, ensure_ascii=False, sort_keys=True))
+        return {url: sorted(values) for url, values in result.items()}
+    current, previous = signatures(raw), signatures(previous_collection.get('raw', {}))
+    saved = {item['url']: item for item in previous_collection.get('cleaning', {}).get('items', [])}
+    start, end = raw['date_range']
+    for item in cleaned['items']:
+        old = saved.get(item['url'])
+        if (old and not old.get('stale') and current.get(item['url']) == previous.get(item['url'])
+                and start <= (old.get('effective_date') or '') <= end):
+            # Changing the filter must not silently upgrade a saved snippet to
+            # a newly selected body and invalidate an otherwise reusable score.
+            for field in ('cleaned_text', 'effective_date', 'date_status', 'text_source',
+                          'published_date_metadata', 'published_date_body', 'text_stats'):
+                item[field] = deepcopy(old[field])
+            item['text_stats']['reused_cleaning'] = True
+
+
 def forward_returns(news, candles):
     """Use next trading day's close after publication day, not an intraday assumption."""
     items = []
@@ -351,14 +377,16 @@ class ResearchService:
                         materials.setdefault(url, row)
             return materials
 
-        async def extract_documents(urls):
+        async def extract_documents(urls, cache_only=None):
+            reuse_only = reuse_search_batch if cache_only is None else cache_only
             used_budget = (attempted_extracts | set(extracts)) - cached_extract_urls
             urls = [url for url in urls if url not in attempted_extracts and url not in extracts][:max(0, 12 - len(used_budget))]
             if not urls:
                 return
-            attempted_extracts.update(urls)
+            if not reuse_only:
+                attempted_extracts.update(urls)
             try:
-                extracted = await self.news_search.extract(urls, search_materials(), cache_only=reuse_search_batch)
+                extracted = await self.news_search.extract(urls, search_materials(), cache_only=reuse_only)
                 extracts.update({normalize_url(row['url']): row.get('raw_content', '') for row in extracted['results'] if row.get('raw_content')})
                 statuses['extract'] = 'partial' if statuses.get('extract') == 'error' else 'ok'
                 if extracted.get('failed_results'):
@@ -465,7 +493,9 @@ class ResearchService:
                         if row.get('raw_content') and len(extracts) < 8:
                             extracts[normalize_url(row['url'])] = row['raw_content']
                 company_urls = list(dict.fromkeys(normalize_url(row.get('url', '')) for group in searches for row in group['response'].get('results', [])))
-                await extract_documents([url for url in company_urls if url][:8])
+                company_reused = bool(searches) and all(
+                    group['response'].get('search_cache', {}).get('mode') == 'reused' for group in searches)
+                await extract_documents([url for url in company_urls if url][:8], cache_only=company_reused)
                 early_profile = result.get('industry_profile') or previous.get('industry_profile')
                 early = clean_report(raw, extracts, self.catalog.entities(stock), industry_profile=early_profile)
                 result['news'] = news_documents(code, early)
@@ -516,7 +546,12 @@ class ResearchService:
                     extracts.setdefault(row['id'], row['raw_content'])
             urls = [row['id'] for row in chosen]
             await extract_documents(urls)
+            await self.news_search.remember_extracts(search_materials(), extracts)
             cleaned = clean_report(raw, extracts, self.catalog.entities(stock), industry_profile=result.get('industry_profile'))
+            previous_collection_id = (previous.get('pipeline') or {}).get('collection_id')
+            if reuse_search_batch and previous_collection_id:
+                previous_collection = await asyncio.to_thread(self.store.get, 'collection', previous_collection_id, default={})
+                reuse_cleaned_material(cleaned, raw, previous_collection)
             if any(row['text_stats'].get('extraction_mismatch') for row in cleaned['items']):
                 warnings.append('部分页面正文与标题主题不匹配，已降级为搜索片段')
             news = news_documents(code, cleaned)

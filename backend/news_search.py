@@ -15,9 +15,10 @@ SEARCH_VERSION = 'rolling-news-v2'
 REUSE_SECONDS = 3600
 
 
-def search_key(identity, days):
+def search_key(identity, days, *, endpoint=None):
     # Recipes are versioned; endpoint changes invalidate results, key rotation does not.
-    endpoint = providers.read_config().get('tavily_base_url', 'https://api.tavily.com')
+    if endpoint is None:
+        endpoint = providers.read_config().get('tavily_base_url', 'https://api.tavily.com')
     return hashlib.sha256(json.dumps([SEARCH_VERSION, endpoint, identity, days],
                                     ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
@@ -66,6 +67,46 @@ class NewsSearchService:
         self.store, self.clock = store, clock
         self.reuse_enabled = True
         self.capacity = asyncio.Semaphore(2)
+
+    async def find_covering_record(self, identity, days, start, end, current):
+        """Borrow a successful wider window without resetting its search clock.
+
+        Derive the existing v2 keys instead of scanning all stocks' records, so
+        caches written before this feature work without a migration or index.
+        The API permits arbitrary 1–90 day windows, not just the three UI values.
+        """
+        endpoint = providers.read_config().get('tavily_base_url', 'https://api.tavily.com')
+        ranges = {search_key(identity, width, endpoint=endpoint): width for width in range(days + 1, 91)}
+        if not ranges:
+            return current
+        records = await asyncio.to_thread(self.store.get_many, 'news_search', list(ranges))
+        candidates = []
+        now = self.clock()
+        for key, record in records.items():
+            cursor = record.get('cursor')
+            window = record.get('audit', {}).get('window') or []
+            response = record.get('response') or {}
+            if (record.get('error') or not cursor or cursor > now or len(window) != 2
+                    or not isinstance(response.get('results'), list)):
+                continue
+            # A fresh cache from before midnight may legitimately stop at
+            # yesterday. Its cursor, rather than today's date, is the coverage end.
+            covered_end = min(end, datetime.fromtimestamp(cursor, SHANGHAI).date().isoformat())
+            if window[0] <= start and window[1] >= covered_end:
+                candidates.append((cursor, key, record))
+        if not candidates:
+            return current
+        cursor, key, donor = max(candidates, key=lambda candidate: candidate[0])
+        if cursor <= (current.get('cursor') or 0):
+            return current
+        derived = deepcopy(donor)
+        derived['response']['results'] = merged_results(
+            current.get('response', {}).get('results', []), donor['response']['results'], start, end)
+        derived['response'].pop('search_cache', None)
+        derived['audit'].update(window=[start, end], requested_days=days,
+                                reused_from_days=ranges[key], reused_from_key=key,
+                                source_window=donor['audit']['window'])
+        return derived
 
     def reuse_recent_result(self, record, now, start, end):
         """Optional shortcut. Removing this call leaves incremental_search intact."""
@@ -129,6 +170,13 @@ class NewsSearchService:
                 cached = self.reuse_recent_result(record, self.clock(), start, end)
                 if cached is not None:
                     return cached
+                record = await self.find_covering_record(identity, days, start, end, record)
+                cached = self.reuse_recent_result(record, self.clock(), start, end)
+                if cached is not None:
+                    # Persist an independent clipped snapshot. Never shorten the
+                    # wider source record or pretend this read was a new search.
+                    await asyncio.to_thread(self.store.put, 'news_search', key, record)
+                    return cached
                 # Cursor uses request START time, so publication during a slow request is not skipped.
                 try:
                     saved, response = await asyncio.wait_for(
@@ -154,6 +202,20 @@ class NewsSearchService:
         keys = {url: extract_key(url, material) for url, material in materials.items()}
         records = await asyncio.to_thread(self.store.get_many, 'news_extract', list(keys.values()))
         return {url: records[key]['raw_content'] for url, key in keys.items() if records.get(key, {}).get('raw_content')}
+
+    async def remember_extracts(self, materials, extracts):
+        """Preserve bodies supplied by Search as well as paid Extract responses.
+
+        A shorter range can change the extraction ranking. An already used body
+        must stay available so identical old news doesn't degrade to a snippet.
+        """
+        keys = {url: extract_key(url, materials[url]) for url, body in extracts.items()
+                if body and url in materials}
+        records = await asyncio.to_thread(self.store.get_many, 'news_extract', list(keys.values()))
+        for url, key in keys.items():
+            if records.get(key, {}).get('raw_content') != extracts[url]:
+                await asyncio.to_thread(self.store.put, 'news_extract', key,
+                                        {'raw_content': extracts[url], 'fetched_at': self.clock()})
 
     async def extract(self, urls, materials=None, cache_only=False):
         """Keep successful text for identical evidence; retry failures after an hour."""
