@@ -4,7 +4,6 @@ import QuotePanel from './QuotePanel';
 import NewsFeed from './NewsFeed';
 import ResearchOverview from './ResearchOverview';
 import CommunityCard from './CommunityCard';
-import MarketSentimentCard from './MarketSentimentCard';
 import { dateTime, number, percent, tone } from './format';
 import type { Dashboard, Job, News, Stock } from './types';
 
@@ -22,7 +21,7 @@ export default function ResearchDashboard(props: Props) {
   const [days, setDays] = useState(30);
   const stages = data?.pipeline?.stages;
   const openEvent = useCallback((id: string) => { const news = data?.news.find(row => row.id === id); if (news) openAssistant(news); }, [data, openAssistant]);
-  return <div className="finance-layout">
+  return <div className="finance-layout" role="region" aria-label="个股行情与新闻">
     <aside className="portfolio-rail"><section className="panel portfolio-panel"><header><h2>我的自选</h2><button aria-label="添加自选股" className="icon-button" onClick={add}><Plus size={17} /></button></header><p className="rail-caption">{userSignedIn ? '保存在你的账号中' : '登录后保存自选股'}</p>{watchlist.map(stockCode => { const stock = catalog.find(row => row.code === stockCode); const snapshot = snapshots[stockCode]; return stock && <div key={stockCode} className={`portfolio-row ${code === stockCode ? 'active' : ''}`}><button onClick={() => setCode(stockCode)}><span><strong>{stock.name}</strong><small>{stock.exchange} {stock.code}</small></span><span><strong className="mono">{number(snapshot?.stock.price)}</strong><small className={tone(snapshot?.stock.change ?? null)}>{percent(snapshot?.stock.change)}</small></span></button><button className="remove-stock" aria-label={`移除${stock.name}`} disabled={savingWatch} onClick={() => remove(stockCode)}><Trash2 size={12} /></button></div>; })}{watchlist.length === 0 && <p className="rail-empty">还没有自选股，点击加号添加。</p>}<button className="add-watch" onClick={add}><Plus size={14} />管理关注标的</button></section><section className="rail-note"><ShieldCheck size={17} /><h3>研究有据可查</h3><p>新闻保留原文和清洗记录。行情展示数据日期，模型研判保留推断局限。</p><button onClick={briefing}>查看自选股早报<ArrowRight size={14} /></button></section></aside>
     <div className="research-main-column">
       {loading && <div className="panel empty-card"><LoaderCircle className="spin" size={25} /><p>正在读取已保存的数据…</p></div>}
@@ -37,6 +36,6 @@ export default function ResearchDashboard(props: Props) {
         <section className="panel returns-panel"><header><h2>新闻后的历史走势</h2><span>事后观察</span></header>{data.backtest.items.length ? <div className="returns-table"><table><thead><tr><th>新闻</th><th>基准日</th><th>3 交易日</th><th>5 交易日</th></tr></thead><tbody>{data.backtest.items.slice(0, 8).map(item => <tr key={item.news_id}><td>{item.title}</td><td>{item.base_date ?? '待有日线'}</td><td className={tone(item.return_3d)}>{percent(item.return_3d)}</td><td className={tone(item.return_5d)}>{percent(item.return_5d)}</td></tr>)}</tbody></table></div> : <p className="returns-note">保存新闻与日线后，这里会展示可计算的后续价格变化。</p>}<p className="returns-note">{data.backtest.note}</p></section>
       </>}
     </div>
-    <aside className="research-right-rail"><ResearchOverview data={data} openAssistant={openAssistant} /><MarketSentimentCard initial={data?.market_sentiment} /><CommunityCard data={data?.sentiment} running={running} refresh={() => collect(days, true, true)} /><section className="research-assistant-card"><Sparkles size={22} /><span className="eyebrow">ASK A BETTER QUESTION</span><h2>把消息，放回上下文。</h2><p>让 AI 解释事实、推断和待核实条件，继续追问新闻可能的影响。</p><button disabled={!data} onClick={() => openAssistant()}>打开研究助手<ArrowRight size={15} /></button></section><button className="briefing-rail-link" onClick={briefing}><Bell size={18} /><span><strong>自选股早报</strong><small>查看汇总与订阅设置</small></span><ChevronRight size={15} /></button></aside>
+    <aside className="research-right-rail"><ResearchOverview data={data} openAssistant={openAssistant} /><CommunityCard data={data?.sentiment} running={running} refresh={() => collect(days, true, true)} /><section className="research-assistant-card"><Sparkles size={22} /><span className="eyebrow">ASK A BETTER QUESTION</span><h2>把消息，放回上下文。</h2><p>让 AI 解释事实、推断和待核实条件，继续追问新闻可能的影响。</p><button disabled={!data} onClick={() => openAssistant()}>打开研究助手<ArrowRight size={15} /></button></section><button className="briefing-rail-link" onClick={briefing}><Bell size={18} /><span><strong>自选股早报</strong><small>查看汇总与订阅设置</small></span><ChevronRight size={15} /></button></aside>
   </div>;
 }

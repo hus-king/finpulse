@@ -1,0 +1,102 @@
+.market-overview {
+  display: grid;
+  grid-template-columns: 180px minmax(230px, .85fr) minmax(360px, 1.35fr);
+  align-items: center;
+  gap: 18px 28px;
+  margin-bottom: 24px;
+  padding: 20px 24px;
+}
+
+.market-overview .market-sentiment-header {
+  gap: 10px;
+  margin: 0;
+}
+
+.market-overview-scope {
+  margin-top: 7px;
+  color: var(--theme-muted, #7f91a3);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.market-overview .sentiment-body {
+  display: contents;
+}
+
+.market-overview-mood,
+.market-overview-breadth {
+  min-width: 0;
+}
+
+.market-overview .gauge-display {
+  margin: 0 0 10px;
+}
+
+.market-overview .gauge-score {
+  font-size: 32px;
+}
+
+.market-overview .gauge-meter-track {
+  margin-top: 8px;
+}
+
+.market-overview .gauge-labels {
+  margin-bottom: 0;
+}
+
+.market-overview .sentiment-summary-row {
+  margin: 8px 0 0;
+}
+
+.market-overview .market-breadth-grid {
+  margin: 0;
+  gap: 12px 24px;
+}
+
+.market-overview .sentiment-card-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.market-overview > .source-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.market-overview .sentiment-empty {
+  grid-column: 2 / -1;
+  padding: 18px;
+}
+
+@media (max-width: 1000px) {
+  .market-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .market-overview .sentiment-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .market-overview .sentiment-empty {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .market-overview {
+    padding: 18px;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .market-overview .sentiment-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .market-overview .market-breadth-grid {
+    gap: 12px;
+  }
+}

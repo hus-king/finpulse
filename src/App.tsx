@@ -7,6 +7,7 @@ import AccountMenu from './AccountMenu';
 import AdminPanel from './AdminPanel';
 import AiDrawer from './AiDrawer';
 import ResearchDashboard from './ResearchDashboard';
+import MarketSentimentCard from './MarketSentimentCard';
 import BriefingPanel from './BriefingPanel';
 import PaperTradingPanel from './PaperTradingPanel';
 import useDialogScroll from './useDialogScroll';
@@ -196,6 +197,7 @@ export default function App() {
       {view === 'briefing' && <BriefingPanel key={user?.id ?? 'guest'} />}
       {view === 'paper' && <PaperTradingPanel key={user?.id ?? 'guest'} initialCode={code} />}
       {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯日线 / 新浪分钟行情</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
+      {view === 'dashboard' && <MarketSentimentCard />}
       {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
       <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>分钟行情按需更新 · AI 研判需要结合原文核验</span></footer>
     </main>

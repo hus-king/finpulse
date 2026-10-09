@@ -9,5 +9,6 @@ import './briefing.css';
 import './theme.css';
 import './industry.css';
 import './chart-controls.css';
+import './market-overview.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><ThemeProvider><AuthProvider><App /></AuthProvider></ThemeProvider></React.StrictMode>);

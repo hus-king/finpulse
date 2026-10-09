@@ -22,8 +22,8 @@ function formatMarketTime(marketAsOf?: string | null, updatedAt?: string | null)
   return match ? match[0] : raw.slice(-5);
 }
 
-export default function MarketSentimentCard({ initial }: { initial?: MarketSentiment }) {
-  const [sentiment, setSentiment] = useState<MarketSentiment | null>(initial ?? null);
+export default function MarketSentimentCard() {
+  const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const active = useRef<AbortController | null>(null);
@@ -67,12 +67,12 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
   const timeLabel = formatMarketTime(sentiment?.market_as_of, sentiment?.updated_at);
 
   return (
-    <section className="panel market-sentiment-card">
+    <section className="panel market-sentiment-card market-overview" aria-label="大盘概览">
       <div className="market-sentiment-header">
         <div>
-          <span className="eyebrow">MACRO SENTIMENT</span>
+          <span className="eyebrow">沪深全市场</span>
           <div className="title-with-hint">
-            <h2>全市场情绪温度计</h2>
+            <h2>大盘概览</h2>
             <span
               className="info-hint"
               title={`计算模型：(上涨家数 + 0.5 × 平盘家数) / 总家数 × 100\n基于沪深两市全量股票涨跌广度与成交额加权`}
@@ -80,6 +80,7 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
               <Info size={13} />
             </span>
           </div>
+          <p className="market-overview-scope">全市场情绪与涨跌广度</p>
         </div>
         <button
           className="subtle-button"
@@ -91,10 +92,9 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
         </button>
       </div>
 
-      {sentiment?.status === 'stale' && <p className="source-note">数据稍有延迟，当前展示最近有效快照。</p>}
-      {error && <p className="source-note">刷新失败：{error}</p>}
       {sentiment?.status === 'ok' || sentiment?.status === 'stale' ? (
         <div className="sentiment-body">
+          <div className="market-overview-mood">
           <div className="gauge-display">
             <div className="gauge-score-wrap">
               <strong className="gauge-score" style={{ color: levelColor(level) }}>
@@ -132,7 +132,8 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
             <span className="summary-dot" style={{ backgroundColor: levelColor(level) }} />
             <p className="sentiment-summary">{sentiment.summary}</p>
           </div>
-
+          </div>
+          <div className="market-overview-breadth">
           <div className="market-breadth-grid">
             <div className="breadth-item up">
               <small>上涨家数</small>
@@ -165,6 +166,7 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
               </span>
             )}
           </div>
+          </div>
         </div>
       ) : (
         <div className="sentiment-empty">
@@ -172,6 +174,8 @@ export default function MarketSentimentCard({ initial }: { initial?: MarketSenti
           <p>{error || sentiment?.summary || '正在读取全市场宏观数据…'}</p>
         </div>
       )}
+      {sentiment?.status === 'stale' && <p className="source-note">数据稍有延迟，当前展示最近有效快照。</p>}
+      {error && <p className="source-note">刷新失败：{error}</p>}
     </section>
   );
 }
