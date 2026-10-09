@@ -44,7 +44,8 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def drain(self):
         if self.service.task:
-            await asyncio.wait_for(asyncio.shield(self.service.task), 5)
+            # SQLite fsync on the deployment host is slower than local SSD writes.
+            await asyncio.wait_for(asyncio.shield(self.service.task), 30)
 
     async def test_nonblocking_coalesced_backfill_persists_across_restart(self):
         gate = asyncio.Event()
