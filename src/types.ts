@@ -9,7 +9,7 @@ export interface MinuteMarket {
   is_realtime: boolean; error: string | null; next_poll_seconds: number; note: string;
   derived_from?: string; partial_bars?: number;
   quote: { price: number | null; change: number | null; open: number | null; high: number | null; low: number | null; volume: number | null };
-  market: { state: string; label: string; is_trading: boolean; server_time: string; calendar_year: number | null };
+  market: { state: string; label: string; is_trading: boolean; is_trade_day: boolean | null; expected_data_time: string | null; server_time: string; calendar_year: number | null };
 }
 export interface MarketSentiment {
   source?: string; method?: string; market_as_of?: string | null;
