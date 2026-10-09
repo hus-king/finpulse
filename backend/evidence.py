@@ -1,5 +1,10 @@
 """Material-event ranking and a transparent overview, without extra model calls."""
 import re
+from datetime import datetime
+
+from .news_cleaning import SHANGHAI, metadata_date
+
+HALF_LIFE_DAYS = 7
 from .prompts import PROMPT_VERSION
 
 
@@ -9,7 +14,7 @@ def rank_events(news):
         material = bool(re.search(r'业绩|财报|净利|营收|亏损|订单|采购|中标|投产|产能|回购|分红|并购|重组|处罚|诉讼|违约|退市|政策|监管|关税|供需|原油|利率', title))
         routine = bool(re.search(r'盘中|突破年线|资金流|收评|公司高管|董事.*离任', title))
         trusted = row.get('text_source') in ('extracted_body', 'akshare')
-        return (3 * material - 3 * routine + trusted + (row.get('date_status') == 'body_verified'), row.get('time', ''))
+        return (3 * material - 3 * routine + trusted + (row.get('date_status') == 'body_verified'), str(row.get('time') or ''))
     return sorted(news, key=priority, reverse=True)
 
 
@@ -24,7 +29,8 @@ def is_scored(row):
             and (score > 0) == (analysis['assessment'] == 'positive'))
 
 
-def build_overview(news):
+def build_overview(news, now=None):
+    today = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI).date()
     counts = {'positive':0,'negative':0,'pending':0}
     opportunities, risks, watch, series = [], [], [], []
     for row in rank_events(news):
@@ -44,12 +50,33 @@ def build_overview(news):
     # Stable chronology makes per-event bars readable; materiality still orders evidence lists.
     series.sort(key=lambda row:(row['date'] or '',row['news_id']))
     scores = [row['score'] for row in series]
-    net_score = round(sum(scores)/len(scores),1) if scores else None
+    dated = []
+    for item in series:
+        raw_date = item['date']
+        published = metadata_date(raw_date) if isinstance(raw_date, str) else None
+        age = (today - published).days if published else None
+        item.update(time_weight=None, weight_share=None)
+        if age is not None and age >= 0:
+            item['time_weight'] = 2 ** (-age / HALF_LIFE_DAYS)
+            dated.append((item, age))
+    net_score = None
+    if dated:
+        # Scale all weights equally to avoid underflow for an old-only archive.
+        youngest = min(age for _, age in dated)
+        relative = [(item, 2 ** (-(age - youngest) / HALF_LIFE_DAYS)) for item, age in dated]
+        total_weight = sum(weight for _, weight in relative)
+        net_score = round(sum(item['score'] * weight for item, weight in relative) / total_weight, 1)
+        if net_score == 0:
+            net_score = 0.0
+        for item, weight in relative:
+            item['weight_share'] = round(weight / total_weight * 100, 1)
     return {'status':'positive' if net_score is not None and net_score > 0 else 'negative' if net_score is not None and net_score < 0 else 'pending',
             'counts':counts,'analyzed':len(series),'total':len(news),'net_score':net_score,
+            'weighting': {'method':'exponential_decay','half_life_days':HALF_LIFE_DAYS,'as_of':today.isoformat(),
+                          'included':len(dated),'excluded_dates':len(series)-len(dated)},
             'score_range':[min(scores),max(scores)] if scores else None,'score_series':series,
             'opportunities':opportunities[:3],'risks':risks[:3],'watch_points':watch[:3],
-            'note':'综合分为已研判新闻分数的算术平均，待研判不计入。AI判断的消息倾向，不是预期涨幅或涨跌概率。'}
+            'note':'综合分按新闻发布时间加权，权重每 7 个自然日减半；待研判、日期缺失或未来日期不计入。逐条新闻保留原始 AI 分数。AI判断的消息倾向，不是预期涨幅或涨跌概率。'}
 
 
 def score_label(analysis, score=None):

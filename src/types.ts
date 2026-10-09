@@ -50,7 +50,7 @@ export interface IndustryProfile {
 }
 export interface Pipeline { date_range: string[]; statuses: Record<string, string>; counts: Record<string, number>; warnings: string[]; collection_id?: string; job_status?: string; stages?: Record<string, string> }
 export interface OverviewEvidence { news_id:string; title:string; url:string; text:string; score:number|null; confidence:string; horizon:string; date?:string }
-export interface ResearchOverview { status:string; counts:Record<string,number>; analyzed:number; total:number; net_score:number|null; score_series:Omit<OverviewEvidence,'text'>[]; score_range:[number,number]|null; opportunities:OverviewEvidence[]; risks:OverviewEvidence[]; watch_points:OverviewEvidence[]; note:string }
+export interface ResearchOverview { status:string; counts:Record<string,number>; analyzed:number; total:number; net_score:number|null; weighting?:{method:'exponential_decay';half_life_days:number;as_of:string;included:number;excluded_dates:number}; score_series:(Omit<OverviewEvidence,'text'> & {time_weight?:number|null;weight_share?:number|null})[]; score_range:[number,number]|null; opportunities:OverviewEvidence[]; risks:OverviewEvidence[]; watch_points:OverviewEvidence[]; note:string }
 export interface Dashboard {
   excluded_news?:{id:string;title:string;url:string;reason:string}[];
   research_overview?:ResearchOverview;

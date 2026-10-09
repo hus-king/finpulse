@@ -3,6 +3,8 @@ import json
 import tempfile
 import threading
 import unittest
+from datetime import datetime
+from backend.news_cleaning import SHANGHAI
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
@@ -12,6 +14,8 @@ from backend.auth import AuthStore
 from backend.research_store import ResearchStore
 from backend.research import ResearchService
 from tests.test_evidence import BASE
+
+NOW=datetime(2026,10,9,12,tzinfo=SHANGHAI)
 
 POS={**BASE,'sentiment_score':25,'assessment':'positive'}
 
@@ -26,15 +30,15 @@ class DirectionalContractTests(unittest.TestCase):
         rows=[{'id':'p','title':'订单增长','time':'2026-10-08','score':40,'analysis_status':'completed','analysis':{**POS,'sentiment_score':40,'version':PROMPT_VERSION}},
               {'id':'n','title':'成本上涨','time':'2026-10-07','score':-20,'analysis_status':'completed','analysis':{**POS,'sentiment_score':-20,'assessment':'negative','negative_factors':['成本上涨'],'version':PROMPT_VERSION}},
               {'id':'old','title':'旧版零分','score':0,'analysis_status':'completed','analysis':{'sentiment_score':0,'version':'news-v4-evidence','assessment':'neutral'}}]
-        overview=build_overview(rows)
-        self.assertEqual(overview.get('net_score'),10)
+        overview=build_overview(rows,now=NOW)
+        self.assertEqual(overview.get('net_score'),11.5)
         self.assertEqual(overview['counts'],{'positive':1,'negative':1,'pending':1})
         self.assertEqual([row['score'] for row in overview.get('score_series',[])],[-20,40])
 
     def test_old_directional_scores_keep_their_real_scale_without_conversion(self):
-        rows=[{'id':'v4','title':'旧版方向分','score':25,'analysis_status':'completed','analysis':{**POS,'version':'news-v4-evidence'}},
+        rows=[{'id':'v4','title':'旧版方向分','time':'2026-10-08','score':25,'analysis_status':'completed','analysis':{**POS,'version':'news-v4-evidence'}},
               {'id':'v3','title':'旧三档分','score':1,'analysis_status':'completed','analysis':{'sentiment_score':1,'version':'news-v3-industry'}}]
-        overview=build_overview(rows)
+        overview=build_overview(rows,now=NOW)
         self.assertEqual(overview.get('net_score'),25)
         self.assertEqual(overview['counts']['pending'],1)
 

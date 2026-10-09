@@ -78,3 +78,5 @@ body{min-width:320px;overflow-x:hidden}.finance-shell{min-height:100vh}button:di
 .seg-neutral{flex:10}
 :root[data-theme="dark"] .contrarian-badge.overheated{background:var(--theme-warning-bg);border-color:var(--theme-warning-border);color:var(--theme-warning)}
 :root[data-theme="dark"] .contrarian-badge.frozen{background:var(--theme-success-bg);border-color:var(--theme-border);color:var(--theme-success)}
+
+.research-overview .score-weighting-rule{margin:8px 0 14px;color:var(--theme-muted);font-size:11px;line-height:1.6;text-align:center}

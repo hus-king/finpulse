@@ -29,7 +29,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_overview_preserves_conflicting_directions_and_excludes_legacy_zero(self):
         from backend.evidence import build_overview
-        news = [{'id': str(i), 'title': '事件'+str(i), 'analysis_status':'completed', 'analysis':{**BASE, 'version':prompts.PROMPT_VERSION, **change}} for i,change in enumerate(({}, {'assessment':'negative','sentiment_score':-30,'negative_factors':['成本压力']}, {'assessment':'insufficient','sentiment_score':None}))]
+        news = [{'id': str(i), 'title': '事件'+str(i), 'time':'2026-01-01', 'analysis_status':'completed', 'analysis':{**BASE, 'version':prompts.PROMPT_VERSION, **change}} for i,change in enumerate(({}, {'assessment':'negative','sentiment_score':-30,'negative_factors':['成本压力']}, {'assessment':'insufficient','sentiment_score':None}))]
         news.append({'id':'old','analysis_status':'completed','score':0,'analysis':{'sentiment_score':0}})
         result = build_overview(news)
         self.assertEqual(result['status'], 'negative')
@@ -60,7 +60,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_positive_event_still_preserves_its_execution_risks(self):
         from backend.evidence import build_overview
-        row={'id':'order','title':'重大订单落地','analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION,'negative_factors':['交付延迟可能影响收入确认']}}
+        row={'id':'order','title':'重大订单落地','time':'2026-01-01','analysis_status':'completed','analysis':{**BASE,'version':prompts.PROMPT_VERSION,'negative_factors':['交付延迟可能影响收入确认']}}
         overview=build_overview([row])
         self.assertEqual(overview['status'],'positive')
         self.assertEqual(overview['risks'][0]['text'],'交付延迟可能影响收入确认')
