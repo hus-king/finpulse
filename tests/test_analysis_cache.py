@@ -38,7 +38,12 @@ class AnalysisReuseTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     async def collect(self, rows=None, maximum=3, progress=lambda stage: None):
-        with patch('backend.providers.search_news', new=AsyncMock(return_value={'results': self.rows if rows is None else rows})), \
+        # Force upstream fixtures here: this suite isolates judgment persistence,
+        # while rolling search reuse/merging has its own integration tests.
+        async def fresh(identity, days, start, end, fetcher):
+            return await fetcher(start, end)
+        with patch.object(self.service.news_search, 'search', side_effect=fresh), \
+             patch('backend.providers.search_news', new=AsyncMock(return_value={'results': self.rows if rows is None else rows})), \
              patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), \
              patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), \
              patch('backend.providers.daily_market', new=AsyncMock(return_value={'candles': [], 'price': None})):

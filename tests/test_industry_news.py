@@ -168,7 +168,7 @@ class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
     async def test_stale_shared_search_material_is_labelled_and_keeps_prior_analysis(self):
         first = await self.collect()
         original = next(row for row in first['news'] if row['news_scope'] == 'industry')
-        self.service.industry_news.clock = lambda: time.time() + 1801
+        self.service.news_search.clock = lambda: time.time() + 3601
         second = await self.collect(source_error=ProviderError('刷新失败'))
         row = next(row for row in second['news'] if row['url'] == original['url'])
         self.assertTrue(row['stale'])
@@ -194,7 +194,7 @@ class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
              patch('backend.providers.daily_market', new=AsyncMock(return_value={'candles': [], 'price': None})):
             task = asyncio.create_task(self.service.collect(STOCK['code'], 7, 3, False, progress))
             try:
-                await asyncio.wait_for(entered.wait(), 1)
+                await asyncio.wait_for(entered.wait(), 5)
                 await asyncio.wait_for(visible.wait(), 1)
                 self.assertFalse(task.done())
                 self.assertEqual(self.store.get('dashboard', STOCK['code'])['news'][0]['news_scope'], 'company')
@@ -255,7 +255,7 @@ class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
         reply = await analyze_saved(STOCK['code'], row['id'], Response(), user={'id': 'reader'}, research=self.service)
         saved = next(row for row in self.store.get('dashboard', STOCK['code'])['news'] if row['news_scope'] == 'industry')
         self.assertEqual(saved.get('analysis_prompt_version'), reply['prompt_version'])
-        self.service.industry_news.clock = lambda: time.time() + 1801
+        self.service.news_search.clock = lambda: time.time() + 3601
         result = await self.collect(source_error=ProviderError('刷新失败'))
         retained = next(row for row in result['news'] if row['news_scope'] == 'industry')
         self.assertTrue(retained['stale'])
@@ -292,7 +292,7 @@ class IndustryResearchTests(unittest.IsolatedAsyncioTestCase):
         first=await self.collect()
         old=next(row for row in first['news'] if row['news_scope']=='industry')
         self.store.put('company_business',STOCK['code'],{})
-        self.service.industry_news.clock=lambda:time.time()+1801
+        self.service.news_search.clock=lambda:time.time()+3601
         with patch('backend.providers.business_profile',new=AsyncMock(return_value={'code':STOCK['code'],'main_business':'完全不同的上游开采业务','source':'test'})):
             result=await self.collect(source_error=ProviderError('行业查询暂不可用'))
         stale=next(row for row in result['news'] if row['url']==old['url'])

@@ -19,6 +19,7 @@ from .stock_catalog import StockCatalog
 from .daily_market import DailyMarketService, quote_order
 from .industry import PROFILE_NOTE, PROFILE_VERSION, build_topics, select_analyses
 from .industry_news import IndustryNewsService
+from .news_search import NewsSearchService
 from .news_cleaning import SHANGHAI, clean_report, clean_text, metadata_date, normalize_url, material_kind, REASONS
 from .evidence import build_overview, rank_events, is_scored
 from .prompts import EvidenceAnalysis, CommunityAnalysis, COMMUNITY_SYSTEM, NEWS_SYSTEM, PROMPT_VERSION, parse_json
@@ -66,6 +67,7 @@ class ResearchService:
     def __init__(self, store, completion):
         self.store, self.completion = store, completion
         self.analysis_cache = AnalysisCache(store)
+        self.news_search = NewsSearchService(store)
         self.catalog = StockCatalog(store)
         if store is not None:
             store.catalog = self.catalog
@@ -334,18 +336,29 @@ class ResearchService:
         warnings, searches, statuses = [], [], {}
         raw = {'date_range': [str(start), str(end)], 'searches': searches}
         stages = {'market': 'pending', 'news': 'pending', 'industry': 'pending', 'analysis': 'pending', 'community': 'pending' if include_community else 'not_requested'}
-        result = {'stock': {**stock, 'price': previous.get('quote', {}).get('price'), 'change': previous.get('quote', {}).get('change')}, 'quote': previous.get('quote', {'status': 'not_collected', 'is_realtime': False}), 'candles': previous.get('candles', []), 'news': previous.get('news', []), 'sentiment': previous.get('sentiment', {'status': 'not_collected', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': []}), 'as_of': previous.get('as_of'), 'data_source': 'live', 'pipeline': {'date_range': raw['date_range'], 'statuses': statuses, 'counts': {'input': 0, 'retained': 0, 'merged': 0, 'analyzed': 0}, 'warnings': [], 'stages': stages, 'job_status': 'running'}}
+        result = {'stock': {**stock, 'price': previous.get('quote', {}).get('price'), 'change': previous.get('quote', {}).get('change')}, 'quote': previous.get('quote', {'status': 'not_collected', 'is_realtime': False}), 'candles': previous.get('candles', []), 'news': previous.get('news', []), 'sentiment': previous.get('sentiment', {'status': 'not_collected', 'sample_count': 0, 'bull': None, 'bear': None, 'neutral': None, 'keywords': [], 'posts': []}), 'as_of': previous.get('as_of'), 'data_source': 'live', 'pipeline': {'score_display': 'updating', 'date_range': raw['date_range'], 'statuses': statuses, 'counts': {'input': 0, 'retained': 0, 'merged': 0, 'analyzed': 0}, 'warnings': [], 'stages': stages, 'job_status': 'running'}}
         publish_lock = asyncio.Lock()
-        extracts, attempted_extracts = {}, set()
+        extracts, attempted_extracts, cached_extract_urls = {}, set(), set()
+        reuse_search_batch = False
         snapshot_key = uuid.uuid4().hex
 
+        def search_materials():
+            materials = {}
+            for group in searches:
+                for row in group['response'].get('results', []):
+                    url = normalize_url(row.get('url', ''))
+                    if url:
+                        materials.setdefault(url, row)
+            return materials
+
         async def extract_documents(urls):
-            urls = [url for url in urls if url not in attempted_extracts and url not in extracts][:max(0, 12 - len(attempted_extracts | set(extracts)))]
+            used_budget = (attempted_extracts | set(extracts)) - cached_extract_urls
+            urls = [url for url in urls if url not in attempted_extracts and url not in extracts][:max(0, 12 - len(used_budget))]
             if not urls:
                 return
             attempted_extracts.update(urls)
             try:
-                extracted = await providers.tavily('extract', {'urls': urls, 'extract_depth': 'basic', 'format': 'text'})
+                extracted = await self.news_search.extract(urls, search_materials(), cache_only=reuse_search_batch)
                 extracts.update({normalize_url(row['url']): row.get('raw_content', '') for row in extracted['results'] if row.get('raw_content')})
                 statuses['extract'] = 'partial' if statuses.get('extract') == 'error' else 'ok'
                 if extracted.get('failed_results'):
@@ -393,7 +406,18 @@ class ResearchService:
                 statuses['industry_news'] = 'unavailable'
                 warnings.append('所属行业暂无法核验，当前仅更新公司新闻')
                 return []
-            responses = await asyncio.gather(*(self.industry_news.search(topic, str(start), str(end)) for topic in topics))
+            async def search_topic(topic):
+                try:
+                    response = await self.news_search.search(
+                        {'source': 'tavily_industry', 'topic': topic, 'version': PROFILE_VERSION}, days, str(start), str(end),
+                        lambda since, until: providers.search_industry_news(topic['query'], since, until))
+                    stale = response.get('search_cache', {}).get('mode') == 'stale'
+                    return {'response': response, 'status': 'stale' if stale else 'ok', 'topic': topic,
+                            **({'error': response['warnings'][0]} if stale else {})}
+                except Exception as exc:
+                    return {'response': {'results': []}, 'status': 'unavailable', 'topic': topic,
+                            'error': str(exc) if isinstance(exc, providers.ProviderError) else '行业数据源不可用'}
+            responses = await asyncio.gather(*(search_topic(topic) for topic in topics))
             statuses['industry_news'] = 'partial' if any(row.get('error') for row in responses) else 'ok' if any(row['response']['results'] for row in responses) else 'empty'
             groups = []
             for index, row in enumerate(responses):
@@ -411,7 +435,13 @@ class ResearchService:
             if result['business_profile'].get('error'):
                 warnings.append('主营资料未更新；研判保留缺失条件')
 
-        workers = [asyncio.create_task(providers.search_news(stock, str(start), str(end))), asyncio.create_task(providers.akshare_news(stock, str(start), str(end))), asyncio.create_task(market_update()), asyncio.create_task(industry_update()), asyncio.create_task(business_update())]
+        workers = [asyncio.create_task(self.news_search.search(
+                       {'source': 'tavily_company', 'code': code, 'name': stock['name']}, days, str(start), str(end),
+                       lambda since, until: providers.search_news(stock, since, until))),
+                   asyncio.create_task(self.news_search.search(
+                       {'source': 'akshare_news', 'code': code, 'name': stock['name']}, days, str(start), str(end),
+                       lambda since, until: providers.akshare_news(stock, since, until))),
+                   asyncio.create_task(market_update()), asyncio.create_task(industry_update()), asyncio.create_task(business_update())]
         try:
             await publish('获取历史行情并检索真实新闻')
             results = await asyncio.gather(*workers[:2], return_exceptions=True)
@@ -422,7 +452,11 @@ class ResearchService:
                 else:
                     statuses[name] = 'partial' if response.get('warnings') else 'ok' if response.get('results') else 'empty'
                     warnings.extend(response.get('warnings', []))
-                    searches.append({'stock': stock['name'], 'provider': name, 'response': response})
+                    searches.append({'stock': stock['name'], 'provider': name, 'response': response,
+                                     'cache_status': 'stale' if response.get('search_cache', {}).get('mode') == 'stale' else 'ok'})
+            cached_bodies = await self.news_search.load_extracts(search_materials())
+            extracts.update(cached_bodies)
+            cached_extract_urls.update(cached_bodies)
             if not workers[3].done():
                 # Publish usable company documents independently of a cold or
                 # stalled industry source, without spending extra model slots.
@@ -459,6 +493,16 @@ class ResearchService:
                 statuses['industry_news'] = 'unavailable'
                 warnings.append('行业采集暂不可用，继续处理公司新闻')
             stages['industry'] = 'ready' if statuses.get('industry_news') in ('ok', 'empty') else 'failed'
+            reuse_search_batch = bool(searches) and all(
+                group['response'].get('search_cache', {}).get('mode') == 'reused' for group in searches)
+            # All unchanged old bodies remain available even when new events
+            # move them out of this round's 12-document extraction budget.
+            cached_bodies = await self.news_search.load_extracts(search_materials())
+            extracts.update(cached_bodies)
+            cached_extract_urls.update(cached_bodies)
+            result['pipeline']['search_cache'] = [
+                {'provider': group['provider'], **group['response']['search_cache']}
+                for group in searches if group['response'].get('search_cache')]
             progress('提取正文与清洗去重')
             candidates = {}
             for group in searches:
@@ -468,7 +512,7 @@ class ResearchService:
                         candidates[url] = {**row, 'id': url, 'news_scope': group.get('news_scope', 'company')}
             chosen = select_analyses(rank_events(list(candidates.values())), 12)
             for row in chosen:
-                if row.get('raw_content') and (row['id'] in attempted_extracts | set(extracts) or len(attempted_extracts | set(extracts)) < 12):
+                if row.get('raw_content') and (row['id'] in attempted_extracts | set(extracts) or len((attempted_extracts | set(extracts)) - cached_extract_urls) < 12):
                     extracts.setdefault(row['id'], row['raw_content'])
             urls = [row['id'] for row in chosen]
             await extract_documents(urls)
@@ -540,6 +584,7 @@ class ResearchService:
                 if stages['community'] == 'failed':
                     warnings.append(result['sentiment']['error'])
             await workers[2]
+            result['pipeline']['score_display'] = 'ready'
             result['pipeline']['job_status'] = 'partial' if warnings else 'completed'
             await publish('处理完成')
             await asyncio.to_thread(self.store.put, 'collection', snapshot_key, {'code': code, 'collected_at': result['as_of'], 'raw': raw, 'cleaning': cleaned, 'extract_urls': list(extracts), 'pipeline': deepcopy(result['pipeline'])})
@@ -550,6 +595,7 @@ class ResearchService:
                     worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
             result['pipeline']['job_status'] = 'failed'
+            result['pipeline']['score_display'] = 'ready'
             for section, state in stages.items():
                 if state in ('pending', 'running'):
                     stages[section] = 'failed'

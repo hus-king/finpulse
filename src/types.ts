@@ -48,7 +48,7 @@ export interface IndustryProfile {
   code: string; industry: string | null; status: 'ok' | 'stale' | 'unavailable';
   source?: string; fetched_at: string | null; version: string; error?: string | null; note: string;
 }
-export interface Pipeline { date_range: string[]; statuses: Record<string, string>; counts: Record<string, number>; warnings: string[]; collection_id?: string; job_status?: string; stages?: Record<string, string> }
+export interface Pipeline { score_display?: 'updating'|'ready'; search_cache?: {provider:string;mode:string;last_search_at:string|null;interval:string[];provider_date_range:string[]}[]; date_range: string[]; statuses: Record<string, string>; counts: Record<string, number>; warnings: string[]; collection_id?: string; job_status?: string; stages?: Record<string, string> }
 export interface OverviewEvidence { news_id:string; title:string; url:string; text:string; score:number|null; confidence:string; horizon:string; date?:string }
 export interface ResearchOverview { status:string; counts:Record<string,number>; analyzed:number; total:number; net_score:number|null; weighting?:{method:'exponential_decay';half_life_days:number;as_of:string;included:number;excluded_dates:number}; score_series:(Omit<OverviewEvidence,'text'> & {time_weight?:number|null;weight_share?:number|null})[]; score_range:[number,number]|null; opportunities:OverviewEvidence[]; risks:OverviewEvidence[]; watch_points:OverviewEvidence[]; note:string }
 export interface Dashboard {
