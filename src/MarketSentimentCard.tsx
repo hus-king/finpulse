@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { api } from './api';
-import type { MarketSentiment } from './types';
+import type { MarketSentiment, SentimentHistory } from './types';
+import SentimentTrend from './SentimentTrend';
 
 function formatTurnover(cny: number): string {
   if (!cny || cny <= 0) return '—';
@@ -27,6 +28,23 @@ export default function MarketSentimentCard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const active = useRef<AbortController | null>(null);
+  const historyActive = useRef<AbortController | null>(null);
+  const [history, setHistory] = useState<SentimentHistory | null>(null);
+  const [historyError, setHistoryError] = useState('');
+  const fetchHistory = async () => {
+    historyActive.current?.abort();
+    const controller = new AbortController(); historyActive.current = controller;
+    try {
+      const data = await api<SentimentHistory>('/api/market/sentiment/history', undefined, controller.signal);
+      if (!controller.signal.aborted) {
+        setHistory(previous => data.status === 'unavailable' && previous?.points.length
+          ? { ...data, points: previous.points.filter(point => point.date >= data.from_date && point.date <= data.to_date) } : data);
+        setHistoryError(data.status === 'unavailable' ? data.message || '历史更新失败' : '');
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) setHistoryError((err as Error).message);
+    }
+  };
 
   const fetchSentiment = async (force = false) => {
     active.current?.abort();
@@ -36,7 +54,7 @@ export default function MarketSentimentCard() {
     setError('');
     try {
       const data = await api<MarketSentiment>(`/api/market/sentiment${force ? '?refresh=true' : ''}`, undefined, controller.signal);
-      if (!controller.signal.aborted) setSentiment(data);
+      if (!controller.signal.aborted) { setSentiment(data); void fetchHistory(); }
     } catch (err) {
       if (!controller.signal.aborted) setError((err as Error).message);
     } finally {
@@ -49,6 +67,12 @@ export default function MarketSentimentCard() {
     const timer = window.setInterval(() => void fetchSentiment(), 90_000);
     return () => { window.clearInterval(timer); active.current?.abort(); };
   }, []);
+
+  useEffect(() => {
+    void fetchHistory();
+    const timer = window.setInterval(() => void fetchHistory(), history?.refreshing ? 5_000 : 90_000);
+    return () => { window.clearInterval(timer); historyActive.current?.abort(); };
+  }, [history?.refreshing]);
 
   const score = sentiment?.score ?? 50;
   const level = sentiment?.level ?? 'neutral';
@@ -75,7 +99,7 @@ export default function MarketSentimentCard() {
             <h2>大盘概览</h2>
             <span
               className="info-hint"
-              title={`计算模型：(上涨家数 + 0.5 × 平盘家数) / 总家数 × 100\n基于沪深两市全量股票涨跌广度与成交额加权`}
+              title={`计算模型：(上涨家数 + 0.5 × 平盘家数) / 总家数 × 100\n基于沪深 A 股涨跌家数；成交额单独展示，不参与评分`}
             >
               <Info size={13} />
             </span>
@@ -174,6 +198,7 @@ export default function MarketSentimentCard() {
           <p>{error || sentiment?.summary || '正在读取全市场宏观数据…'}</p>
         </div>
       )}
+      <SentimentTrend history={history} error={historyError} />
       {sentiment?.status === 'stale' && <p className="source-note">数据稍有延迟，当前展示最近有效快照。</p>}
       {error && <p className="source-note">刷新失败：{error}</p>}
     </section>

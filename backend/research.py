@@ -88,9 +88,10 @@ class ResearchService:
         self.dashboard_revisions = {}
         self.daily_market = DailyMarketService(store) if store is not None else None
         self.industry_news = IndustryNewsService(store) if store is not None else None
-        self.market_sentiment = MarketSentimentService()
+        self.market_sentiment = MarketSentimentService(store=store)
 
     async def close(self):
+        await self.market_sentiment.history.close()
         if self.industry_news:
             await self.industry_news.close()
         if self.daily_market:

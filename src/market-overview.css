@@ -1,8 +1,8 @@
 .market-overview {
   display: grid;
-  grid-template-columns: 180px minmax(230px, .85fr) minmax(360px, 1.35fr);
+  grid-template-columns: 150px minmax(210px, .8fr) minmax(260px, 1fr) minmax(300px, 1.2fr);
   align-items: center;
-  gap: 18px 28px;
+  gap: 18px 22px;
   margin-bottom: 24px;
   padding: 20px 24px;
 }
@@ -64,11 +64,11 @@
 }
 
 .market-overview .sentiment-empty {
-  grid-column: 2 / -1;
+  grid-column: 2 / 4;
   padding: 18px;
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1200px) {
   .market-overview {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -99,4 +99,30 @@
   .market-overview .market-breadth-grid {
     gap: 12px;
   }
+}
+
+.market-overview-trend { min-width: 0; border-left: 1px solid var(--chart-border); padding-left: 20px; }
+.sentiment-trend-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sentiment-trend-heading h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.sentiment-trend-heading span, .sentiment-trend-note { color: var(--theme-muted, #7f91a3); font-size: 10px; }
+.sentiment-trend-canvas { position: relative; }
+.sentiment-trend-chart { height: 112px; width: 100%; }
+.sentiment-trend-empty { position: absolute; inset: 25px 15px 20px 30px; display: grid; place-items: center; margin: 0; font-size: 11px; color: var(--theme-muted, #7f91a3); background: var(--theme-panel, #171c26); }
+.sentiment-trend-note { margin: 0; line-height: 1.5; }
+@media (max-width: 1200px) {
+  .market-overview { grid-template-columns: minmax(0, 1fr) minmax(300px, .8fr); }
+  .market-overview .market-sentiment-header { grid-column: 1; }
+  .market-overview .sentiment-body { grid-column: 1; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .market-overview-trend { grid-column: 2; grid-row: 1 / 3; }
+  .sentiment-trend-chart { height: 200px; }
+  .market-overview .sentiment-empty { grid-column: 1; }
+}
+@media (max-width: 760px) {
+  .market-overview { grid-template-columns: minmax(0, 1fr); }
+  .market-overview-trend { grid-column: 1; grid-row: auto; border-left: 0; border-top: 1px solid var(--chart-border); padding: 16px 0 0; }
+  .market-overview .sentiment-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sentiment-trend-chart { height: 170px; }
+}
+@media (max-width: 600px) {
+  .market-overview .sentiment-body { grid-template-columns: minmax(0, 1fr); }
 }

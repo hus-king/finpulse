@@ -66,6 +66,12 @@ async def market_sentiment(request: Request, response: Response, refresh: bool =
     return await sentiment_service.get_sentiment(force=refresh)
 
 
+@router.get('/market/sentiment/history')
+async def sentiment_history(response: Response, research=Depends(service)):
+    private(response)
+    return await research.market_sentiment.history.snapshot()
+
+
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     days: int = Field(default=30, ge=1, le=90)

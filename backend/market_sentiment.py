@@ -8,6 +8,7 @@ from datetime import datetime
 import httpx
 
 from .news_cleaning import SHANGHAI
+from .sentiment_history import SentimentHistoryService
 
 EASTMONEY_BREADTH_URLS = [
     f'https://{host}/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f1,f2,f3,f4,f6,f12,f13,f104,f105,f106,f124'
@@ -119,7 +120,8 @@ def calculate_level(score):
 
 
 class MarketSentimentService:
-    def __init__(self, cache_ttl=90, clock=time.monotonic):
+    def __init__(self, cache_ttl=90, clock=time.monotonic, store=None):
+        self.history = SentimentHistoryService(store)
         self.cache_ttl = cache_ttl
         self.clock = clock
         self._cached_data = None
@@ -236,6 +238,7 @@ class MarketSentimentService:
                           'source': source_label,
                           'method': '(上涨家数 + 0.5 × 平盘家数) / 总家数 × 100；市场广度情绪代理指标'}
                 self._cached_data, self._cached_time = result, self.clock()
+                self.history.schedule_current(result)
             except Exception:
                 result = {**self._cached_data, 'status': 'stale'} if self._cached_data else {
                     'status': 'unavailable', 'score': None, 'level': None, 'level_name': '暂不可用',

@@ -25,6 +25,11 @@ export interface MarketSentiment {
   turnover_cny: number;
   updated_at: string | null;
 }
+export interface SentimentHistory {
+  points: { date: string; score: number; advancing: number; declining: number; flat: number; total: number; market_as_of: string; source: string }[];
+  trading_dates: string[]; refreshing: boolean; missing_days: number; status: 'ok' | 'loading' | 'unavailable';
+  message: string; from_date: string; to_date: string; source: string;
+}
 export interface MarketBundle {
   dashboard: Dashboard; minutes: Record<string, MinuteMarket>; status: 'ok' | 'partial';
   errors: Record<string, string>; next_poll_seconds: number; fetched_at: string;
