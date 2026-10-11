@@ -178,6 +178,17 @@ class TeacherJournalTest(unittest.TestCase):
 
 
 class DevelopmentDatasetTest(unittest.TestCase):
+    def test_complete_table_with_units_is_ready_without_paragraph_body(self):
+        r = record(); r["state"]["news"].update(text="", market_rows=[
+            ["单位：元/吨"], ["产品", "本期价格", "涨幅"], ["钢材", "3100", "3.0%"]])
+        result = import_records([r], {"steel": "train"})[0]
+        self.assertEqual(result["quality"]["body"], "ready")
+
+    def test_numeric_table_without_units_remains_pending(self):
+        r = record(); r["state"]["news"].update(text="", market_rows=[
+            ["产品", "数字"], ["钢材", "3100"]])
+        self.assertEqual(import_records([r], {"steel": "train"})[0]["quality"]["body"], "pending")
+
     def test_import_preserves_tables_and_drops_old_labels(self):
         r = record(); r["expected"] = {"relation": "A"}; r["reviews"] = {"old": "A"}
         r["state"]["news"]["market_rows"] = [["产品", "单位"], ["钢材", "吨"]]

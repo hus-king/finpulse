@@ -36,9 +36,10 @@ def model_state(record):
     # Project explicitly, so expected labels, reviewer notes and quality statuses cannot leak.
     company = record["state"]["company"]
     news = record["state"]["news"]
-    return {"company": {k: company.get(k, "" if k in ("name", "industry") else [])
-                        for k in ("name", "industry", "products", "upstream", "downstream", "regions")}
-            | {"code": record["target_code"]},
+    company_state = {k: company.get(k, "" if k in ("name", "industry") else [])
+                     for k in ("name", "industry", "products", "upstream", "downstream", "regions")}
+    company_state["code"] = record["target_code"]
+    return {"company": company_state,
             "news": {k: news.get(k, [] if k == "market_rows" else "")
                      for k in ("title", "text", "market_rows")}}
 

@@ -1,6 +1,7 @@
 """Explicit historical imports and group-disjoint development datasets."""
 from collections import Counter
 from datetime import date
+import re
 
 from .contract import QUESTIONS, input_digest, model_state
 from .pipeline import quality_reasons
@@ -23,8 +24,12 @@ def import_records(rows, group_roles, profiles=None):
         except (ValueError, TypeError): date_status = "pending"
         state = model_state(row)
         text, table = state["news"]["text"], state["news"]["market_rows"]
-        body_ready = len(text.strip()) >= 80 or (bool(text.strip()) and len(table) >= 2 and
-                                                all(isinstance(r, list) and len(r) >= 2 for r in table))
+        valid_rows = isinstance(table, list) and all(isinstance(r, list) for r in table)
+        units = "单位" in text or (valid_rows and any("单位" in str(c) for r in table for c in r))
+        data_rows = [r for r in table if len(r) >= 2] if valid_rows else []
+        table_ready = (bool(state["news"]["title"].strip()) and units and len(data_rows) >= 2
+                       and any(re.search(r"\d", str(c)) for r in data_rows[1:] for c in r))
+        body_ready = len(text.strip()) >= 80 or table_ready
         record = {"id": row["id"], "group_id": row["group_id"], "target_code": row["target_code"], "state": state,
                   "questions": QUESTIONS, "split": group_roles[row["group_id"]], "source": source,
                   "quality": {"body": "ready" if body_ready else "pending", "date": date_status,
