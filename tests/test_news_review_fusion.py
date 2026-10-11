@@ -1,8 +1,12 @@
 import copy
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import Mock
 
 from experiments.news_processing.contract import input_digest
 from experiments.news_processing.fusion import assemble_reviewed, assert_weak_training_row, assert_training_support
+from experiments.news_processing.train import reserve_training_run
 from tests.test_news_processing import IDENTITY, record, reference, teacher_record
 
 
@@ -73,6 +77,17 @@ class ReviewFusionTests(unittest.TestCase):
     def test_train_runner_recomputes_support_before_reserving_run(self):
         datasets = self.assemble()['datasets']
         with self.assertRaises(ValueError): assert_training_support(datasets, {'passed':True})
+
+    def test_invalid_library_config_does_not_consume_training_reservation(self):
+        with tempfile.TemporaryDirectory() as path:
+            config = Mock(); config.validate.side_effect = ValueError('Invalid loss')
+            with self.assertRaises(ValueError): reserve_training_run(Path(path),'freeze',config)
+            self.assertFalse((Path(path)/'run_started.json').exists())
+
+    def test_valid_library_config_reserves_once(self):
+        with tempfile.TemporaryDirectory() as path:
+            config = Mock(); reserve_training_run(Path(path),'freeze',config)
+            with self.assertRaises(FileExistsError): reserve_training_run(Path(path),'freeze',config)
 
 
 if __name__ == '__main__': unittest.main()

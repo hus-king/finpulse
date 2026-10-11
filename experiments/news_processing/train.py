@@ -23,6 +23,13 @@ from .storage import read_jsonl, write_json, write_jsonl
 def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def reserve_training_run(root, freeze_sha, config):
+    # Fail before baseline inference or consuming the one-run slot.
+    config.validate()
+    with (root / 'run_started.json').open('x') as stream:
+        json.dump({'time':time.time(), 'freeze_sha256':freeze_sha, 'training_config_validated':True},stream)
+
+
 def metrics(predictions):
     result = {}
     for qid, question in QUESTIONS.items():
@@ -66,9 +73,6 @@ def main():
     for rs in rows.values():
         for r in rs:
             assert_weak_training_row(r)
-    # O_EXCL creates the irreversible one-run reservation before any student prediction.
-    with (root / "run_started.json").open("x") as stream:
-        json.dump({"time": time.time(), "freeze_sha256": sha(root / "training_freeze.json")}, stream)
     import numpy as np
     import torch
     import laya
@@ -87,6 +91,7 @@ def main():
     device = torch.device("cuda"); max_len = config_raw["max_len"]; head_len = config_raw["head_max_len"]
     config = t.TrainConfig(**{k: v for k, v in config_raw.items() if k in t.TrainConfig.__dataclass_fields__})
     config.shuffle_options = tuple(config.shuffle_options)
+    reserve_training_run(root, sha(root / 'training_freeze.json'), config)
     model, tok, cfg = t.load_checkpoint(str(base)); model.to(device)
 
     def items_for(rs, tokenizer, smoothing=0):
