@@ -65,6 +65,7 @@ def main():
     if not json.loads((root / "dataset_manifest.json").read_text())["training_gate"]["passed"]:
         raise ValueError("Missing class support; do not force labels or reuse test material")
     rows = {role: read_jsonl(root / (role + ".jsonl")) for role in ("train", "validation", "calibration")}
+    inherited_registry = json.loads((root / 'dataset_manifest.json').read_text()).get('inherited_reference_registry',{})
     assert_training_support(rows, json.loads((root / "dataset_manifest.json").read_text())["training_gate"])
     groups = {role: {r["group_id"] for r in rs} for role, rs in rows.items()}
     for a in groups:
@@ -72,7 +73,7 @@ def main():
             if a != b and groups[a] & groups[b]: raise ValueError("Event group crosses roles")
     for rs in rows.values():
         for r in rs:
-            assert_weak_training_row(r)
+            assert_weak_training_row(r,inherited_registry)
     import numpy as np
     import torch
     import laya

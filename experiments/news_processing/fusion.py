@@ -27,7 +27,7 @@ def independent_reviewers(reviews, root):
     return all(isinstance(i,str) and i.strip() for i in ids) and len(set(ids)) == 3
 
 
-def assert_weak_training_row(row):
+def assert_weak_training_row(row, inherited_registry=None):
     ref = row['reference']
     if row.get('human_verified') is not False or row['input_sha256'] != input_digest(row):
         raise ValueError('Weak row identity or provenance changed')
@@ -36,6 +36,22 @@ def assert_weak_training_row(row):
     if row['expected'] != ref.get('expected'): raise ValueError('Expected labels differ from reference')
     if set(row['expected']) != set(QUESTIONS) or any(row['expected'][q] not in QUESTIONS[q]['criteria'] for q in QUESTIONS):
         raise ValueError('Invalid expected labels')
+    if ref['status'] == 'weak_consensus':
+        raw = ref.get('source_reviews')
+        inherited = ref.get('inherited_development_consensus')
+        if not isinstance(raw,list) or not isinstance(inherited,bool):
+            raise ValueError('Teacher-only consensus lacks source/inherited provenance')
+        reviews = [source_reference(row,r) for r in raw]
+        if any(r is None or not isinstance(r.get('reviewer_id'),str) or not r['reviewer_id'].strip() for r in reviews):
+            raise ValueError('Invalid ordinary source-review evidence')
+        if inherited:
+            entry = (inherited_registry or {}).get(row['id'])
+            if entry != {'input_sha256':input_digest(row),'expected':row['expected']}:
+                raise ValueError('Inherited consensus is not in frozen input/label registry')
+        elif not reviews: raise ValueError('Ordinary consensus requires source review')
+        if reviews and (not any(expected_for(r)==row['expected'] for r in reviews)
+                        or any(expected_for(r)!=expected_for(reviews[0]) for r in reviews)):
+            raise ValueError('Ordinary source review disagrees with expected labels')
     if ref['status'] == 'weak_source_adjudication':
         raw = ref.get('source_reviews', [])
         if len(raw) != 2: raise ValueError('Adjudication requires two blind source reviews')
@@ -65,7 +81,7 @@ def assemble_reviewed(records, primary, audit, model_identity, source_a, source_
                       root_adjudications=None, inherited_ids=None):
     assert_role_disjoint(records)
     root_adjudications, inherited_ids = root_adjudications or {}, inherited_ids or set()
-    datasets, queue = {role: [] for role in ROLES}, []
+    datasets, queue, registry = {role: [] for role in ROLES}, [], {}
     for record in records:
         rid = record['id']
         consensus = reference_consensus(record, primary.get(rid), audit.get(rid), model_identity)
@@ -74,7 +90,7 @@ def assemble_reviewed(records, primary, audit, model_identity, source_a, source_
         valid = [r for r in reviews if r is not None]
         inherited = rid in inherited_ids
         source_disagreement = len(valid) == 2 and expected_for(valid[0]) != expected_for(valid[1])
-        approved = consensus['status'] == 'weak_consensus' and not source_disagreement and (inherited or any(expected_for(r) == consensus['expected'] for r in valid))
+        approved = consensus['status'] == 'weak_consensus' and not source_disagreement and ((inherited and not valid) or any(expected_for(r) == consensus['expected'] for r in valid))
         selected = {**consensus, 'source_reviews': valid, 'inherited_development_consensus': inherited,
                     'human_verified': False}
         root = source_reference(record, root_adjudications.get(rid))
@@ -85,7 +101,9 @@ def assemble_reviewed(records, primary, audit, model_identity, source_a, source_
                 approved = True
         if approved:
             row = {**record, 'expected':copy.deepcopy(selected['expected']), 'reference':copy.deepcopy(selected)}
-            assert_weak_training_row(row)
+            if inherited and selected['status']=='weak_consensus':
+                registry[rid] = {'input_sha256':input_digest(record),'expected':copy.deepcopy(selected['expected'])}
+            assert_weak_training_row(row,registry)
             datasets[record['split']].append(row)
         else:
             selected.update(status='pending_review', expected={})
@@ -94,6 +112,6 @@ def assemble_reviewed(records, primary, audit, model_identity, source_a, source_
                       'source_coarse_disagreement':source_disagreement})
     support = {role:{qid:dict(Counter(r['expected'][qid] for r in rows)) for qid in QUESTIONS}
                for role,rows in datasets.items()}
-    return {'datasets':datasets, 'review_queue':queue,
+    return {'datasets':datasets, 'review_queue':queue, 'inherited_reference_registry':registry,
             'training_gate':{**class_group_gate(datasets, minimum=2), 'support':support},
             'development_only':True, 'independent_test':False, 'human_verified':False}

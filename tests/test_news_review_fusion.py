@@ -7,6 +7,7 @@ from unittest.mock import Mock
 from experiments.news_processing.contract import input_digest
 from experiments.news_processing.fusion import assemble_reviewed, assert_weak_training_row, assert_training_support
 from experiments.news_processing.train import reserve_training_run
+from experiments.news_processing.dataset import assemble
 from tests.test_news_processing import IDENTITY, record, reference, teacher_record
 
 
@@ -70,9 +71,26 @@ class ReviewFusionTests(unittest.TestCase):
         with self.assertRaises(ValueError): assert_weak_training_row(row)
 
     def test_inherited_consensus_is_explicitly_marked_not_new_blind_review(self):
-        row = self.assemble(source_a={},source_b={}, inherited_ids={self.row['id']})['datasets']['train'][0]
+        result = self.assemble(source_a={},source_b={}, inherited_ids={self.row['id']})
+        row = result['datasets']['train'][0]
         self.assertTrue(row['reference']['inherited_development_consensus'])
         self.assertEqual(row['reference']['source_reviews'], [])
+        with self.assertRaises(ValueError): assert_weak_training_row(row)
+        assert_weak_training_row(row,result['inherited_reference_registry'])
+
+    def test_teacher_only_assemble_rows_cannot_bypass_source_review_gate(self):
+        row = assemble([self.row],self.primary,self.audit,IDENTITY)['datasets']['train'][0]
+        with self.assertRaises(ValueError): assert_weak_training_row(row)
+
+    def test_ordinary_consensus_revalidates_source_evidence(self):
+        row = self.assemble()['datasets']['train'][0]
+        row['reference']['source_reviews'][0]['input_sha256'] = 'stale'
+        with self.assertRaises(ValueError): assert_weak_training_row(row)
+
+    def test_inherited_flag_cannot_override_supplied_disagreeing_source_reviews(self):
+        other = dict(self.source,industry_relation='CONDITIONAL',missing_conditions=['Unknown supplier exposure'])
+        result = self.assemble(source_a={self.row['id']:other},source_b={self.row['id']:dict(other,reviewer_id='source_b')},inherited_ids={self.row['id']})
+        self.assertEqual(result['datasets']['train'],[])
 
     def test_train_runner_recomputes_support_before_reserving_run(self):
         datasets = self.assemble()['datasets']

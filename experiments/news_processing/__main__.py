@@ -84,7 +84,7 @@ def main():
                     for r in assembled["review_queue"]}
             write_jsonl(root / "shadow_routes.jsonl", [route(r, predictions.get(r["id"], {}).get("prediction")) for r in records])
             (root / "human_review.html").write_text(render_review(records,
-                {rid: p["prediction"] for rid, p in predictions.items()}, refs), encoding="utf-8")
+                {rid: p.get("prediction") for rid, p in predictions.items()}, refs), encoding="utf-8")
             print(json.dumps({"retained": len(records), "deleted": 0, "human_verified": 0, "production_enabled": False}))
 
 

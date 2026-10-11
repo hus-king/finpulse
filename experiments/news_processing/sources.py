@@ -7,6 +7,44 @@ from urllib.parse import urlsplit, urlunsplit
 from .contract import QUESTIONS
 
 
+def financial_table_reasons(rows, text):
+    """Fail closed on unjoined physical rows in primary financial excerpts.
+
+    This validates declared four-column or adjusted-comparative schemas. It does
+    not guess how an extractor's merged cells or cross-page fragments align.
+    Unknown metrics require source review instead of borrowing a blanket unit.
+    """
+    compact = lambda value: re.sub(r'\s+', '', value)
+    if not isinstance(rows,list) or len(rows)<2: return ['missing_financial_rows']
+    if any(not isinstance(r,list) or any(not isinstance(c,str) for c in r) for r in rows):
+        return ['unresolved_financial_columns_or_cells']
+    header = [compact(c) for c in rows[0]]
+    width = len(header); start = 1
+    if width==5 and len(rows)>=3 and [compact(c) for c in rows[1]]==['','','调整前','调整后','调整后'] and not header[3]:
+        start = 2
+    elif width!=4: return ['unresolved_financial_columns_or_cells']
+    if header[0] not in ('项目','指标') or not header[1].startswith('本报告期') or not header[2].startswith('上年同期') or not header[-1].startswith('本报告期比上年同期'):
+        return ['unresolved_financial_header']
+    if any(len(r)!=width or any(not c.strip() for c in r) for r in rows[start:]):
+        return ['unresolved_financial_columns_or_cells']
+    reasons = []
+    if not re.search(r'单位\s*[：:].+',text): reasons.append('missing_financial_unit')
+    metrics = (r'营业收入|利润总额|归属于(?:上市公司|母公司)股东的(?:扣除非经常性损益的)?净利润|'
+               r'经营活动产生的现金流量净额|(?:基本|稀释)每股收益|'
+               r'归属于母公司股东的(?:基本|稀释)加权平均每股收益|'
+               r'(?:归属于母公司股东的)?加权平均净资产收益率|总资产|'
+               r'归属于(?:上市公司|母公司)股东的(?:所有者|股东)权益')
+    for row in rows[start:]:
+        name = compact(row[0])
+        if not re.fullmatch('(?:'+metrics+r')(?:[（(][^）)]*[）)])?',name):
+            reasons.append('unresolved_or_incomplete_financial_metric:'+name)
+        if '每股收益' in name and not re.search(r'[（(]元(?:/股)?[）)]',name):
+            reasons.append('missing_per_share_unit:'+name)
+        if any(not re.search(r'\d|^[-—]$',value) for value in row[1:]):
+            reasons.append('unresolved_financial_value:'+name)
+    return reasons
+
+
 def announcement_date(entry):
     value = entry.get("announcementTime")
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0: return None

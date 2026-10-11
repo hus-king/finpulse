@@ -53,6 +53,8 @@ def render_review(records, predictions, references):
         link = f'<a href="{esc(url)}" rel="noreferrer">原始来源</a>' if safe else "来源链接待核验"
         details = {"suggestion": decision, "references": references.get(rid, {}),
                    "source": record.get("source"), "quality": record.get("quality"),
+                   "material_quality_reasons": record.get("material_quality_reasons", []),
+                   "material_provenance": record.get("material_provenance"),
                    "profile_provenance": record.get("profile_provenance"), "group_id": record["group_id"]}
         cards.append(f'<article><h2>{esc(record["state"]["company"]["name"])} · {esc(record["state"]["news"]["title"])}</h2>'
                      f'<p>{esc(rid)} · {esc(decision["suggested_route"])} · {link}</p>'

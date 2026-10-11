@@ -6,6 +6,7 @@ import re
 from .contract import QUESTIONS, input_digest, model_state
 from .pipeline import quality_reasons
 from .teacher import reference_consensus
+from .sources import financial_table_reasons
 
 ROLES = ("train", "validation", "calibration")
 
@@ -30,12 +31,17 @@ def import_records(rows, group_roles, profiles=None):
         table_ready = (bool(state["news"]["title"].strip()) and units and len(data_rows) >= 2
                        and any(re.search(r"\d", str(c)) for r in data_rows[1:] for c in r))
         body_ready = len(text.strip()) >= 80 or table_ready
+        provenance = row.get('material_provenance')
+        table_reasons = (financial_table_reasons(table,text) if isinstance(provenance,dict)
+                         and provenance.get('financial_table_page') is not None else [])
+        if table_reasons: body_ready = False
         record = {"id": row["id"], "group_id": row["group_id"], "target_code": row["target_code"], "state": state,
                   "questions": QUESTIONS, "split": group_roles[row["group_id"]], "source": source,
                   "quality": {"body": "ready" if body_ready else "pending", "date": date_status,
                               "profile": "ready" if state["company"]["products"] else "pending"},
                   "development_only": True, "human_verified": False,
                   "profile_provenance": profiles.get(row["target_code"], {}).get("selected_fact_evidence", []),
+                  "material_quality_reasons": table_reasons,
                   "material_provenance": row.get("material_provenance", "previously_seen_historical_AI_reviewed_excerpt_not_new_full_body")}
         for key, status in row.get("quality", {}).items():
             if key in record["quality"] and status != "ready": record["quality"][key] = "pending"
