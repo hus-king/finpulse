@@ -36,7 +36,9 @@ def import_records(rows, group_roles, profiles=None):
                               "profile": "ready" if state["company"]["products"] else "pending"},
                   "development_only": True, "human_verified": False,
                   "profile_provenance": profiles.get(row["target_code"], {}).get("selected_fact_evidence", []),
-                  "material_provenance": "previously_seen_historical_AI_reviewed_excerpt_not_new_full_body"}
+                  "material_provenance": row.get("material_provenance", "previously_seen_historical_AI_reviewed_excerpt_not_new_full_body")}
+        for key, status in row.get("quality", {}).items():
+            if key in record["quality"] and status != "ready": record["quality"][key] = "pending"
         record["input_sha256"] = input_digest(record)
         result.append(record)
     return result
