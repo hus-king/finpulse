@@ -16,6 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 from .contract import QUESTIONS, input_digest, model_state
+from .fusion import assert_weak_training_row, assert_training_support
 from .storage import read_jsonl, write_json, write_jsonl
 
 
@@ -57,15 +58,14 @@ def main():
     if not json.loads((root / "dataset_manifest.json").read_text())["training_gate"]["passed"]:
         raise ValueError("Missing class support; do not force labels or reuse test material")
     rows = {role: read_jsonl(root / (role + ".jsonl")) for role in ("train", "validation", "calibration")}
+    assert_training_support(rows, json.loads((root / "dataset_manifest.json").read_text())["training_gate"])
     groups = {role: {r["group_id"] for r in rs} for role, rs in rows.items()}
     for a in groups:
         for b in groups:
             if a != b and groups[a] & groups[b]: raise ValueError("Event group crosses roles")
     for rs in rows.values():
         for r in rs:
-            if r["human_verified"] or r["reference"]["status"] != "weak_consensus":
-                raise ValueError("Pilot reference provenance changed")
-            if r["input_sha256"] != input_digest(r): raise ValueError("State identity changed")
+            assert_weak_training_row(r)
     # O_EXCL creates the irreversible one-run reservation before any student prediction.
     with (root / "run_started.json").open("x") as stream:
         json.dump({"time": time.time(), "freeze_sha256": sha(root / "training_freeze.json")}, stream)
