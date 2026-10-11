@@ -3,13 +3,16 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+import urllib.error
 
 from experiments.news_processing.contract import (
-    QUESTIONS, input_digest, validate_reference, validate_prediction,
+    QUESTIONS, input_digest, validate_reference, validate_prediction, digest,
 )
 from experiments.news_processing.pipeline import route, render_review
-from experiments.news_processing.teacher import cache_key, Journal, parse_answers, reference_consensus
+from experiments.news_processing.teacher import cache_key, Journal, parse_answers, reference_consensus, label, PROMPTS
 from experiments.news_processing.dataset import assemble, import_records
+from experiments.news_processing.infer import inference_rows, format_predictions
 
 
 def record():
@@ -35,6 +38,15 @@ def prediction(own="NO", industry="CLEAR", confidence=.91):
                                                           "NO": confidence if own=="NO" else 1-confidence}},
             "industry_relation": {"label": industry, "probabilities": {
                 k: confidence if k==industry else (1-confidence)/2 for k in ("CLEAR", "POSSIBLE", "NONE")}}}
+
+
+IDENTITY = {"model": "test", "endpoint": "https://example.org/v1/chat/completions"}
+
+
+def teacher_record(r, mode="primary"):
+    return {"id": r["id"], "reference": validate_reference(r, reference()), "evidence_valid": True,
+            "input_sha256": input_digest(r), "prompt_sha256": digest(PROMPTS[mode]),
+            "cache_key": cache_key(r, PROMPTS[mode], IDENTITY), "model_identity": IDENTITY}
 
 
 class NewsContractTest(unittest.TestCase):
@@ -93,6 +105,13 @@ class NewsContractTest(unittest.TestCase):
 
 
 class ShadowRoutingTest(unittest.TestCase):
+    def test_unhashable_label_and_huge_json_integer_are_pending_not_crashes(self):
+        for value in (["NO"], {"bad": "NO"}):
+            p = prediction(); p["own_event"]["label"] = value
+            self.assertEqual(route(record(), p)["suggested_route"], "large_model_review")
+        p = prediction(); p["own_event"]["probabilities"]["NO"] = 10**1000
+        self.assertEqual(route(record(), p)["suggested_route"], "large_model_review")
+
     def test_none_never_deletes_or_hides(self):
         result = route(record(), prediction(industry="NONE"))
         self.assertTrue(result["retained"])
@@ -132,6 +151,38 @@ class ShadowRoutingTest(unittest.TestCase):
 
 
 class TeacherJournalTest(unittest.TestCase):
+    def test_json_mode_prompts_explicitly_request_json(self):
+        self.assertTrue(all("json" in p.lower() for p in PROMPTS.values()))
+
+    def test_missing_or_wrong_teacher_provenance_is_pending(self):
+        r = record(); a = {"reference": validate_reference(r, reference()), "evidence_valid": True}
+        self.assertEqual(reference_consensus(r, a, a, IDENTITY)["status"], "pending_review")
+        a.update(input_sha256=input_digest(r), prompt_sha256="stale", cache_key="stale", model_identity=IDENTITY)
+        self.assertEqual(reference_consensus(r, a, a, IDENTITY)["status"], "pending_review")
+        a = teacher_record(r, "primary")
+        self.assertEqual(reference_consensus(r, a, a, IDENTITY)["status"], "pending_review")
+
+    def test_failed_input_retry_cap_survives_label_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); config = root / "config.json"
+            config.write_text(json.dumps({"api_key": "dummy", "base_url": "https://example.org/v1", "model": "test"}))
+            policy = {"max_attempts": 20, "token_soft_stop": 1000, "batch_size": 4,
+                      "workers": 1, "max_output_tokens": 100, "attempts_per_batch": 2}
+            with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")) as request:
+                label(root, [record()], config, policy)
+                self.assertEqual(request.call_count, 4)
+                label(root, [record()], config, policy)
+                self.assertEqual(request.call_count, 4)
+
+    def test_bad_request_stops_provider_without_exhausting_budget(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); config = root / "config.json"
+            config.write_text(json.dumps({"api_key": "dummy", "base_url": "https://example.org/v1", "model": "test"}))
+            policy = {"max_attempts": 20, "token_soft_stop": 1000, "batch_size": 1,
+                      "workers": 1, "max_output_tokens": 100, "attempts_per_batch": 2}
+            with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError("https://example.org",400,"bad",{},None)) as request:
+                label(root, [record()], config, policy)
+                self.assertEqual(request.call_count, 1)
     def test_cache_changes_with_prompt_model_and_input(self):
         r = record(); old = cache_key(r, "prompt", "model")
         self.assertNotEqual(old, cache_key(r, "changed", "model"))
@@ -169,12 +220,12 @@ class TeacherJournalTest(unittest.TestCase):
         self.assertFalse(checked["human_verified"])
 
     def test_agreement_is_weak_not_truth_and_disagreement_is_pending(self):
-        r = record(); a = {"reference": validate_reference(r, reference()), "evidence_valid": True}
-        agreed = reference_consensus(r, a, a)
+        r = record(); a = teacher_record(r); audit = teacher_record(r, "audit")
+        agreed = reference_consensus(r, a, audit, IDENTITY)
         self.assertEqual(agreed["expected"], {"own_event": "NO", "industry_relation": "CLEAR"})
         self.assertFalse(agreed["human_verified"])
-        b = copy.deepcopy(a); b["reference"]["industry_relation"] = "NONE"
-        self.assertEqual(reference_consensus(r, a, b)["status"], "pending_review")
+        b = copy.deepcopy(audit); b["reference"]["industry_relation"] = "NONE"
+        self.assertEqual(reference_consensus(r, a, b, IDENTITY)["status"], "pending_review")
 
 
 class DevelopmentDatasetTest(unittest.TestCase):
@@ -226,6 +277,28 @@ class DevelopmentDatasetTest(unittest.TestCase):
              "input_sha256": "stale"}
         result = assemble([r], {r["id"]: a}, {r["id"]: a})
         self.assertEqual(result["datasets"]["train"], [])
+
+
+class ShadowInferenceTest(unittest.TestCase):
+    def test_old_and_teacher_labels_never_enter_inference_state(self):
+        r = record(); r["expected"] = {"own_event": "YES", "industry_relation": "CLEAR"}
+        r["reference"] = {"leaking_label": "YES"}
+        rows = inference_rows([r])
+        self.assertEqual(rows[0]["state"], __import__('experiments.news_processing.contract', fromlist=['model_state']).model_state(r))
+        self.assertNotIn("reference", rows[0])
+        self.assertEqual(rows[0]["expected"], {"own_event": "NO", "industry_relation": "NONE"})
+
+    def test_item_option_order_controls_prediction_labels(self):
+        r = record()
+        metadata = [(r, "industry_relation", ["NONE", "CLEAR", "POSSIBLE"]), (r, "own_event", ["NO", "YES"])]
+        pred = format_predictions([r], metadata, [[0, 5, 0], [0, 5]], "weight-sha")
+        self.assertEqual(pred[0]["prediction"]["industry_relation"]["label"], "CLEAR")
+        self.assertEqual(pred[0]["prediction"]["own_event"]["label"], "YES")
+        validate_prediction(pred[0]["prediction"])
+        self.assertEqual(pred[0]["input_sha256"], input_digest(r))
+
+    def test_incomplete_logits_stop_without_emitting_partial_predictions(self):
+        with self.assertRaises(ValueError): format_predictions([record()], [], [[1,2]], "weight-sha")
 
 
 if __name__ == "__main__": unittest.main()

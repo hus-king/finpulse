@@ -59,7 +59,15 @@ def main():
     else:
         primary = {r["id"]: r for r in read_jsonl(root / "primary.jsonl")}
         audit = {r["id"]: r for r in read_jsonl(root / "audit.jsonl")}
-        assembled = assemble(records, primary, audit)
+        teacher_policy_path = root / "teacher_policy.json"
+        teacher_policy = json.loads(teacher_policy_path.read_text()) if teacher_policy_path.exists() else {}
+        model_identity = teacher_policy.get("model_identity")
+        if teacher_policy:
+            current_inputs = digest([{ "id": r["id"], "input": input_digest(r)} for r in records])
+            if (teacher_policy.get("inputs_sha256") != current_inputs or
+                    teacher_policy.get("prompt_sha256") != {k: digest(p) for k, p in PROMPTS.items()}):
+                raise ValueError("Teacher provenance differs from frozen inputs/prompts")
+        assembled = assemble(records, primary, audit, model_identity)
         if args.command == "assemble":
             for role, rows in assembled["datasets"].items(): write_jsonl(root / (role + ".jsonl"), rows)
             write_json(root / "dataset_manifest.json", {k: v for k, v in assembled.items() if k != "datasets"})

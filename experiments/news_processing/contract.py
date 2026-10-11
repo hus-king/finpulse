@@ -113,11 +113,11 @@ def validate_prediction(prediction):
         labels = question["criteria"]
         if not isinstance(probabilities, dict) or set(probabilities) != set(labels):
             raise ValueError("Incomplete option probabilities")
-        if any(isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p) or not 0 <= p <= 1
+        if any(isinstance(p, bool) or not isinstance(p, (int, float)) or not 0 <= p <= 1 or not math.isfinite(p)
                for p in probabilities.values()): raise ValueError("Invalid probabilities")
         if abs(sum(probabilities.values()) - 1) > 1e-6: raise ValueError("Probabilities must sum to one")
         label = item.get("label")
-        if label not in labels or probabilities[label] < max(probabilities.values()) - 1e-9:
+        if not isinstance(label, str) or label not in labels or probabilities[label] < max(probabilities.values()) - 1e-9:
             raise ValueError("Selected label disagrees with probabilities")
         result[qid] = {"label": label, "confidence": probabilities[label], "probabilities": probabilities}
     return result

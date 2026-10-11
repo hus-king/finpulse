@@ -42,7 +42,7 @@ def import_records(rows, group_roles, profiles=None):
     return result
 
 
-def assemble(records, primary, audit):
+def assemble(records, primary, audit, model_identity=None):
     datasets = {role: [] for role in ROLES}
     groups, queue = {}, []
     for record in records:
@@ -51,7 +51,7 @@ def assemble(records, primary, audit):
         group = record["group_id"]
         if group in groups and groups[group] != role: raise ValueError("Event group crosses roles")
         groups[group] = role
-        consensus = reference_consensus(record, primary.get(record["id"]), audit.get(record["id"]))
+        consensus = reference_consensus(record, primary.get(record["id"]), audit.get(record["id"]), model_identity)
         queue.append({**consensus, "split": role, "quality_reasons": quality_reasons(record)})
         if consensus["status"] == "weak_consensus":
             datasets[role].append({**record, "expected": consensus["expected"], "reference": consensus})
