@@ -755,3 +755,81 @@ a.github-link:focus-visible {
     white-space: nowrap;
   }
 }
+
+/* Portfolio header actions and batch analyze button */
+.portfolio-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portfolio-batch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: var(--theme-hover, #eef7f3);
+  color: var(--theme-accent, #16856f);
+  border: 1px solid var(--theme-border, #d2eae0);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.portfolio-batch-btn:hover:not(:disabled) {
+  background: var(--theme-accent, #16856f);
+  color: #ffffff;
+  border-color: var(--theme-accent, #16856f);
+}
+
+.portfolio-batch-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.portfolio-batch-btn.running {
+  background: var(--theme-raised, #f0f3f7);
+  color: var(--theme-accent, #16856f);
+  border-color: var(--theme-border, #d8e1ea);
+}
+
+.stock-job-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 5px;
+  background: var(--theme-hover, #eef7f3);
+  color: var(--theme-accent, #16856f);
+  border: 1px solid var(--theme-border, #d2eae0);
+  width: fit-content;
+}
+
+:root[data-theme="dark"] .portfolio-batch-btn {
+  background: var(--theme-raised, #202632);
+  color: var(--theme-accent-text, #86a9ff);
+  border-color: var(--theme-border, #2a303d);
+}
+
+:root[data-theme="dark"] .portfolio-batch-btn:hover:not(:disabled) {
+  background: var(--theme-accent, #2962ff);
+  color: #ffffff;
+  border-color: var(--theme-accent, #2962ff);
+}
+
+:root[data-theme="dark"] .portfolio-batch-btn.running {
+  background: var(--theme-panel, #181c25);
+  color: var(--theme-accent-text, #86a9ff);
+  border-color: var(--theme-border, #2a303d);
+}
+
+:root[data-theme="dark"] .stock-job-tag {
+  background: var(--theme-raised, #202632);
+  color: var(--theme-accent-text, #86a9ff);
+  border-color: var(--theme-border, #2a303d);
+}

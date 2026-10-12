@@ -85,4 +85,7 @@ export interface BatchQuotesResponse {
   status: string; source: string; is_trading: boolean; as_of: string;
   items: Record<string, LiveQuoteItem>;
 }
+export interface BatchAnalyzeResponse {
+  status: string; count: number; jobs: Job[];
+}
 

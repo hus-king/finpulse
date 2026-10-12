@@ -186,6 +186,47 @@ async def add_stock(data: AddStockRequest, response: Response, user=Depends(auth
         return {'codes': [*codes, data.code], 'stock': stock, 'added': True, 'job': job}
 
 
+class WatchlistBatchAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    codes: list[str] | None = None
+    analysis_only: bool = False
+    days: int = Field(default=30, ge=1, le=90)
+
+
+@router.post('/watchlist/analyze-all', status_code=202)
+async def batch_analyze_watchlist(
+    data: WatchlistBatchAnalyzeRequest,
+    response: Response,
+    user=Depends(authorize_model_request),
+    research=Depends(service),
+):
+    private(response)
+    owner = user['id']
+    target_codes = data.codes
+    if target_codes is None:
+        target_codes = await asyncio.to_thread(research.store.get, 'watchlist', 'list', owner, DEFAULT_WATCHLIST)
+    valid_codes = [c for c in target_codes if research.catalog.get(c)]
+    if not valid_codes:
+        raise HTTPException(422, '自选股列表中无有效股票。')
+
+    if len(research.active) + len(valid_codes) > research.max_pending:
+        raise HTTPException(429, '任务队列较满，请稍后重试。')
+
+    await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('watchlist-batch:' + owner), 8)])
+
+    jobs = []
+    for c in valid_codes:
+        job = await research.launch(
+            c, user,
+            days=data.days,
+            max_articles=0 if data.analysis_only else 6,
+            community=False,
+            analysis_only=data.analysis_only,
+        )
+        jobs.append(job)
+    return {'status': 'ok', 'count': len(jobs), 'jobs': jobs}
+
+
 @router.post('/research/{code}/refresh', status_code=202)
 async def refresh(code: str, data: RefreshRequest, response: Response, user=Depends(authorize_model_request), research=Depends(service)):
     private(response)
