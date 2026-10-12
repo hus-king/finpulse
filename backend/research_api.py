@@ -233,7 +233,7 @@ async def refresh(code: str, data: RefreshRequest, response: Response, user=Depe
     if not research.catalog.get(code):
         raise HTTPException(404, '暂不支持该股票。')
     await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('research:' + user['id']), 12)])
-    return await research.launch(code, user, data.days, data.max_articles, data.include_community)
+    return await research.launch(code, user, data.days, data.max_articles, False)
 
 
 class AnalyzeAllRequest(BaseModel):

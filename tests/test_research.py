@@ -272,6 +272,26 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(result['sentiment']['bull'], 60)
         self.assertEqual(sum(result['sentiment'][key] for key in ('bull', 'bear', 'neutral')), 100)
 
+    def test_refresh_endpoint_only_updates_news_and_never_collects_community(self):
+        headers = self.register()
+        saved = self.client.get('/api/dashboard/600519').json()
+        saved['sentiment'] = {'status': 'ok', 'sample_count': 10, 'bull': 70, 'bear': 10, 'neutral': 20, 'keywords': ['牛市'], 'posts': []}
+        self.store.put('dashboard', '600519', saved)
+        market = {'status': 'ok', 'price': 101, 'change': 1, 'as_of_date': '2026-09-30', 'is_realtime': False, 'source': 'test', 'candles': [{'date': '2026-09-30', 'open': 100, 'close': 101, 'low': 99, 'high': 102, 'volume': 10000}]}
+        with patch('backend.research.ResearchService.community', new_callable=AsyncMock) as mock_community, \
+             patch('backend.providers.search_news', new=AsyncMock(return_value=news_sample())), \
+             patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), \
+             patch('backend.providers.daily_market', new=AsyncMock(return_value=market)), \
+             patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), \
+             patch('backend.app.completion', new=AsyncMock(return_value=REPLY)):
+            response = self.client.post('/api/research/600519/refresh', headers=headers, json={'include_community': True})
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(self.wait_job(response.json()['id'])['status'], 'completed')
+            mock_community.assert_not_called()
+        current = self.client.get('/api/dashboard/600519').json()
+        self.assertEqual(current['sentiment']['sample_count'], 10)
+        self.assertEqual(current['sentiment']['bull'], 70)
+
     def test_digest_escapes_source_text_and_preserves_original_link(self):
         owner = 'test-owner'
         self.store.put('watchlist', 'list', ['600519'], owner)
