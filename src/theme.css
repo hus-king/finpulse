@@ -71,8 +71,9 @@
   --chart-marker-neutral: #8e9ad5;
 }
 
-/* The toggle uses the current palette in both themes. */
-button.theme-toggle {
+/* The toggle and github link use the current palette in both themes. */
+button.theme-toggle,
+a.github-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -86,15 +87,19 @@ button.theme-toggle {
   color: var(--theme-toggle-text);
   font-size: 11px;
   white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-button.theme-toggle:hover {
+button.theme-toggle:hover,
+a.github-link:hover {
   color: var(--theme-toggle-text);
   background: var(--theme-hover);
   border-color: var(--theme-accent-text);
 }
 
-button.theme-toggle:focus-visible {
+button.theme-toggle:focus-visible,
+a.github-link:focus-visible {
   outline: 2px solid var(--theme-focus);
   outline-offset: 3px;
 }
@@ -692,7 +697,8 @@ button.theme-toggle:focus-visible {
 
 /* Keep the new header control compact without losing its accessible name. */
 @media (max-width: 1200px) {
-  .header-inner .theme-toggle {
+  .header-inner .theme-toggle,
+  .header-inner .github-link {
     padding-inline: 8px;
   }
 }
@@ -706,7 +712,15 @@ button.theme-toggle:focus-visible {
     margin-left: auto;
   }
 
-  .header-inner .theme-toggle > span {
+  .header-inner .github-link {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+  }
+
+  .header-inner .theme-toggle > span,
+  .header-inner .github-link > span {
     position: absolute;
     width: 1px;
     height: 1px;
