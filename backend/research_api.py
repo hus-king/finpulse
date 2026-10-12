@@ -413,3 +413,11 @@ async def run_daily(response: Response, user=Depends(authorize_admin_write), res
     private(response)
     await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('daily-run:' + user['id']), 6)])
     return await research.briefing.launch()
+
+
+@router.post('/admin/community/trigger', status_code=202)
+async def trigger_community_batch(response: Response, user=Depends(authorize_admin_write), research=Depends(service)):
+    private(response)
+    await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('community-batch:' + user['id']), 6)])
+    task = asyncio.create_task(research.briefing.run_community_batch())
+    return {'status': 'triggered'}

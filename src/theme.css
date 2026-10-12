@@ -833,3 +833,20 @@ a.github-link:focus-visible {
   color: var(--theme-accent-text, #86a9ff);
   border-color: var(--theme-border, #2a303d);
 }
+
+.community-schedule-hint {
+  font-size: 10px;
+  color: var(--theme-muted);
+  background: var(--theme-raised, #f0f3f7);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin: 12px 0 8px;
+  border: 1px solid var(--theme-border, #e3e8ef);
+  line-height: 1.6;
+}
+
+:root[data-theme="dark"] .community-schedule-hint {
+  background: var(--theme-raised, #202632);
+  color: var(--theme-muted, #9ba6b8);
+  border-color: var(--theme-border, #2a303d);
+}

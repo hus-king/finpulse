@@ -1,6 +1,7 @@
 """Daily shared refresh, private digests and durable channel delivery state."""
 import asyncio
 import hashlib
+import logging
 import os
 import uuid
 import time
@@ -13,6 +14,9 @@ from .catalog import DEFAULT_WATCHLIST
 from .news_cleaning import SHANGHAI
 from .providers import read_config
 from .recommendations import build_digest
+
+logger = logging.getLogger(__name__)
+COMMUNITY_SCHEDULE_TIMES = ['08:45', '12:00', '15:15', '20:30']
 
 
 def timestamp():
@@ -42,7 +46,21 @@ class MorningService:
 
     def status(self):
         job = self.scheduler.get_job('morning_digest') if self.scheduler else None
-        return {**self.settings(), 'instance_enabled': self.instance_enabled, 'running': bool(self.scheduler and self.scheduler.running), 'next_run': job.next_run_time.isoformat() if job and job.next_run_time else None, 'last_run': self.store.get('morning_run', 'latest'), 'timezone': 'Asia/Shanghai', 'active_research_jobs': len(self.research.active), 'research_parallelism': 2, 'queue_limit': self.research.max_pending}
+        return {
+            **self.settings(),
+            'instance_enabled': self.instance_enabled,
+            'running': bool(self.scheduler and self.scheduler.running),
+            'next_run': job.next_run_time.isoformat() if job and job.next_run_time else None,
+            'last_run': self.store.get('morning_run', 'latest'),
+            'community_schedule': {
+                'times': COMMUNITY_SCHEDULE_TIMES,
+                'last_run': self.store.get('community_scheduler', 'latest'),
+            },
+            'timezone': 'Asia/Shanghai',
+            'active_research_jobs': len(self.research.active),
+            'research_parallelism': 2,
+            'queue_limit': self.research.max_pending,
+        }
 
     def start_scheduler(self):
         if not self.instance_enabled:
@@ -50,6 +68,7 @@ class MorningService:
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
         self.scheduler.add_job(self.tick, 'interval', minutes=15, id='morning_retry', max_instances=1, coalesce=True)
         self.configure_cron()
+        self.configure_community_cron()
         self.scheduler.start()
         # Reconcile only today's due run and persisted retries after a restart.
         self.catchup_task = asyncio.create_task(self.tick())
@@ -69,10 +88,78 @@ class MorningService:
             self.scheduler.add_job(self.run, 'cron', hour=hour, minute=minute, day_of_week='*' if settings['every_day'] else 'mon-fri', id='morning_digest', max_instances=1, coalesce=True, misfire_grace_time=3600)
         self.schedule_signature = signature
 
+    def configure_community_cron(self):
+        if not self.scheduler:
+            return
+        for job in list(self.scheduler.get_jobs()):
+            if job.id.startswith('community_sentiment_'):
+                self.scheduler.remove_job(job.id)
+        for t in COMMUNITY_SCHEDULE_TIMES:
+            hour, minute = map(int, t.split(':'))
+            self.scheduler.add_job(
+                self.run_community_batch,
+                'cron',
+                hour=hour,
+                minute=minute,
+                day_of_week='*',
+                id=f'community_sentiment_{hour:02d}_{minute:02d}',
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=1800,
+            )
+
     async def reload_schedule(self):
         settings = await asyncio.to_thread(self.settings)
         self.configure_cron(settings)
+        self.configure_community_cron()
         return settings
+
+    def all_watchlist_codes(self):
+        owners = self.active_users()
+        codes = set()
+        for user in owners:
+            user_codes = self.store.get('watchlist', 'list', user['id'], DEFAULT_WATCHLIST)
+            codes.update(user_codes)
+        return [c for c in sorted(codes) if self.research.catalog.get(c)]
+
+    async def run_community_batch(self):
+        token = await asyncio.to_thread(self.store.claim, 'community-global', 600)
+        if not token:
+            logger.info('Community sentiment run lease already held by another worker')
+            return {'status': 'busy'}
+        now_dt = datetime.now(SHANGHAI)
+        date_str = now_dt.strftime('%Y-%m-%d %H:%M')
+        logger.info(f'Starting scheduled community sentiment collection at {date_str}')
+        try:
+            valid_codes = await asyncio.to_thread(self.all_watchlist_codes)
+            if not valid_codes:
+                logger.info('No watchlist stocks to collect community sentiment for')
+                return {'status': 'empty', 'codes': []}
+
+            completed, failed = [], []
+            for code in valid_codes:
+                try:
+                    await self.research.collect_community(code, days=30)
+                    completed.append(code)
+                except Exception as exc:
+                    logger.warning(f'Failed to collect community sentiment for {code}: {exc}')
+                    failed.append(code)
+                # Polite anti-crawler delay between stocks
+                await asyncio.sleep(1.5)
+
+            record = {
+                'run_at': timestamp(),
+                'date': date_str,
+                'total': len(valid_codes),
+                'completed': completed,
+                'failed': failed,
+                'times': COMMUNITY_SCHEDULE_TIMES,
+            }
+            await asyncio.to_thread(self.store.put, 'community_scheduler', 'latest', record)
+            logger.info(f'Finished scheduled community sentiment collection: {len(completed)}/{len(valid_codes)} success')
+            return record
+        finally:
+            await asyncio.to_thread(self.store.release, 'community-global', token)
 
     async def tick(self):
         settings = await self.reload_schedule()
