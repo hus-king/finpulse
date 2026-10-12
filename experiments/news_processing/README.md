@@ -35,3 +35,13 @@ Labeling freezes prompt, provider model/endpoint identity, inputs and budget. It
 Next stages need more event groups and company contrasts, real human core labels, Chinese reranker and direct-LLM comparisons under the same inputs, then a separately frozen new prospective evaluation. Existing frozen tests and model artifacts cannot be repurposed as independent evidence after this development work.
 
 A training gate failure does not prevent diagnostic replay with the unchanged base model. Declare a separate inference freeze containing tool hashes before predictions, then run `python -m experiments.news_processing.infer --root EXPERIMENT --checkpoint BASE --weight-sha SHA256` and pass `base_shadow_predictions.jsonl` to replay. This is untrained, uncalibrated development inference, not a replacement training run.
+
+The [next development comparison](../../docs/news-processing-comparison-2026-10-12.md) repairs complete financial rows and compares a fixed checkpoint, an abstaining issuer rule and direct DeepSeek against separately recorded source reviews. `financial.reconstruct` only accepts explicitly reviewed column schemas. `issuer.attribute(record, verified_sources)` requires a source registry binding an archived PDF digest, a source-side issuer code and the exact excerpt digest. Prepare that registry from inspected originals and freeze it; a URL or caller-supplied hash alone is not source verification. The rule has no industry prediction and retains every input.
+
+Fixed-checkpoint comparison, without optimizer steps:
+
+```sh
+python -m experiments.news_processing.benchmark --root NEW_DEVELOPMENT_ROOT --candidate fixed_v6
+```
+
+This requires `comparison_freeze.json` pinning inputs, separate references, tools, actor registry, full checkpoint/tokenizer artifacts and token budgets. `comparison.summarize(..., actor_registry=...)` binds candidate/source roles and canonical identities to this frozen registry. Registry identities document recorded generations; they do not prove distinct model backends, particularly for Copilot's `auto` routing. Missing predictions and deliberate abstention have separate counts, with positive support retained in both cases. Report newly collected sources separately from repaired, previously seen sources. Source disagreements remain pending, and agreement with AI sources is never human-reference accuracy. Parser fixes discovered after comparison need a separate declared derivative; do not overwrite original rules, predictions or results.
