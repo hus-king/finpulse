@@ -58,7 +58,7 @@ export interface Dashboard {
   industry_profile?: IndustryProfile;
   daily_request?: { refreshing: boolean; error: string | null; next_poll_seconds: number; market: { label: string } };
   stock: Stock; candles: Candle[]; news: News[]; as_of: string | null; revision?: string; pipeline: Pipeline | null;
-  quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string };
+  quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string; price?: number | null; change?: number | null; open?: number | null; high?: number | null; low?: number | null; volume?: number | null; error?: string | null };
   market_sentiment?: MarketSentiment;
   sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; alert_level?: 'overheated' | 'frozen' | 'normal' | null; weighting_method?: string; note?: string; error?: string; source?: string; collected_at?: string; warnings?: string[]; diagnostics?: { direct?: { status?: string; listed?: number; eligible?: number; retained?: number; detail_failed?: number }; tavily?: { status?: string; listed?: number; retained?: number } }; posts: { id: string; title: string; url: string; date: string; stance?: string; content?: string; text_source?: string; views?: number | null; replies?: number | null; weight?: number }[] };
   backtest: { items: { news_id: string; title: string; score: number | null; publication_date: string; base_date: string | null; return_3d: number | null; return_5d: number | null }[]; note: string };
@@ -75,3 +75,14 @@ export interface User {
 }
 export interface AuditEntry { actor_name: string; target_name: string; action: string; created_at: string }
 export interface AuthSession { user: User; csrf_token: string; expires_at: string }
+export interface LiveQuoteItem {
+  code: string; name: string; price: number; change: number;
+  change_amount?: number; previous_close?: number; open?: number;
+  high?: number; low?: number; volume?: number; turnover?: number;
+  as_of: string; source?: string;
+}
+export interface BatchQuotesResponse {
+  status: string; source: string; is_trading: boolean; as_of: string;
+  items: Record<string, LiveQuoteItem>;
+}
+

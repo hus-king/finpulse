@@ -72,6 +72,14 @@ async def sentiment_history(response: Response, research=Depends(service)):
     return await research.market_sentiment.history.snapshot()
 
 
+@router.get('/market/quotes')
+async def batch_quotes(response: Response, codes: str = Query(default='', max_length=300)):
+    private(response)
+    from .live_quotes import get_batch_quotes
+    code_list = [c.strip() for c in codes.split(',') if c.strip()]
+    return await get_batch_quotes(code_list)
+
+
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     days: int = Field(default=30, ge=1, le=90)

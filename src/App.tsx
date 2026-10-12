@@ -12,7 +12,7 @@ import BriefingPanel from './BriefingPanel';
 import PaperTradingPanel from './PaperTradingPanel';
 import useDialogScroll from './useDialogScroll';
 import StockSearch from './StockSearch';
-import type { Dashboard, Health, Job, ModelReply, Stock } from './types';
+import type { BatchQuotesResponse, Dashboard, Health, Job, ModelReply, Stock } from './types';
 import { number, percent, tone } from './format';
 
 const defaults = ['600519', '300750', '688981'];
@@ -66,6 +66,8 @@ export default function App() {
   const controller = useRef<AbortController | null>(null);
   const snapshotsRef = useRef(snapshots);
   snapshotsRef.current = snapshots;
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
   userId.current = user?.id;
   const mergeCatalog = useCallback((items: Stock[]) => setCatalog(previous => Array.from(new Map([...previous, ...items].map(stock => [stock.code, stock])).values())), []);
   const marketSnapshot = useCallback((next: Dashboard) => {
@@ -99,6 +101,128 @@ export default function App() {
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
     return () => abort.abort();
   }, [watchlist, mergeCatalog]);
+
+  useEffect(() => {
+    if (!watchlist.length) return;
+    let stopped = false;
+    let timer: number | undefined;
+    let abort: AbortController | null = null;
+
+    const pollQuotes = async () => {
+      if (stopped || document.hidden) return;
+      abort?.abort();
+      abort = new AbortController();
+      let delay = 30;
+      try {
+        const resp = await api<BatchQuotesResponse>(`/api/market/quotes?codes=${watchlist.join(',')}`, undefined, abort.signal);
+        if (stopped || abort.signal.aborted) return;
+        if (resp && resp.items) {
+          setSnapshots(prev => {
+            const next = { ...prev };
+            for (const [stockCode, quote] of Object.entries(resp.items)) {
+              const existing = next[stockCode];
+              if (existing) {
+                next[stockCode] = {
+                  ...existing,
+                  stock: { ...existing.stock, price: quote.price, change: quote.change },
+                  quote: {
+                    ...existing.quote,
+                    price: quote.price,
+                    change: quote.change,
+                    collected_at: quote.as_of,
+                    is_realtime: true,
+                  },
+                };
+              } else {
+                const stock = catalogRef.current.find(s => s.code === stockCode) || {
+                  code: stockCode,
+                  name: quote.name,
+                  initials: '',
+                  exchange: stockCode.startsWith('6') ? 'SH' : 'SZ',
+                  industry: 'A 股',
+                  price: quote.price,
+                  change: quote.change,
+                };
+                next[stockCode] = {
+                  stock: { ...stock, price: quote.price, change: quote.change },
+                  quote: {
+                    status: 'ok',
+                    price: quote.price,
+                    change: quote.change,
+                    collected_at: quote.as_of,
+                    is_realtime: true,
+                  },
+                  candles: [],
+                  news: [],
+                  sentiment: { status: 'not_collected', sample_count: 0, bull: null, bear: null, neutral: null, keywords: [], posts: [] },
+                  as_of: quote.as_of,
+                  data_source: 'live',
+                  pipeline: null,
+                  backtest: { items: [], note: '' },
+                } as unknown as Dashboard;
+              }
+            }
+            return next;
+          });
+          setData(prev => {
+            if (!prev) return prev;
+            const quote = resp.items[prev.stock.code];
+            if (!quote) return prev;
+            return {
+              ...prev,
+              stock: { ...prev.stock, price: quote.price, change: quote.change },
+              quote: {
+                ...prev.quote,
+                price: quote.price,
+                change: quote.change,
+                collected_at: quote.as_of,
+                is_realtime: true,
+              },
+            };
+          });
+          setCatalog(prev => {
+            let changed = false;
+            const next = prev.map(stock => {
+              const quote = resp.items[stock.code];
+              if (quote && (stock.price !== quote.price || stock.change !== quote.change)) {
+                changed = true;
+                return { ...stock, price: quote.price, change: quote.change };
+              }
+              return stock;
+            });
+            return changed ? next : prev;
+          });
+        }
+        delay = resp.is_trading ? 4 : 30;
+      } catch (e) {
+        if (!stopped && !abort?.signal.aborted) {
+          delay = 10;
+        }
+      } finally {
+        if (!stopped && !document.hidden) {
+          timer = window.setTimeout(() => { void pollQuotes(); }, delay * 1000);
+        }
+      }
+    };
+
+    const handleVisibility = () => {
+      window.clearTimeout(timer);
+      abort?.abort();
+      if (!document.hidden) {
+        void pollQuotes();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    void pollQuotes();
+
+    return () => {
+      stopped = true;
+      abort?.abort();
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [watchlist]);
 
   useEffect(() => {
     const abort = new AbortController();
