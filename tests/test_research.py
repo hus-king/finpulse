@@ -136,6 +136,60 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(model.await_count, 1)
         self.assertEqual(ResearchStore(self.auth).get('dashboard', '600519')['news'][0]['score'], 25)
 
+    def check_full_analysis_entry(self, endpoint, payload):
+        headers = self.register()
+        self.assertEqual(self.client.post('/api/watchlist', headers=headers, json={'codes': []}).status_code, 200)
+        day = datetime.now(SHANGHAI).date().isoformat()
+        titles = ['贵州茅台公告年度利润增长', '贵州茅台披露海外渠道建设计划',
+                  '贵州茅台发布产品召回风险提示', '贵州茅台披露季度现金流变化',
+                  '贵州茅台董事会审议长期资本支出预算', '贵州茅台公告股东股份解除质押',
+                  '贵州茅台公布重大并购方案', '贵州茅台发布现金分红实施公告']
+        news = {'results': [
+            {'title': title, 'content': f'{day}\n{title}。公司披露相关事项，具体安排和经营影响仍需要持续核验后续公告。',
+             'published_date': day, 'url': f'https://example.com/full-analysis/{index}'}
+            for index, title in enumerate(titles)
+        ]}
+        with patch('backend.providers.search_news', new=AsyncMock(return_value=news)), \
+             patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), \
+             patch('backend.providers.daily_market', new=AsyncMock(return_value={'candles': [], 'price': None})), \
+             patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), \
+             patch('backend.app.completion', new=AsyncMock(return_value=REPLY)) as model:
+            response = self.client.post(endpoint, headers=headers, json=payload)
+            self.assertEqual(response.status_code, 202, response.text)
+            body = response.json()
+            job = body.get('job') or (body['jobs'][0] if 'jobs' in body else body)
+            finished = self.wait_job(job['id'])
+            data = self.client.get('/api/dashboard/600519').json()
+            self.assertEqual(len(data['news']), 8)
+            self.assertEqual(sum(row['analysis_status'] == 'completed' for row in data['news']), 8)
+            self.assertTrue(all(row['score'] == 25 for row in data['news']))
+            self.assertEqual(finished['counts']['analysis_total'], 8)
+            self.assertEqual(model.await_count, 8)
+            original_times = {row['id']: row['analyzed_at'] for row in data['news']}
+
+            # A repeat collection restores every result without paid AI work.
+            model.side_effect = AssertionError('Completed news must reuse its analysis')
+            repeated = self.client.post('/api/research/600519/refresh', headers=headers, json={})
+            self.assertEqual(repeated.status_code, 202)
+            cached_job = self.wait_job(repeated.json()['id'])
+            cached = self.client.get('/api/dashboard/600519').json()
+            self.assertEqual(cached_job['counts']['analysis_total'], 0)
+            self.assertEqual(cached_job['counts']['analysis_reused'], 8)
+            self.assertEqual({row['id']: row['analyzed_at'] for row in cached['news']}, original_times)
+            self.assertEqual(model.await_count, 8)
+
+    def test_manual_refresh_analyzes_more_than_six_news_and_reuses_cache(self):
+        self.check_full_analysis_entry('/api/research/600519/refresh', {})
+
+    def test_legacy_browser_refresh_limit_does_not_truncate_analysis(self):
+        self.check_full_analysis_entry('/api/research/600519/refresh', {'max_articles': 6})
+
+    def test_add_stock_analyzes_all_collected_news(self):
+        self.check_full_analysis_entry('/api/watchlist/add', {'code': '600519'})
+
+    def test_watchlist_batch_analyzes_all_collected_news(self):
+        self.check_full_analysis_entry('/api/watchlist/analyze-all', {'codes': ['600519']})
+
     def test_market_news_and_individual_analyses_are_visible_before_job_finishes(self):
         headers = self.register()
         search_gate = threading.Event()

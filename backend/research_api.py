@@ -83,7 +83,8 @@ async def batch_quotes(response: Response, codes: str = Query(default='', max_le
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     days: int = Field(default=30, ge=1, le=90)
-    max_articles: int = Field(default=6, ge=1, le=8)
+    # Accept the old browser payload, but refresh always analyzes all pending news.
+    max_articles: int | None = Field(default=None, ge=1, le=8)
     include_community: bool = False
 
 
@@ -219,7 +220,7 @@ async def batch_analyze_watchlist(
         job = await research.launch(
             c, user,
             days=data.days,
-            max_articles=0 if data.analysis_only else 6,
+            max_articles=0 if data.analysis_only else None,
             community=False,
             analysis_only=data.analysis_only,
         )
@@ -233,7 +234,7 @@ async def refresh(code: str, data: RefreshRequest, response: Response, user=Depe
     if not research.catalog.get(code):
         raise HTTPException(404, '暂不支持该股票。')
     await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('research:' + user['id']), 12)])
-    return await research.launch(code, user, data.days, data.max_articles, False)
+    return await research.launch(code, user, data.days, None, False)
 
 
 class AnalyzeAllRequest(BaseModel):

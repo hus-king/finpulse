@@ -123,7 +123,7 @@ class ResearchService:
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    async def launch(self, code, user, days=30, max_articles=6, community=False, start=True, community_only=False, analysis_only=False):
+    async def launch(self, code, user, days=30, max_articles=None, community=False, start=True, community_only=False, analysis_only=False):
         # A single process is intentional; concurrent refreshes of a stock reuse a job.
         key = (user['id'], code)
         if key in self.active:
@@ -189,7 +189,7 @@ class ResearchService:
                 self.live_jobs.pop(job['id'], None)
                 self.job_starts.pop(job['id'], None)
 
-    async def refresh_shared(self, code, days=7, maximum=3, community=False, progress=lambda stage: None, community_only=False, analysis_only=False):
+    async def refresh_shared(self, code, days=7, maximum=None, community=False, progress=lambda stage: None, community_only=False, analysis_only=False):
         """Share identical concurrent work; each account keeps its own job record."""
         key = (code, days, maximum, community, community_only, analysis_only)
         if key not in self.inflight:

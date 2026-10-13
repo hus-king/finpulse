@@ -264,7 +264,7 @@ export default function App() {
     const abort = new AbortController(); controller.current?.abort(); controller.current = abort;
     setCollecting(code); setError('');
     setJobs(previous => { const next = { ...previous }; delete next[code]; return next; });
-    try { const next = await api<Job>(`/api/research/${code}/${analysisOnly ? 'analyze-all' : communityOnly ? 'community' : 'refresh'}`, analysisOnly ? {} : communityOnly ? { days } : { days, max_articles: 6, include_community: community }, abort.signal); if (!abort.signal.aborted) setJobs(previous => ({ ...previous, [next.code]: next })); }
+    try { const next = await api<Job>(`/api/research/${code}/${analysisOnly ? 'analyze-all' : communityOnly ? 'community' : 'refresh'}`, analysisOnly ? {} : communityOnly ? { days } : { days, include_community: community }, abort.signal); if (!abort.signal.aborted) setJobs(previous => ({ ...previous, [next.code]: next })); }
     catch (e) { if (!abort.signal.aborted) setError((e as Error).message); }
     finally { if (!abort.signal.aborted) setCollecting(null); }
   }
