@@ -16,6 +16,7 @@ from .providers import read_config
 from .recommendations import build_digest
 
 logger = logging.getLogger(__name__)
+NEWS_SCHEDULE_TIMES = ['08:30', '12:00', '20:00']
 COMMUNITY_SCHEDULE_TIMES = ['08:45', '12:00', '15:15', '20:30']
 
 
@@ -52,6 +53,10 @@ class MorningService:
             'running': bool(self.scheduler and self.scheduler.running),
             'next_run': job.next_run_time.isoformat() if job and job.next_run_time else None,
             'last_run': self.store.get('morning_run', 'latest'),
+            'news_schedule': {
+                'times': NEWS_SCHEDULE_TIMES,
+                'last_run': self.store.get('news_scheduler', 'latest'),
+            },
             'community_schedule': {
                 'times': COMMUNITY_SCHEDULE_TIMES,
                 'last_run': self.store.get('community_scheduler', 'latest'),
@@ -68,6 +73,7 @@ class MorningService:
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
         self.scheduler.add_job(self.tick, 'interval', minutes=15, id='morning_retry', max_instances=1, coalesce=True)
         self.configure_cron()
+        self.configure_news_cron()
         self.configure_community_cron()
         self.scheduler.start()
         # Reconcile only today's due run and persisted retries after a restart.
@@ -87,6 +93,31 @@ class MorningService:
             hour, minute = map(int, settings['morning_time'].split(':'))
             self.scheduler.add_job(self.run, 'cron', hour=hour, minute=minute, day_of_week='*' if settings['every_day'] else 'mon-fri', id='morning_digest', max_instances=1, coalesce=True, misfire_grace_time=3600)
         self.schedule_signature = signature
+
+    def configure_news_cron(self):
+        if not self.scheduler:
+            return
+        for job in list(self.scheduler.get_jobs()):
+            if job.id.startswith('news_research_'):
+                self.scheduler.remove_job(job.id)
+        settings = self.settings()
+        morning_time = settings.get('morning_time', '08:30')
+        for t in NEWS_SCHEDULE_TIMES:
+            if t == morning_time:
+                continue
+            hour, minute = map(int, t.split(':'))
+            self.scheduler.add_job(
+                self.run_news_batch,
+                'cron',
+                hour=hour,
+                minute=minute,
+                day_of_week='*',
+                id=f'news_research_{hour:02d}_{minute:02d}',
+                kwargs={'slot': t},
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=1800,
+            )
 
     def configure_community_cron(self):
         if not self.scheduler:
@@ -111,6 +142,7 @@ class MorningService:
     async def reload_schedule(self):
         settings = await asyncio.to_thread(self.settings)
         self.configure_cron(settings)
+        self.configure_news_cron()
         self.configure_community_cron()
         return settings
 
@@ -160,6 +192,51 @@ class MorningService:
             return record
         finally:
             await asyncio.to_thread(self.store.release, 'community-global', token)
+
+    async def run_news_batch(self, slot=None):
+        token = await asyncio.to_thread(self.store.claim, 'news-batch-global', 1200)
+        if not token:
+            logger.info('Scheduled news batch run lease already held by another worker')
+            return {'status': 'busy'}
+        now_dt = datetime.now(SHANGHAI)
+        slot_name = slot or now_dt.strftime('%H:%M')
+        date_str = now_dt.strftime('%Y-%m-%d %H:%M')
+        logger.info(f'Starting scheduled news batch collection at {date_str} (slot: {slot_name})')
+        try:
+            valid_codes = await asyncio.to_thread(self.all_watchlist_codes)
+            if not valid_codes:
+                logger.info('No watchlist stocks to collect news for')
+                return {'status': 'empty', 'codes': []}
+
+            settings = await asyncio.to_thread(self.settings)
+            lookback_days = settings.get('lookback_days', 7)
+            max_articles = settings.get('max_articles', 3)
+
+            completed, failed = [], []
+            for code in valid_codes:
+                try:
+                    await self.research.refresh_shared(code, lookback_days, max_articles, False)
+                    completed.append(code)
+                except Exception as exc:
+                    logger.warning(f'Failed to run scheduled news batch for {code}: {exc}')
+                    failed.append(code)
+                # Polite anti-crawler delay between stocks
+                await asyncio.sleep(1.0)
+
+            record = {
+                'run_at': timestamp(),
+                'date': date_str,
+                'slot': slot_name,
+                'total': len(valid_codes),
+                'completed': completed,
+                'failed': failed,
+                'times': NEWS_SCHEDULE_TIMES,
+            }
+            await asyncio.to_thread(self.store.put, 'news_scheduler', 'latest', record)
+            logger.info(f'Finished scheduled news batch collection: {len(completed)}/{len(valid_codes)} success')
+            return record
+        finally:
+            await asyncio.to_thread(self.store.release, 'news-batch-global', token)
 
     async def tick(self):
         settings = await self.reload_schedule()
@@ -231,6 +308,9 @@ class MorningService:
             await asyncio.to_thread(self.store.put, 'morning_run', 'latest', run.copy())
             settings = await asyncio.to_thread(self.settings)
             owners, stock_days = await asyncio.to_thread(self.targets, settings)
+            all_codes = await asyncio.to_thread(self.all_watchlist_codes)
+            for c in all_codes:
+                stock_days.setdefault(c, settings.get('lookback_days', 7))
             codes = sorted(stock_days)
             run['stage'] = '更新共享新闻与历史行情'
             await asyncio.to_thread(self.store.put, 'morning_run', 'latest', run.copy())
@@ -282,6 +362,16 @@ class MorningService:
                 run['finished_at'] = timestamp()
                 await asyncio.to_thread(self.store.put, 'morning_run', date, run)
                 await asyncio.to_thread(self.store.put, 'morning_run', 'latest', run)
+                record = {
+                    'run_at': timestamp(),
+                    'date': date + ' ' + settings.get('morning_time', '08:30'),
+                    'slot': settings.get('morning_time', '08:30'),
+                    'total': len(codes),
+                    'completed': [c for c, r in run['stocks'].items() if r.get('status') in ('completed', 'partial')],
+                    'failed': [c for c, r in run['stocks'].items() if r.get('status') == 'failed'],
+                    'times': NEWS_SCHEDULE_TIMES,
+                }
+                await asyncio.to_thread(self.store.put, 'news_scheduler', 'latest', record)
             await asyncio.to_thread(self.store.release, 'morning-global', token)
             self.runs.discard(asyncio.current_task())
         return run

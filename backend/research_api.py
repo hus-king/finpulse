@@ -421,3 +421,11 @@ async def trigger_community_batch(response: Response, user=Depends(authorize_adm
     await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('community-batch:' + user['id']), 6)])
     task = asyncio.create_task(research.briefing.run_community_batch())
     return {'status': 'triggered'}
+
+
+@router.post('/admin/news/trigger', status_code=202)
+async def trigger_news_batch(response: Response, user=Depends(authorize_admin_write), research=Depends(service)):
+    private(response)
+    await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('news-batch:' + user['id']), 6)])
+    task = asyncio.create_task(research.briefing.run_news_batch(slot='manual'))
+    return {'status': 'triggered'}

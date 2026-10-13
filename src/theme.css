@@ -850,3 +850,22 @@ a.github-link:focus-visible {
   color: var(--theme-muted, #9ba6b8);
   border-color: var(--theme-border, #2a303d);
 }
+
+.pipeline-schedule-hint {
+  font-size: 11px;
+  color: var(--theme-muted);
+  background: var(--theme-raised, #f0f3f7);
+  padding: 6px 12px;
+  border-radius: 6px;
+  margin: 6px 0 10px;
+  border: 1px solid var(--theme-border, #e3e8ef);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:root[data-theme="dark"] .pipeline-schedule-hint {
+  background: var(--theme-raised, #202632);
+  color: var(--theme-muted, #9ba6b8);
+  border-color: var(--theme-border, #2a303d);
+}
