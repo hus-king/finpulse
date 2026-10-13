@@ -10,7 +10,7 @@
     "morning_time": "08:30",
     "every_day": true,
     "lookback_days": 7,
-    "max_articles": 3
+    "max_articles": null
   },
   "notifications": {
     "smtp": {

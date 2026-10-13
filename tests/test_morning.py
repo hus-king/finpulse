@@ -139,6 +139,39 @@ class MorningTests(unittest.IsolatedAsyncioTestCase):
             await first
             self.assertEqual(source.await_count, 2)
 
+    async def test_news_batch_renews_lease_during_long_stock_analysis(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+        heartbeat_ticks = asyncio.Queue()
+        real_sleep = asyncio.sleep
+        started_at = time.time()
+
+        async def provider(*args):
+            entered.set()
+            await finish.wait()
+            return snapshot()
+
+        async def sleep(seconds):
+            if seconds == 60:
+                await heartbeat_ticks.get()
+            else:
+                await real_sleep(0)
+
+        with patch.object(self.research, 'collect', new=AsyncMock(side_effect=provider)), patch('backend.morning.asyncio.sleep', side_effect=sleep):
+            task = asyncio.create_task(self.morning.run_news_batch(slot='12:00'))
+            try:
+                await entered.wait()
+                with patch('backend.research_store.time.time', return_value=started_at + 1100):
+                    heartbeat_ticks.put_nowait(None)
+                    await real_sleep(.1)
+                with patch('backend.research_store.time.time', return_value=started_at + 1201):
+                    competitor = self.store.claim('news-batch-global', 1200)
+                    if competitor:
+                        self.store.release('news-batch-global', competitor)
+                    self.assertIsNone(competitor, 'A long-running batch must keep its lease past the original expiry')
+            finally:
+                finish.set()
+                await task
+
     async def test_concurrent_manual_launches_share_one_daily_run(self):
         gate = asyncio.Event()
         async def run(**kwargs):

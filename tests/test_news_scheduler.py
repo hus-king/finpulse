@@ -34,6 +34,10 @@ class NewsSchedulerTests(unittest.TestCase):
     def test_schedule_times(self):
         self.assertEqual(NEWS_SCHEDULE_TIMES, ['08:30', '12:00', '20:00'])
 
+    def test_status_reports_unlimited_analysis_despite_legacy_saved_limit(self):
+        self.store.put('scheduler', 'settings', {'max_articles': 3})
+        self.assertIsNone(self.morning.status()['max_articles'])
+
     def test_configure_news_cron_registers_jobs(self):
         async def run_test():
             with patch.object(MorningService, 'instance_enabled', new_callable=unittest.mock.PropertyMock(return_value=True)):

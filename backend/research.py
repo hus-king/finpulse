@@ -582,7 +582,8 @@ class ResearchService:
                     article.pop('analysis_context_key',None)
             reused = await asyncio.to_thread(self.analysis_cache.restore, stock, news,
                                             result.get('industry_profile') or {}, result.get('business_profile') or {}, requested_model)
-            selected = select_analyses(rank_events([row for row in news if not row.get('stale') and not is_scored(row)]), maximum)
+            pending = rank_events([row for row in news if not row.get('stale') and not is_scored(row)])
+            selected = pending if maximum is None else select_analyses(pending, maximum)
             stages['analysis'] = 'running' if selected else 'completed'
             for article in selected:
                 article['analysis_status'] = 'running'

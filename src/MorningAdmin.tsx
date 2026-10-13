@@ -4,19 +4,19 @@ import { api } from './api';
 import { dateTime } from './format';
 
 interface Run { id: string; date: string; status: string; stage: string; users: number; stocks: Record<string, { status: string; reused?: boolean; warnings: string[] }>; warnings: string[]; finished_at?: string }
-interface Schedule { enabled: boolean; morning_time: string; every_day: boolean; lookback_days: number; max_articles: number; instance_enabled: boolean; running: boolean; next_run: string | null; last_run: Run | null; active_research_jobs: number; research_parallelism: number; queue_limit: number }
+interface Schedule { enabled: boolean; morning_time: string; every_day: boolean; lookback_days: number; max_articles: number | null; instance_enabled: boolean; running: boolean; next_run: string | null; last_run: Run | null; active_research_jobs: number; research_parallelism: number; queue_limit: number }
 const labels: Record<string, string> = { queued: '等待中', running: '执行中', completed: '完成', partial: '部分来源不可用', failed: '失败', interrupted: '已中断' };
 
 export default function MorningAdmin() {
   const [status, setStatus] = useState<Schedule | null>(null);
-  const [form, setForm] = useState({ enabled: true, morning_time: '08:30', every_day: true, lookback_days: 7, max_articles: 3 });
+  const [form, setForm] = useState({ enabled: true, morning_time: '08:30', every_day: true, lookback_days: 7 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   useEffect(() => {
     const abort = new AbortController();
     const load = async (initial: boolean) => {
-      try { const next = await api<Schedule>('/api/admin/briefing/status', undefined, abort.signal); if (!abort.signal.aborted) { setStatus(next); if (initial) setForm({ enabled: next.enabled, morning_time: next.morning_time, every_day: next.every_day, lookback_days: next.lookback_days, max_articles: next.max_articles }); } }
+      try { const next = await api<Schedule>('/api/admin/briefing/status', undefined, abort.signal); if (!abort.signal.aborted) { setStatus(next); if (initial) setForm({ enabled: next.enabled, morning_time: next.morning_time, every_day: next.every_day, lookback_days: next.lookback_days }); } }
       catch (e) { if ((e as Error).name !== 'AbortError') setError((e as Error).message); }
     };
     void load(true);
@@ -38,8 +38,8 @@ export default function MorningAdmin() {
   }
   const running = !!status?.last_run && ['queued', 'running'].includes(status.last_run.status);
   return <section className="panel morning-admin"><header className="panel-heading"><div><Clock3 size={18} className="mint-text" /><h2>每日更新与晨报调度</h2></div><span className="sample-label">上海时间</span></header>
-    <p>合并所有用户的自选股，每只股票每日采集一次，分别排序生成个人晨报。相同参数的并发采集共享执行，用户任务和订阅相互隔离。</p>
-    <div className="morning-admin-fields"><label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} />启用每日任务</label><label>执行时间<input type="time" value={form.morning_time} onChange={e => setForm({ ...form, morning_time: e.target.value })} /></label><label>执行日期<select value={form.every_day ? 'daily' : 'weekday'} onChange={e => setForm({ ...form, every_day: e.target.value === 'daily' })}><option value="daily">每天（含周末）</option><option value="weekday">周一至周五</option></select></label><label>检索天数<input type="number" min={1} max={30} value={form.lookback_days} onChange={e => setForm({ ...form, lookback_days: Number(e.target.value) })} /></label><label>每只 AI 研判上限<input type="number" min={1} max={8} value={form.max_articles} onChange={e => setForm({ ...form, max_articles: Number(e.target.value) })} /></label></div>
+    <p>合并所有用户的自选股，自动巡检研判采集窗口内全部有效待研判新闻，已有结果复用缓存。晨报按用户自选股分别排序生成。</p>
+    <div className="morning-admin-fields"><label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} />启用每日任务</label><label>执行时间<input type="time" value={form.morning_time} onChange={e => setForm({ ...form, morning_time: e.target.value })} /></label><label>执行日期<select value={form.every_day ? 'daily' : 'weekday'} onChange={e => setForm({ ...form, every_day: e.target.value === 'daily' })}><option value="daily">每天（含周末）</option><option value="weekday">周一至周五</option></select></label><label>检索天数<input type="number" min={1} max={30} value={form.lookback_days} onChange={e => setForm({ ...form, lookback_days: Number(e.target.value) })} /></label><label>AI 研判范围<span>全部有效待研判新闻</span></label></div>
     <div className="briefing-actions"><button className="primary-button" disabled={busy || !status} onClick={save}><Save size={14} />保存调度设置</button><button className="outline-button" disabled={busy || running || !status} onClick={run}>{running ? <LoaderCircle size={14} className="spin" /> : <Play size={14} />}{running ? '每日更新执行中' : '立即执行每日更新'}</button></div>
     <div className="scheduler-status"><span className={`status-dot ${status?.running && status.enabled ? '' : 'pending'}`} />{status?.running && status.enabled ? `下次执行：${dateTime(status.next_run)}` : '自动调度尚未运行'}{!status?.instance_enabled && <p>当前实例没有启动调度。使用 start.ps1 -Scheduler 启动指定后端；其他开发实例保持关闭。</p>}<p>重启后补做今日到期的任务，不补发往日晨报。确定失败的渠道每 15 分钟最多尝试 3 次；结果不确定的请求不会自动重发。</p></div>
     {status && <p className="digest-note">用户采集任务总数 {status.active_research_jobs}/{status.queue_limit} · 同时采集 {status.research_parallelism} 只股票 · 模型同时请求上限 4</p>}

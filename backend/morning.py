@@ -40,10 +40,11 @@ class MorningService:
         return os.environ.get('FINPULSE_SCHEDULER_ENABLED', str(int(configured))) == '1'
 
     def settings(self):
-        defaults = {'enabled': True, 'morning_time': '08:30', 'every_day': True, 'lookback_days': 7, 'max_articles': 3}
+        defaults = {'enabled': True, 'morning_time': '08:30', 'every_day': True, 'lookback_days': 7}
         configured = read_config().get('scheduler', {})
         defaults.update({key: value for key, value in configured.items() if key in defaults and key != 'enabled'})
-        return {**defaults, **self.store.get('scheduler', 'settings', default={})}
+        # Legacy saved limits must not truncate automatic analysis.
+        return {**defaults, **self.store.get('scheduler', 'settings', default={}), 'max_articles': None}
 
     def status(self):
         job = self.scheduler.get_job('morning_digest') if self.scheduler else None
@@ -198,6 +199,18 @@ class MorningService:
         if not token:
             logger.info('Scheduled news batch run lease already held by another worker')
             return {'status': 'busy'}
+        current_task = asyncio.current_task()
+        self.runs.add(current_task)
+        async def heartbeat():
+            while True:
+                await asyncio.sleep(60)
+                if not await asyncio.to_thread(self.store.renew, 'news-batch-global', token, 1200):
+                    raise RuntimeError('Scheduled news batch lease lost')
+        pulse = asyncio.create_task(heartbeat())
+        def lost_lease(task):
+            if not task.cancelled() and task.exception():
+                current_task.cancel()
+        pulse.add_done_callback(lost_lease)
         now_dt = datetime.now(SHANGHAI)
         slot_name = slot or now_dt.strftime('%H:%M')
         date_str = now_dt.strftime('%Y-%m-%d %H:%M')
@@ -210,12 +223,11 @@ class MorningService:
 
             settings = await asyncio.to_thread(self.settings)
             lookback_days = settings.get('lookback_days', 7)
-            max_articles = settings.get('max_articles', 3)
 
             completed, failed = [], []
             for code in valid_codes:
                 try:
-                    await self.research.refresh_shared(code, lookback_days, max_articles, False)
+                    await self.research.refresh_shared(code, lookback_days, None, False)
                     completed.append(code)
                 except Exception as exc:
                     logger.warning(f'Failed to run scheduled news batch for {code}: {exc}')
@@ -236,7 +248,10 @@ class MorningService:
             logger.info(f'Finished scheduled news batch collection: {len(completed)}/{len(valid_codes)} success')
             return record
         finally:
+            pulse.cancel()
+            await asyncio.gather(pulse, return_exceptions=True)
             await asyncio.to_thread(self.store.release, 'news-batch-global', token)
+            self.runs.discard(current_task)
 
     async def tick(self):
         settings = await self.reload_schedule()
@@ -320,7 +335,7 @@ class MorningService:
                     run['stocks'][code] = {**prior_stock, 'reused': True}
                     return
                 try:
-                    snapshot = await self.research.refresh_shared(code, stock_days[code], settings['max_articles'], False)
+                    snapshot = await self.research.refresh_shared(code, stock_days[code], None, False)
                     pipeline = snapshot['pipeline']
                     outcome = {'status': 'partial' if pipeline['warnings'] else 'completed', 'warnings': pipeline['warnings'], 'updated_at': timestamp()}
                 except asyncio.CancelledError:

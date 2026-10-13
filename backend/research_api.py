@@ -391,7 +391,8 @@ class ScheduleSettings(BaseModel):
     morning_time: str = Field(default='08:30', pattern=r'^(?:[01]\d|2[0-3]):[0-5]\d$')
     every_day: bool = True
     lookback_days: int = Field(default=7, ge=1, le=30)
-    max_articles: int = Field(default=6, ge=1, le=8)
+    # Accept legacy integer settings; automatic jobs always analyze all pending news.
+    max_articles: int | None = Field(default=None, ge=1, le=8)
 
 
 @router.get('/admin/briefing/status')

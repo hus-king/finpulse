@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -10,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 from backend.analysis_cache import analysis_context, analysis_cache_key, legacy_cache_key
 from backend.auth import AuthStore
 from backend.news_cleaning import SHANGHAI
+from backend.morning import MorningService
 from backend.prompts import PROMPT_VERSION
 from backend.research import ResearchService
 from backend.research_store import ResearchStore
@@ -37,7 +39,8 @@ class AnalysisReuseTests(unittest.IsolatedAsyncioTestCase):
         await self.service.close()
         self.temp.cleanup()
 
-    async def collect(self, rows=None, maximum=3, progress=lambda stage: None):
+    @contextmanager
+    def news_sources(self, rows=None):
         # Force upstream fixtures here: this suite isolates judgment persistence,
         # while rolling search reuse/merging has its own integration tests.
         async def fresh(identity, days, start, end, fetcher):
@@ -47,7 +50,52 @@ class AnalysisReuseTests(unittest.IsolatedAsyncioTestCase):
              patch('backend.providers.akshare_news', new=AsyncMock(return_value={'results': []})), \
              patch('backend.providers.tavily', new=AsyncMock(return_value={'results': []})), \
              patch('backend.providers.daily_market', new=AsyncMock(return_value={'candles': [], 'price': None})):
+            yield
+
+    async def collect(self, rows=None, maximum=3, progress=lambda stage: None):
+        with self.news_sources(rows):
             return await self.service.collect('600519', 30, maximum, False, progress)
+
+    async def check_scheduled_coverage(self, morning_run):
+        day = self.rows[0]['published_date']
+        extra_titles = ['贵州茅台披露季度现金流变化', '贵州茅台董事会审议长期资本支出预算', '贵州茅台公告股东股份解除质押']
+        rows = self.rows + [
+            {'title': title, 'content': f'{day}\n{title}，相关业务事项以公司披露的公告为准，实施进展和影响需要持续核验。',
+             'published_date': day, 'url': f'https://example.com/events/extra-{i}'}
+            for i, title in enumerate(extra_titles)
+        ]
+        first = await self.collect(rows, maximum=1)
+        self.assertEqual(len(first['news']), 6)
+        cached = next(row for row in first['news'] if row['analysis_status'] == 'completed')
+        user = self.auth.register('all_news', 'all_news', 'All-news-test-2026!')[0]
+        self.store.put('watchlist', 'list', ['600519'], user['id'])
+        self.store.put('scheduler', 'settings', {'max_articles': 3, 'lookback_days': 30})
+        morning = MorningService(self.service)
+        self.service.briefing = morning
+        with self.news_sources(rows):
+            if morning_run:
+                await morning.run()
+            else:
+                await morning.run_news_batch(slot='12:00')
+        result = self.store.get('dashboard', '600519')
+        self.assertEqual(sum(row['analysis_status'] == 'completed' for row in result['news']), 6)
+        self.assertEqual(result['pipeline']['counts']['analysis_total'], 5)
+        self.assertEqual(result['pipeline']['counts']['analysis_reused'], 1)
+        restored = next(row for row in result['news'] if row['id'] == cached['id'])
+        self.assertEqual(restored['analyzed_at'], cached['analyzed_at'])
+        self.model.side_effect = AssertionError('Unchanged news must reuse the completed analysis')
+        with self.news_sources(rows):
+            await morning.run_news_batch(slot='20:00')
+        repeated = self.store.get('dashboard', '600519')
+        self.assertEqual(repeated['pipeline']['counts']['analysis_total'], 0)
+        self.assertEqual(repeated['pipeline']['counts']['analysis_reused'], 6)
+        self.assertTrue(all(row['analysis_status'] == 'completed' for row in repeated['news']))
+
+    async def test_morning_analyzes_all_pending_despite_legacy_limit_and_reuses_scores(self):
+        await self.check_scheduled_coverage(morning_run=True)
+
+    async def test_news_batch_analyzes_all_pending_despite_legacy_limit_and_reuses_scores(self):
+        await self.check_scheduled_coverage(morning_run=False)
 
     async def test_recollect_restores_all_scores_outside_budget_and_spends_budget_on_new_news(self):
         first = await self.collect()
