@@ -13,6 +13,7 @@ from backend.auth import AuthStore
 from backend.news_cleaning import SHANGHAI
 from backend.morning import MorningService
 from backend.prompts import PROMPT_VERSION
+from backend.providers import ProviderError
 from backend.research import ResearchService
 from backend.research_store import ResearchStore
 from tests.test_evidence import BASE
@@ -96,6 +97,18 @@ class AnalysisReuseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_news_batch_analyzes_all_pending_despite_legacy_limit_and_reuses_scores(self):
         await self.check_scheduled_coverage(morning_run=False)
+
+    async def test_unlimited_analysis_covers_retained_news_when_sources_are_unavailable(self):
+        await self.collect(maximum=0)
+        with self.news_sources(), \
+             patch('backend.providers.search_news', new=AsyncMock(side_effect=ProviderError('search unavailable'))), \
+             patch('backend.providers.akshare_news', new=AsyncMock(side_effect=ProviderError('news unavailable'))):
+            result = await self.service.collect('600519', 30, None, False)
+        self.assertEqual(len(result['news']), 3)
+        self.assertTrue(all(row.get('stale') for row in result['news']))
+        self.assertEqual(sum(row['analysis_status'] == 'completed' for row in result['news']), 3)
+        self.assertEqual(result['pipeline']['counts']['analysis_total'], 3)
+        self.assertTrue(result['pipeline']['warnings'])
 
     async def test_recollect_restores_all_scores_outside_budget_and_spends_budget_on_new_news(self):
         first = await self.collect()
