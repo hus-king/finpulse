@@ -5,11 +5,13 @@ in the review queue. No outputs are production filters or human gold labels.
 """
 import argparse
 import concurrent.futures
+from contextlib import ExitStack
 import hashlib
 import json
 import shutil
 import threading
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 from .contract import canonical, digest
@@ -141,7 +143,7 @@ class PreflightBudget:
         self.journal,self.cap=journal,cap;self.lock=threading.Lock()
         self.bounds={x['attempt']:x['upper_bound'] for x in read_jsonl(journal.root/'token_reservations.jsonl')}
         self.observed={x['attempt']:x['usage']['total_tokens'] for x in read_jsonl(journal.root/'usage.jsonl')
-                       if isinstance(x.get('usage',{}).get('total_tokens'),int) and x['usage']['total_tokens']>0}
+                       if isinstance(x.get('usage',{}).get('total_tokens'),int) and not isinstance(x['usage']['total_tokens'],bool) and x['usage']['total_tokens']>0}
         for x in read_jsonl(journal.root/'attempts.jsonl'):
             if x['attempt'] not in self.bounds and x['attempt'] not in self.observed:self.bounds[x['attempt']]=cap
 
@@ -197,43 +199,65 @@ def _cached(path):
     return result
 
 
-def run(root, config, policy, request=_request):
+def run(root, config, policy, request=_request, *, contract=None, modes=('primary','audit'), shared_budget_root=None):
     root = Path(root)
+    fact_check=contract.validate_facts if contract else validate_facts
+    pair_check=contract.validate_pair if contract else validate_pair
+    pack_wire=contract.wire if contract else wire
+    prompts=contract.PROMPTS if contract else PROMPTS
+    version=contract.VERSION if contract else VERSION
+    if not modes or len(set(modes))!=len(modes) or any(stage+'_'+mode not in prompts for stage in ('facts','pairs') for mode in modes):
+        raise ValueError('Invalid teacher modes')
     records = read_jsonl(root/'inputs.jsonl')
     if not records or len({r['id'] for r in records}) != len(records): raise ValueError('Empty or duplicate inputs')
     articles, companies = {}, {}
     for r in records:
-        a = article_packet(r['article_id'], r['state']['news'])
+        a = contract.article_packet(r) if contract else article_packet(r['article_id'], r['state']['news'])
         if a['id'] in articles and articles[a['id']] != a: raise ValueError('Conflicting shared article')
-        articles[a['id']] = a; companies[r['id']] = company_packet(r)
+        articles[a['id']] = a; companies[r['id']] = contract.company_packet(r) if contract else company_packet(r)
     url = config['base_url'].rstrip('/')
     if not url.endswith('/chat/completions'): url += '/chat/completions'
     if not url.startswith('https://'): raise ValueError('HTTPS endpoint required')
     identity = {'model': config['model'], 'endpoint': url}
     parameters = {'temperature': 0, 'thinking': {'type': 'disabled'}, 'response_format': {'type': 'json_object'}, 'max_tokens': policy['max_output_tokens']}
-    frozen = {**policy, 'version': VERSION, 'identity': identity, 'parameters': parameters,
-              'prompts': {k: digest(v) for k,v in PROMPTS.items()}, 'inputs_sha256': sha(root/'inputs.jsonl')}
+    frozen = {**policy, 'version': version, 'identity': identity, 'parameters': parameters,
+              'prompts': {k: digest(v) for k,v in prompts.items()}, 'inputs_sha256': sha(root/'inputs.jsonl'),
+              'modes':list(modes),'shared_budget_root':str(Path(shared_budget_root).resolve()) if shared_budget_root else None}
     if (root/'protocol.json').exists():
         protocol = json.loads((root/'protocol.json').read_text())
-        if protocol.get('prompts') != PROMPTS or protocol.get('teacher_policy') != policy:
+        if protocol.get('prompts') != prompts or protocol.get('teacher_policy') != policy:
             raise ValueError('Predeclared prompts or budget changed')
+        if protocol.get('shared_budget_root')!=frozen['shared_budget_root']:
+            raise ValueError('Declared shared budget scope changed')
         for file, expected in protocol.get('frozen_files', {}).items():
             if sha(root/file) != expected: raise ValueError('Frozen input changed: '+file)
             if file.startswith('code_snapshot/') and sha(Path(__file__).with_name(Path(file).name)) != expected:
                 raise ValueError('Execution code differs from frozen snapshot: '+file)
     teacher = root/'teacher'
-    with Journal(teacher, frozen) as journal:
+    with ExitStack() as stack:
+        journal=stack.enter_context(Journal(teacher,frozen))
         budget=PreflightBudget(journal,policy.get('token_hard_cap',policy['token_soft_stop']))
+        shared=None
+        if shared_budget_root:
+            cap=policy.get('token_hard_cap',policy['token_soft_stop'])
+            shared_policy={'max_attempts':policy['max_attempts'],'token_soft_stop':cap,
+                           'attempts_per_batch':policy['attempts_per_batch'],'identity':identity,
+                           'reservation_rule':'UTF8 input bytes + output cap + 4096 envelope'}
+            shared_journal=stack.enter_context(Journal(shared_budget_root,shared_policy))
+            shared=PreflightBudget(shared_journal,cap)
+        provider_stop=threading.Event()
         def execute(stage, mode, items, dependency):
-            name = stage+'_'+mode; prompt = PROMPTS[name]
+            name = stage+'_'+mode; prompt = prompts[name]
             def key(item): return digest({'item':item, 'prompt':prompt, 'identity':identity, 'parameters':parameters, 'dependency':dependency})
             def itemid(item): return item['article']['id'] if stage=='facts' else item['company']['id']
             cached = _cached(teacher/(name+'.jsonl'))
             for item in items:
                 previous = cached.get(itemid(item))
                 if previous and previous.get('cache_key') == key(item) and previous.get('evidence_valid'):
-                    if stage=='facts': validate_facts(item['article'],previous['answer'])
-                    else: validate_pair(item['news'],item['facts'],item['company'],previous['answer'])
+                    if stage=='facts':
+                        original={'id':previous['answer']['id'],'facts':previous['answer']['raw_facts'],'extraction_complete':previous['answer']['extraction_complete']} if contract else previous['answer']
+                        fact_check(item['article'],original)
+                    else: pair_check(item['news'],item['facts'],item['company'],previous['answer'])
             pending = [x for x in items if cached.get(itemid(x), {}).get('cache_key') != key(x)]
             size = 1 if stage=='facts' else policy['batch_size']
             groups={}
@@ -244,14 +268,20 @@ def run(root, config, policy, request=_request):
             def one(chunk):
                 ids, keys = [itemid(x) for x in chunk], [key(x) for x in chunk]
                 payload = {'model':config['model'], **parameters, 'messages':[
-                    {'role':'system','content':prompt}, {'role':'user','content':canonical(wire(stage,chunk))}]}
+                    {'role':'system','content':prompt}, {'role':'user','content':canonical(pack_wire(stage,chunk))}]}
                 for _ in range(policy['attempts_per_batch']):
-                    try: attempt = budget.reserve(ids, name, keys,payload)
+                    if provider_stop.is_set():return
+                    global_attempt=None
+                    try:
+                        if shared:global_attempt=shared.reserve(ids,name,keys,payload)
+                        attempt = budget.reserve(ids, name, keys,payload)
+                        if shared:journal.append('shared_budget_bindings.jsonl',{'attempt':attempt,'global_attempt':global_attempt})
                     except RuntimeError as exc:
                         journal.append(stage+'_budget_stops.jsonl',{'ids':ids,'mode':mode,'reason':str(exc)})
                         return
                     try:
                         raw = request(url, payload, config['api_key'])
+                        if shared:shared.usage(global_attempt,raw.get('usage',{}))
                         budget.usage(attempt, raw.get('usage', {}))
                         journal.append('raw_answers.jsonl', {'attempt':attempt, 'stage':stage, 'mode':mode, 'raw':raw})
                         if stage=='facts': journal.append('facts_raw.jsonl', {'attempt':attempt,'mode':mode,'raw':raw})
@@ -259,8 +289,8 @@ def run(root, config, policy, request=_request):
                         for item, identity_key in zip(chunk, keys):
                             id_ = itemid(item); answer = answers[id_]
                             try:
-                                checked = (validate_facts(item['article'], answer) if stage=='facts' else
-                                           validate_pair(item['news'], item['facts'], item['company'], answer))
+                                checked = (fact_check(item['article'], answer) if stage=='facts' else
+                                           pair_check(item['news'], item['facts'], item['company'], answer))
                                 valid, error = True, None
                             except (ValueError, KeyError, TypeError) as exc:
                                 checked, valid, error = answer, False, str(exc)
@@ -272,37 +302,46 @@ def run(root, config, policy, request=_request):
                     except Exception as exc:
                         # Transport exception text can include private endpoint details; retain class only.
                         journal.append(stage+'_errors.jsonl', {'attempt':attempt,'ids':ids,'mode':mode,'error_type':type(exc).__name__})
+                        if isinstance(exc,urllib.error.HTTPError) and exc.code in {400,401,403,404,422,429}:
+                            provider_stop.set();return
             with concurrent.futures.ThreadPoolExecutor(max_workers=policy['workers']) as pool:
                 list(pool.map(one, chunks))
         facts_paths = [teacher/x for x in ('facts_primary.jsonl','facts_audit.jsonl','facts_raw.jsonl','facts_errors.jsonl','facts_budget_stops.jsonl')]
         phase = root/'facts_freeze.json'
         if phase.exists(): dependency = _freeze(root, phase.name, facts_paths)
         else:
-            for mode in ('primary','audit'): execute('facts',mode,[{'article':a} for a in articles.values()],None)
+            for mode in modes: execute('facts',mode,[{'article':a} for a in articles.values()],None)
             dependency = _freeze(root, phase.name, facts_paths)
-        for mode in ('primary','audit'):
+        for mode in modes:
             saved = _cached(teacher/('facts_'+mode+'.jsonl'))
             items = []
             for r in records:
                 fact = saved.get(r['article_id'])
                 if not fact or not fact['evidence_valid']: continue
                 # Revalidation catches edited content even if the flag says valid.
-                validate_facts(articles[r['article_id']], fact['answer'])
+                if contract:
+                    original={'id':fact['answer']['id'],'facts':fact['answer']['raw_facts'],'extraction_complete':fact['answer']['extraction_complete']}
+                    if fact_check(articles[r['article_id']],original)!=fact['answer']:raise ValueError('Changed fact validation')
+                    if not fact['answer']['facts']:continue
+                else:fact_check(articles[r['article_id']], fact['answer'])
                 items.append({'news':articles[r['article_id']], 'facts':fact['answer'], 'company':companies[r['id']]})
             execute('pairs', mode, items, dependency)
-    return export_review(root, records)
+    return export_review(root, records, modes=modes)
 
 
-def export_review(root, records):
+def export_review(root, records, modes=('primary','audit')):
     root = Path(root); queues = []
-    pairs = {mode:{x['id']:x for x in read_jsonl(root/'teacher'/('pairs_'+mode+'.jsonl'))} for mode in ('primary','audit')}
+    pairs = {mode:{x['id']:x for x in read_jsonl(root/'teacher'/('pairs_'+mode+'.jsonl'))} for mode in modes}
     for r in records:
         results = {mode:pairs[mode].get(r['id']) for mode in pairs}
         both = all(x and x['evidence_valid'] for x in results.values())
-        queues.append({'id':r['id'],'article_id':r['article_id'],'status':'pending_semantic_review' if both else 'pending_label',
+        partial=any(x and x['evidence_valid'] and x['answer'].get('coverage')=='partial' for x in results.values())
+        queues.append({'id':r['id'],'article_id':r['article_id'],'status':'pending_article_partial' if partial else 'pending_semantic_review' if both else 'pending_label',
                        'results':results,'human_verified':False,'production_enabled':False,'training_admitted':False})
     summary = {'pairs':len(records),'articles':len({r['article_id'] for r in records}),
-               'both_structurally_valid':sum(q['status']=='pending_semantic_review' for q in queues),
+               'both_structurally_valid':sum(q['status']=='pending_semantic_review' for q in queues) if len(modes)>1 else 0,
+               'all_requested_modes_structurally_valid':sum(q['status']=='pending_semantic_review' for q in queues),
+               'partial_pairs':sum(q['status']=='pending_article_partial' for q in queues),
                'pending_label':sum(q['status']=='pending_label' for q in queues),
                'human_verified':0,'independent_test':False,'production_enabled':False,'training_admitted':False,
                'attempts':len(read_jsonl(root/'teacher'/'attempts.jsonl')),
