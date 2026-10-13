@@ -2,6 +2,8 @@
 
 This package is not imported by FastAPI. It stores every news/company pair and exports suggestions and a human review page. It does not delete or hide news, update production scores, or predict returns.
 
+The additive [evidence pipeline](../../docs/news-evidence-pipeline-2026-10-13.md) extracts article facts first, freezes them, then links every fact to each target company. Evidence IDs resolve to literal visible-text coordinates; input-cost and output-price roles are per fact. It shares article inputs between targets and reserves a conservative token bound before requests, including inflight and unobserved requests. `evidence_review` exports a read-only review page; `evidence_replay` explicitly records post-hoc development revalidation without overwriting the original. It is not part of the trainer, and every result remains an AI weak label. Use a new output directory and keep API credentials separate.
+
 The model has separate own-event and coarse industry questions. The DeepSeek review retains DIRECT, CONDITIONAL, DISTANT, SENTIMENT, NONE and UNKNOWN with news/business quotes and missing conditions. A name mention is not sufficient own-event evidence. Missing bodies, dates or company products remain pending.
 
 Two prompts from the same DeepSeek endpoint are **weak references**, even when they agree and quotes match. Quote validation checks attribution and literal presence, not whether the causal interpretation is true. The pilot produces zero human-verified labels.
