@@ -118,7 +118,7 @@ export default function IndicatorPicker({ selection, onChange }: {
         else setOpen(true);
       }}
     >
-      {active.label}{current.mode === 'multiple' && shown.length > 1 ? ` 等 ${shown.length} 项` : ''}
+      {current.mode === 'multiple' ? `指标 · ${shown.length} 项` : active.label}
       <span aria-hidden="true">▾</span>
     </button>
     {open && createPortal(<div
