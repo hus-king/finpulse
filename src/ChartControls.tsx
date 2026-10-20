@@ -22,10 +22,10 @@ function Choices<T extends string>({ label, options, value, onChange }: {
 }
 
 export default function ChartControls({ visible, toggleVisible, chartStyle, setChartStyle, overlay, setOverlay,
-  period, setPeriod, mode, modes, setMode, indicator, setIndicator, busy, refresh, add }: {
+  period, setPeriod, mode, modes, setMode, busy, refresh, add }: {
   visible: boolean; toggleVisible: () => void; chartStyle: ChartStyle; setChartStyle: (value: ChartStyle) => void;
   overlay: ChartOverlay; setOverlay: (value: ChartOverlay) => void; period: string; setPeriod: (value: string) => void;
-  mode: string; modes: string[]; setMode: (value: string) => void; indicator: string; setIndicator: (value: string) => void;
+  mode: string; modes: string[]; setMode: (value: string) => void;
   busy: boolean; refresh: () => void; add: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -91,7 +91,7 @@ export default function ChartControls({ visible, toggleVisible, chartStyle, setC
       <Choices label="行情周期" options={['分时', '日 K', '周 K', '1 分钟', '5 分钟', '15 分钟', '30 分钟', '60 分钟'].map(value => ({ value, label: value }))} value={period} onChange={setPeriod} />
       {period !== '分时' && <Choices label="显示范围" options={modes.map(value => ({ value, label: value }))} value={mode} onChange={setMode} />}
       {period !== '分时' && <Choices label="主图指标" options={chartOverlays} value={overlay} onChange={setOverlay} />}
-      {period !== '分时' && <Choices label="副图指标" options={['成交量', 'MACD', 'RSI'].map(value => ({ value, label: value }))} value={indicator} onChange={setIndicator} />}
+      <div className="chart-controls-note">在图表下方点击指标名称，可切换技术指标；同时显示模式收在指标菜单内。</div>
       {period === '分时' && <div className="chart-controls-note">分时显示当前交易日价格折线与分钟成交量；休市显示最近一个交易日。</div>}
       {period !== '分时' && chartStyle === 'heikin' && <div className="chart-controls-note">平滑 K 线由原始行情计算，适合观察趋势；卡片价格仍为真实行情。</div>}
       <button type="button" className="chart-menu-action" disabled={busy} onClick={refresh}><RefreshCw size={14} className={busy ? 'spin' : ''} aria-hidden="true" />{busy ? '行情获取中' : '刷新行情'}</button>

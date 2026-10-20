@@ -1,0 +1,24 @@
+.technical-chart { position: relative; width: 100%; min-width: 0; margin-top: 8px; }
+.technical-chart-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.chart-readout { position: absolute; left: 18px; right: 18px; height: 50px; min-width: 0; color: var(--theme-text, #526276); font-size: 10px; }
+.chart-readout-heading { display: flex; align-items: center; gap: 8px; height: 23px; min-width: 0; white-space: nowrap; }
+.chart-readout-heading > strong { font-size: 11px; font-weight: 600; }
+.chart-readout-heading time { margin-left: auto; color: var(--theme-muted, #8b9fac); font-size: 9px; }
+.chart-indicator-parameters { color: var(--theme-muted, #8b9fac); font-size: 9px; overflow: hidden; text-overflow: ellipsis; }
+.chart-readout-values { display: flex; align-items: center; gap: 13px; height: 26px; overflow-x: auto; scrollbar-width: thin; white-space: nowrap; }
+.chart-readout-value { display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px; line-height: 1.6; }
+.chart-readout-value > i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.chart-readout-value small { font-size: 9px; opacity: .85; margin-left: 3px; }
+.chart-readout-value b { font-size: 11px; font-weight: 600; margin-left: 3px; }
+.chart-ohlc { display: inline-flex; gap: 8px; color: var(--theme-muted, #8b9fac); font-variant-numeric: tabular-nums; }
+.chart-indicator-readout { border-top: 1px solid var(--theme-border, #e3e8ef); padding-top: 3px; }
+.chart-data-gap { color: var(--theme-muted, #8b9fac); font-size: 10px; }
+@media(max-width:760px) {
+  .chart-readout { left: 12px; right: 12px; }
+  .chart-readout-heading { gap: 5px; }
+  .chart-readout-heading time { font-size: 8px; }
+  .chart-readout-value { gap: 3px; }
+  .chart-readout-values { gap: 10px; }
+}
+
+.intraday-chart > .intraday-empty { top: 75px; bottom: auto; height: 190px; }
