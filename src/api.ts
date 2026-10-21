@@ -4,7 +4,7 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) { super(message); }
 }
 
-export async function api<T>(path: string, body?: unknown, signal?: AbortSignal, method?: 'POST' | 'PUT'): Promise<T> {
+export async function api<T>(path: string, body?: unknown, signal?: AbortSignal, method?: 'POST' | 'PUT' | 'DELETE'): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -20,7 +20,8 @@ export async function api<T>(path: string, body?: unknown, signal?: AbortSignal,
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = typeof payload?.detail === 'string' ? payload.detail : response.status === 422 ? '填写的信息格式不正确，请检查后重试。' : `请求失败（HTTP ${response.status}）`;
+    const details = Array.isArray(payload?.detail) ? payload.detail.slice(0, 3).map((item: { loc?: (string | number)[]; msg?: string }) => `${item.loc?.filter(part => part !== 'body').join('.') ?? ''}: ${item.msg ?? '格式无效'}`).join('；') : '';
+    const message = typeof payload?.detail === 'string' ? payload.detail : response.status === 422 ? details || '填写的信息格式不正确，请检查后重试。' : `请求失败（HTTP ${response.status}）`;
     if (!path.startsWith('/api/auth/') && (payload?.code === 'AUTH_REQUIRED' || payload?.code === 'ACCOUNT_DISABLED')) {
       window.dispatchEvent(new CustomEvent('finpulse:auth-required', { detail: message }));
     }

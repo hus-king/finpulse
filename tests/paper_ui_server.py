@@ -23,6 +23,7 @@ from backend.research import ResearchService
 from backend.research_store import ResearchStore
 from backend.quant.service import QuantService
 from backend.quant.api import router as quant_router
+from backend.quant.user_api import router as user_strategy_router, StrategyBodyLimitMiddleware
 
 
 def create_app(db_path: Path) -> FastAPI:
@@ -49,6 +50,8 @@ def create_app(db_path: Path) -> FastAPI:
     fixture.include_router(paper_router)
     fixture.state.quant = QuantService(fixture.state.paper_trading, clock=lambda:clock.now)
     fixture.include_router(quant_router)
+    fixture.include_router(user_strategy_router)
+    fixture.add_middleware(StrategyBodyLimitMiddleware)
 
     @fixture.post('/__test/clock')
     def set_clock(body: dict):
