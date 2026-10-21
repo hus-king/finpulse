@@ -10,6 +10,11 @@ def main():
             import akshare as ak
             kind, code, start, end = sys.argv[1:]
             symbol = ('sh' if code.startswith('6') else 'sz') + code
+            if kind == 'quant_daily':
+                from scripts.quant.collect import fetch_history
+                result = {'raw': fetch_history(code, start, end, ''), 'adjusted': fetch_history(code, start, end, 'qfq')}
+                print(json.dumps(result), file=sys.__stdout__)
+                return
             if kind == 'news':
                 frame = ak.stock_news_em(symbol=code)
             elif kind == 'profile':

@@ -54,7 +54,7 @@ class PaperTradingService:
                 'quote_status': 'fresh' if fresh else 'stale' if details['price_fen'] is not None else 'unavailable',
                 'refreshing': snapshot.get('refreshing', False), 'next_poll_seconds': snapshot.get('next_poll_seconds', 30)}
 
-    async def submit(self, owner: str, request_id: str, code: str, side: str, quantity: int) -> dict:
+    async def submit(self, owner: str, request_id: str, code: str, side: str, quantity: int, execution=None) -> dict:
         def apply(account, cached):
             stock = self._stock(code)  # Only validate a new order, after successful UUID replay.
             now = self.clock()  # Recheck after the account lock, even across session boundaries.
@@ -62,5 +62,7 @@ class PaperTradingService:
             if not market['can_trade']:
                 raise PaperError(market['reason_code'], market['reason'])
             return apply_trade(account, stock, side, quantity, valid_quote(cached, now), now)
-        return await asyncio.to_thread(self.store.transact, owner, request_id,
-            {'code': code, 'side': side, 'quantity': quantity}, apply)
+        args = (owner, request_id, {'code': code, 'side': side, 'quantity': quantity}, apply)
+        if execution is not None:
+            return await asyncio.to_thread(self.store.transact, *args, execution=execution, now=self.clock)
+        return await asyncio.to_thread(self.store.transact, *args)

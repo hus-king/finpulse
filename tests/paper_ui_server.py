@@ -21,6 +21,8 @@ from backend.paper_store import PaperStore
 from backend.paper_trading import PaperTradingService
 from backend.research import ResearchService
 from backend.research_store import ResearchStore
+from backend.quant.service import QuantService
+from backend.quant.api import router as quant_router
 
 
 def create_app(db_path: Path) -> FastAPI:
@@ -45,6 +47,8 @@ def create_app(db_path: Path) -> FastAPI:
     fixture.add_exception_handler(PaperError,paper_error_handler)
     fixture.include_router(auth_router)
     fixture.include_router(paper_router)
+    fixture.state.quant = QuantService(fixture.state.paper_trading, clock=lambda:clock.now)
+    fixture.include_router(quant_router)
 
     @fixture.post('/__test/clock')
     def set_clock(body: dict):
