@@ -50,4 +50,4 @@
 
 上一快照：`/home/airhust/finpulse-deploy/releases/20261020-indicators-c8b23a74`。环境备份：`shared/service.env.before-quant-fce362c`；发布/回退元信息：`shared/quant-release-fce362c.json`。需要回退时恢复环境备份（确保量化关闭），原子切回上一快照后重启finpulse.service；保留托管与交易审计记录。
 
-代码保留在本机 `codex/official-quant` 分支；本次没有向共享main推送或合并。接口和复现方法见 [量化说明](../../quant-training.md)。
+初次发布时，代码仅保留在本机 `codex/official-quant` 分支，未同步GitHub。用户随后要求将分支合并到 `main`，同步GitHub与服务器；后续发布的确切提交与回退路径记录在服务器 `shared/release.json` 中。接口和复现方法见 [量化说明](../../quant-training.md)。
