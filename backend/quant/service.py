@@ -14,6 +14,7 @@ from ..trading_calendar import previous_trade_day
 from .features import corporate_action, features
 from .store import QuantStore
 from .strategy import StrategyRegistry
+from .user_store import UserStrategyStore
 
 log=logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class QuantService:
         self.paper=paper;self.store=QuantStore(paper.store);self.registry=registry or StrategyRegistry()
         self.clock=clock or (lambda:datetime.now(SHANGHAI));self.enabled=enabled;self.task=None
         self.history_loader=self.load_histories
+        self.users=UserStrategyStore(self.store)
 
     def start(self):
         if self.enabled: self.task=asyncio.create_task(self.loop())
