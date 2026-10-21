@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { mkdir, readFile } from 'node:fs/promises';
+const { chromium } = await import(process.env.PLAYWRIGHT_CORE_PATH || '/home/kislate/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs');
+const base=process.env.PAPER_UI_BASE_URL || 'http://127.0.0.1:8012';
+const output='.runtime/user-strategy-ui';await mkdir(output,{recursive:true});
+const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '/opt/google/chrome/chrome',headless:true,args:['--no-sandbox']});
+const context=await browser.newContext({viewport:{width:1440,height:1050},acceptDownloads:true});const page=await context.newPage();const errors=[];const forbidden=[];
+page.on('pageerror',err=>errors.push(err.message));page.on('request',req=>{if(req.method()!=='GET' && /\/api\/(chat|analy|watchlist|research)/.test(req.url()))forbidden.push(req.url());});
+try {
+  await context.request.post(base+'/__test/clock',{data:{now:'2026-10-09T10:00:00+08:00'}});
+  await page.goto(base);await page.getByRole('navigation').getByRole('button',{name:'模拟盘',exact:true}).click();
+  await page.getByRole('button',{name:'登录体验模拟盘'}).click();await page.getByRole('button',{name:'没有账号？注册普通用户'}).click();
+  await page.getByLabel('用户名',{exact:true}).fill('rules_ui_'+Date.now());await page.getByLabel('昵称',{exact:true}).fill('规则测试');
+  await page.getByLabel('密码',{exact:true}).fill('Test-password-123!');await page.getByLabel('确认密码',{exact:true}).fill('Test-password-123!');await page.getByRole('button',{name:'创建账号并登录'}).click();
+  const pilot=page.getByRole('region',{name:'模拟盘操作方式'});
+  await pilot.getByText('我的策略 · 导入与管理',{exact:true}).click({timeout:5000});
+  const editor=pilot.getByRole('region',{name:'我的 JSON 策略'});const input=editor.getByLabel('策略 JSON',{exact:true});
+  await editor.getByRole('button',{name:'使用规则示例',exact:true}).click();await input.fill('{');await editor.getByRole('button',{name:'校验策略',exact:true}).click();await editor.getByRole('alert').getByText(/JSON/).waitFor();
+  const schema=(await (await context.request.get(base+'/api/paper/strategy-schema')).json());const pkg={...schema.example,name:'浏览器动量测试'};
+  await editor.getByLabel('导入 JSON 文件',{exact:true}).setInputFiles({name:'rules.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pkg))});
+  await editor.getByRole('button',{name:'校验策略',exact:true}).click();await editor.getByRole('status').getByText(/校验通过/).waitFor();
+  await editor.getByRole('button',{name:'保存为新策略',exact:true}).click();await editor.getByRole('status').getByText(/已保存/).waitFor();
+  const catalogue=await (await context.request.get(base+'/api/paper/strategies')).json();const mine=catalogue.items.find(s=>s.name===pkg.name);assert.equal(mine.origin,'user');
+  await pilot.getByLabel('操作方式',{exact:true}).selectOption(mine.id);await pilot.getByRole('button',{name:'启用我的策略',exact:true}).click();await pilot.getByText('算法托管中',{exact:true}).waitFor();
+  assert.equal(await editor.getByRole('button',{name:'保存修改',exact:true}).isDisabled(),true);assert.equal(await editor.getByRole('button',{name:'删除策略',exact:true}).isDisabled(),true);await pilot.getByText(/我的规则策略 · 尚未回测/).waitFor();
+  await page.screenshot({path:output+'/rules-active-dark.png',fullPage:true});
+  await pilot.getByRole('button',{name:'暂停并手动接管',exact:true}).click();await pilot.getByText('手动操作',{exact:true}).waitFor();
+  const changed={...pkg,name:'浏览器修改后的策略',version:'1.1.0'};await input.fill(JSON.stringify(changed,null,2));await editor.getByRole('button',{name:'保存修改',exact:true}).click();await editor.getByRole('status').getByText(/已保存.*r2/).waitFor();
+  const downloaded=page.waitForEvent('download');await editor.getByRole('button',{name:'导出 JSON',exact:true}).click();const download=await downloaded;await download.saveAs(output+'/export.json');assert.equal(JSON.parse(await readFile(output+'/export.json','utf8')).name,changed.name);
+  await page.getByRole('button',{name:'切换到浅色模式'}).click();await page.setViewportSize({width:390,height:844});await page.screenshot({path:output+'/rules-mobile-light.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await editor.getByRole('button',{name:'删除策略',exact:true}).click();await editor.getByRole('button',{name:'确认删除此策略',exact:true}).click();await editor.getByRole('status').getByText(/已删除/).waitFor();
+  assert.ok(!(await (await context.request.get(base+'/api/paper/strategies')).json()).items.some(s=>s.id===mine.id));
+  assert.deepEqual(errors,[]);assert.deepEqual(forbidden,[]);
+  console.log('PASS JSON error/import/validate/create, user origin/enable/active protections, pause/edit revision/export/delete, mobile/light, no paid writes/page errors');
+} finally {await browser.close();}

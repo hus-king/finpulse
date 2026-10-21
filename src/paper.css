@@ -693,3 +693,29 @@
 
 .paper-holding-link:hover strong { color:var(--theme-accent-text); text-decoration:underline; text-underline-offset:3px; }
 .paper-holding-link:focus-visible { outline:2px solid var(--theme-focus); outline-offset:5px; border-radius:3px; }
+
+.paper-user-strategies { margin-top:20px; border-top:1px solid var(--theme-border); padding-top:16px; }
+.paper-user-strategies>summary,.paper-rule-reference>summary { cursor:pointer; color:var(--theme-text); font-size:12px; }
+.paper-rule-editor { display:flex; flex-direction:column; gap:14px; margin-top:15px; min-width:0; }
+.paper-rule-editor p { color:var(--theme-muted); font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.paper-rule-toolbar { display:flex; align-items:end; gap:9px; flex-wrap:wrap; }
+.paper-rule-toolbar label { display:flex; flex-direction:column; gap:7px; font-size:11px; color:var(--theme-muted); min-width:0; }
+.paper-rule-toolbar select { max-width:100%; min-width:190px; padding:9px; background:var(--theme-panel); color:var(--theme-text); border:1px solid var(--theme-border); border-radius:6px; }
+.paper-rule-toolbar button,.paper-rule-confirm button { border:1px solid var(--theme-border); border-radius:6px; padding:9px 12px; font-size:11px; color:var(--theme-text); }
+.paper-rule-toolbar button:disabled,.paper-rule-confirm button:disabled { opacity:.45; cursor:not-allowed; }
+.paper-rule-toolbar .primary-button { color:var(--theme-accent); }
+.paper-rule-file input { width:260px; max-width:100%; font-size:11px; }
+.paper-rule-json { display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--theme-text); }
+.paper-rule-json textarea { width:100%; min-width:0; min-height:310px; resize:vertical; padding:14px; border:1px solid var(--theme-border); border-radius:7px; background:var(--theme-background); color:var(--theme-text); font-family:ui-monospace,monospace; font-size:12px; line-height:1.65; tab-size:2; }
+.paper-rule-json textarea:focus { outline:2px solid var(--theme-accent); outline-offset:2px; }
+.paper-rule-json textarea:read-only { opacity:.65; }
+.paper-rule-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px; border:1px solid var(--theme-border); border-radius:7px; font-size:12px; color:var(--theme-text); }
+.paper-rule-editor .paper-rule-success { color:var(--theme-accent); }
+.paper-rule-summary { margin-top:15px; padding:14px; border:1px solid var(--theme-border); border-radius:8px; font-size:12px; color:var(--theme-text); overflow-wrap:anywhere; }
+.paper-rule-summary p { margin-top:8px; color:var(--theme-muted); line-height:1.8; }
+.paper-rule-reference p { margin:12px 0; }
+.paper-rule-reference dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:14px 0; font-size:11px; }
+.paper-rule-reference dt { color:var(--theme-text); font-family:ui-monospace,monospace; }
+.paper-rule-reference dd { margin:3px 0 0; color:var(--theme-muted); line-height:1.6; }
+.paper-rule-reference a { font-size:12px; color:var(--theme-accent); }
+@media(max-width:760px) { .paper-rule-toolbar { align-items:stretch; } .paper-rule-toolbar label { width:100%; } .paper-rule-toolbar select { width:100%; min-width:0; } .paper-rule-reference dl { grid-template-columns:1fr; } .paper-rule-json textarea { min-height:280px; font-size:11px; } }

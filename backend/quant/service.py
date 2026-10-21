@@ -14,6 +14,7 @@ from ..trading_calendar import previous_trade_day
 from .features import corporate_action, features
 from .store import QuantStore
 from .strategy import StrategyRegistry
+from .user_store import UserStrategyStore
 
 log=logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class QuantService:
         self.paper=paper;self.store=QuantStore(paper.store);self.registry=registry or StrategyRegistry()
         self.clock=clock or (lambda:datetime.now(SHANGHAI));self.enabled=enabled;self.task=None
         self.history_loader=self.load_histories
+        self.users=UserStrategyStore(self.store)
 
     def start(self):
         if self.enabled: self.task=asyncio.create_task(self.loop())
@@ -45,11 +47,29 @@ class QuantService:
         return {**config,'scheduler_enabled':self.enabled,'runtime':runtime,'last_decision':latest[0] if latest else None,
                 'next_check':'交易日北京时间10:00后，每分钟检查；每日一次决策'}
 
-    def configure(self,owner,mode,strategy_id,expected_revision):
+    def strategy(self,owner,strategy_id):
+        if isinstance(strategy_id,str) and strategy_id.startswith('user-'):
+            return self.users.adapter(owner,strategy_id)
+        return self.registry.get(strategy_id)
+
+    def strategies(self,owner):
+        return [{**item,'origin':'official'} for item in self.registry.list()]+self.users.metadata(owner)
+
+    def configure(self,owner,mode,strategy_id,expected_revision,strategy_revision=None):
+        validator=None
         if mode=='algorithm':
-            try: self.registry.get(strategy_id).validate_config({})
+            try: self.strategy(owner,strategy_id).validate_config({})
             except ValueError as exc: raise PaperError('STRATEGY_UNAVAILABLE',str(exc),422) from None
-        return self.store.configure(owner,mode,strategy_id,expected_revision)
+            if strategy_id.startswith('user-'):
+                if type(strategy_revision) is not int or strategy_revision<1:
+                    raise PaperError('STRATEGY_REVISION_REQUIRED','启用我的策略需要指定当前策略版本。',422)
+                def validator(conn):
+                    record=self.paper.store._get(conn,'user_strategy',strategy_id,owner,None)
+                    if not record:raise PaperError('STRATEGY_NOT_FOUND','未找到你的策略。',404)
+                    if record['revision']!=strategy_revision:
+                        raise PaperError('STRATEGY_REVISION_CONFLICT','策略已更新，请刷新后重新选择。')
+                    self.users.from_record(record)
+        return self.store.configure(owner,mode,strategy_id,expected_revision,validator=validator)
 
     async def load_histories(self,codes,signal):
         result={}
@@ -102,13 +122,13 @@ class QuantService:
             finally: await asyncio.to_thread(self.store.records.release,'quant:'+owner,lease)
 
     async def run_owner(self,owner,cfg,key,token):
-        strategy=self.registry.get(cfg['strategy_id'])
+        strategy=self.strategy(owner,cfg['strategy_id'])
         metadata=strategy.metadata()
         universe=metadata['universe']
         if any(self.paper.catalog.get(code) is None for code in universe):
             await self.paper.catalog.ensure()
         if any(self.paper.catalog.get(code) is None for code in universe):
-            raise ValueError('官方股票池元数据尚未核验，等待交易所列表更新')
+            raise ValueError('策略股票池元数据尚未核验，等待交易所列表更新')
         signal=previous_trade_day(self.clock().date())
         if signal is None: raise ValueError('交易日历待更新')
         signal=signal.isoformat()

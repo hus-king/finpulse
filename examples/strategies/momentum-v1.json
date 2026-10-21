@@ -1,0 +1,57 @@
+{
+  "schema_version": "finpulse.rules.v1",
+  "name": "我的稳健动量策略",
+  "description": "20日与60日动量排序，过滤高波动，仅为规则示例，未做收益验证。",
+  "version": "1.0.0",
+  "universe": [
+    "000001",
+    "600519",
+    "300750"
+  ],
+  "score": {
+    "op": "add",
+    "args": [
+      {
+        "op": "mul",
+        "args": [
+          {
+            "feature": "return_20"
+          },
+          {
+            "value": 0.6
+          }
+        ]
+      },
+      {
+        "op": "mul",
+        "args": [
+          {
+            "feature": "return_60"
+          },
+          {
+            "value": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "filters": [
+    {
+      "left": {
+        "feature": "volatility_20"
+      },
+      "op": "lt",
+      "right": {
+        "value": 0.05
+      }
+    }
+  ],
+  "selection": {
+    "top_n": 3,
+    "min_score": 0.0
+  },
+  "allocation": {
+    "per_stock_weight": 0.2,
+    "max_total_weight": 0.6
+  }
+}

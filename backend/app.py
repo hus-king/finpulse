@@ -37,6 +37,7 @@ from .paper_api import router as paper_router, paper_error_handler
 
 from .quant.service import QuantService
 from .quant.api import router as quant_router
+from .quant.user_api import router as user_strategy_router, StrategyBodyLimitMiddleware
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.local.json"
@@ -76,6 +77,7 @@ async def lifespan(application):
 
 
 app = FastAPI(title="FinPulse Research API", version="0.3.0", lifespan=lifespan)
+app.add_middleware(StrategyBodyLimitMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in os.environ.get("FINPULSE_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",") if host.strip()])
 app.add_exception_handler(AuthError, auth_error_handler)
 app.add_exception_handler(PaperError, paper_error_handler)
@@ -84,6 +86,7 @@ app.include_router(admin_router)
 app.include_router(research_router)
 app.include_router(paper_router)
 app.include_router(quant_router)
+app.include_router(user_strategy_router)
 
 
 @app.exception_handler(pymysql.OperationalError)

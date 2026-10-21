@@ -1,0 +1,265 @@
+{
+  "$defs": {
+    "Allocation": {
+      "additionalProperties": false,
+      "properties": {
+        "per_stock_weight": {
+          "default": 0.2,
+          "maximum": 0.2,
+          "minimum": 0,
+          "title": "Per Stock Weight",
+          "type": "number"
+        },
+        "max_total_weight": {
+          "default": 0.8,
+          "maximum": 0.8,
+          "minimum": 0,
+          "title": "Max Total Weight",
+          "type": "number"
+        }
+      },
+      "title": "Allocation",
+      "type": "object"
+    },
+    "FeatureExpr": {
+      "additionalProperties": false,
+      "properties": {
+        "feature": {
+          "enum": [
+            "return_1",
+            "return_5",
+            "return_10",
+            "return_20",
+            "return_60",
+            "ma_5",
+            "ma_20",
+            "ma_60",
+            "volatility_20",
+            "volume_5",
+            "volume_20",
+            "range_20"
+          ],
+          "title": "Feature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feature"
+      ],
+      "title": "FeatureExpr",
+      "type": "object"
+    },
+    "Filter": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FeatureExpr"
+            },
+            {
+              "$ref": "#/$defs/ValueExpr"
+            },
+            {
+              "$ref": "#/$defs/OperationExpr"
+            }
+          ],
+          "title": "Left"
+        },
+        "op": {
+          "enum": [
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "eq"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FeatureExpr"
+            },
+            {
+              "$ref": "#/$defs/ValueExpr"
+            },
+            {
+              "$ref": "#/$defs/OperationExpr"
+            }
+          ],
+          "title": "Right"
+        }
+      },
+      "required": [
+        "left",
+        "op",
+        "right"
+      ],
+      "title": "Filter",
+      "type": "object"
+    },
+    "OperationExpr": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "add",
+            "sub",
+            "mul",
+            "div",
+            "min",
+            "max",
+            "abs"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FeatureExpr"
+              },
+              {
+                "$ref": "#/$defs/ValueExpr"
+              },
+              {
+                "$ref": "#/$defs/OperationExpr"
+              }
+            ]
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Args",
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "args"
+      ],
+      "title": "OperationExpr",
+      "type": "object"
+    },
+    "Selection": {
+      "additionalProperties": false,
+      "properties": {
+        "top_n": {
+          "default": 5,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Top N",
+          "type": "integer"
+        },
+        "min_score": {
+          "anyOf": [
+            {
+              "maximum": 1000000,
+              "minimum": -1000000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.0,
+          "title": "Min Score"
+        }
+      },
+      "title": "Selection",
+      "type": "object"
+    },
+    "ValueExpr": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "ValueExpr",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "finpulse.rules.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 60,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Description",
+      "type": "string"
+    },
+    "version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Version",
+      "type": "string"
+    },
+    "universe": {
+      "items": {
+        "pattern": "^[0-9]{6}$",
+        "type": "string"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Universe",
+      "type": "array"
+    },
+    "score": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FeatureExpr"
+        },
+        {
+          "$ref": "#/$defs/ValueExpr"
+        },
+        {
+          "$ref": "#/$defs/OperationExpr"
+        }
+      ],
+      "title": "Score"
+    },
+    "filters": {
+      "items": {
+        "$ref": "#/$defs/Filter"
+      },
+      "maxItems": 12,
+      "title": "Filters",
+      "type": "array"
+    },
+    "selection": {
+      "$ref": "#/$defs/Selection"
+    },
+    "allocation": {
+      "$ref": "#/$defs/Allocation"
+    }
+  },
+  "required": [
+    "schema_version",
+    "name",
+    "version",
+    "universe",
+    "score"
+  ],
+  "title": "RulePackage",
+  "type": "object"
+}
