@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { mkdir, readFile } from 'node:fs/promises';
+const report=JSON.parse(await readFile(new URL('../models/official_quant/report.json',import.meta.url),'utf8'));
+const expectedLoss=(-report.test.model.total_return*100).toFixed(2);
+const { chromium } = await import(process.env.PLAYWRIGHT_CORE_PATH || '/home/kislate/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs');
+const base=process.env.PAPER_UI_BASE_URL || 'http://127.0.0.1:8012';
+const output=process.env.QUANT_UI_OUTPUT || '.runtime/quant';await mkdir(output,{recursive:true});
+const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '/opt/google/chrome/chrome',headless:true,args:['--no-sandbox']});
+const context=await browser.newContext({viewport:{width:1440,height:1050}});const page=await context.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
+try {
+  await context.request.post(base+'/__test/clock',{data:{now:'2026-10-09T10:00:00+08:00',prices:{'000001':10}}});
+  await page.goto(base);await page.getByRole('navigation').getByRole('button',{name:'模拟盘',exact:true}).click();
+  await page.getByRole('button',{name:'登录体验模拟盘'}).click();await page.getByRole('button',{name:'没有账号？注册普通用户'}).click();
+  await page.getByLabel('用户名',{exact:true}).fill('quant_ui_'+Date.now());await page.getByLabel('昵称',{exact:true}).fill('量化测试');
+  await page.getByLabel('密码',{exact:true}).fill('Test-password-123!');await page.getByLabel('确认密码',{exact:true}).fill('Test-password-123!');
+  await page.getByRole('button',{name:'创建账号并登录'}).click();
+  const pilot=page.getByRole('region',{name:'模拟盘操作方式'});
+  await pilot.getByText('手动操作',{exact:true}).waitFor();
+  await pilot.getByText('官方策略 · 训练与样本外表现').click();
+  await pilot.getByText(/研究版：这段样本外测试亏损/).waitFor();
+  assert.ok((await pilot.innerText()).includes(expectedLoss+'%'));
+  await page.screenshot({path:output+'/quant-dark.png',fullPage:true});
+  await pilot.getByLabel('操作方式',{exact:true}).selectOption('official-multifactor-v1');await pilot.getByRole('button',{name:'启用官方算法',exact:true}).click();
+  await pilot.getByText('算法托管中',{exact:true}).waitFor();
+  await page.reload();await page.getByRole('navigation').getByRole('button',{name:'模拟盘',exact:true}).click();
+  await pilot.getByText('算法托管中',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'确认模拟买入',exact:true}).isDisabled(),true);
+  await pilot.getByRole('button',{name:'暂停并手动接管',exact:true}).click();await pilot.getByText('手动操作',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'切换到浅色模式'}).click();await page.screenshot({path:output+'/quant-light.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});await pilot.getByText('官方策略 · 训练与样本外表现').click();
+  await page.screenshot({path:output+'/quant-mobile.png',fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'mobile horizontal overflow');
+  assert.deepEqual(errors,[]);
+  console.log('PASS manual/default, report/loss, enable, reload persists, manual disabled, pause, themes/mobile, no page errors');
+} finally {await browser.close();}

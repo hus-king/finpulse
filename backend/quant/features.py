@@ -30,8 +30,21 @@ def features(candles):
 
 
 def corporate_action(raw, adjusted):
-    """Detect adjustment-factor changes, not ordinary price moves."""
-    if len(raw) != len(adjusted) or any(a['date'] != b['date'] for a,b in zip(raw,adjusted)):
+    """Tencent adjustments are piecewise AFFINE (cash dividends + splits).
+
+    Ratio changes alone falsely flag every cash-adjusted price move. Fit OHLC
+    to one affine map per window; a real ex-action changes slope/intercept.
+    Two-fen residual tolerance allows upstream cent rounding.
+    """
+    if len(raw) != len(adjusted) or not raw or any(a['date'] != b['date'] for a,b in zip(raw,adjusted)):
         raise ValueError('复权与原始行情日期不一致')
-    factors = [float(b['close'])/float(a['close']) for a,b in zip(raw,adjusted)]
-    return any(abs(b/a-1) > .002 for a,b in zip(factors,factors[1:]))
+    pairs=[(float(a[k]),float(b[k])) for a,b in zip(raw,adjusted) for k in ('open','close','high','low')]
+    if not all(math.isfinite(x) and math.isfinite(y) and x>0 for x,y in pairs):
+        raise ValueError('复权参照数值无效')
+    mx=sum(x for x,y in pairs)/len(pairs);my=sum(y for x,y in pairs)/len(pairs)
+    variance=sum((x-mx)**2 for x,y in pairs)
+    if variance<1e-12:
+        return max(y for x,y in pairs)-min(y for x,y in pairs)>.025
+    slope=sum((x-mx)*(y-my) for x,y in pairs)/variance
+    tolerance=.025+max(abs(y) for x,y in pairs)*.000005
+    return slope<=0 or max(abs(y-(my+slope*(x-mx))) for x,y in pairs)>tolerance

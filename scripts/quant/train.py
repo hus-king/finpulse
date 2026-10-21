@@ -53,7 +53,7 @@ def metrics(equity, years=None, trades=0):
 def backtest(data, strategy, dates, kind='model'):
     # No future eligibility filters: current signal uses only previous completed bars.
     lookup={c:{r['date']:i for i,r in enumerate(d['raw'])} for c,d in data.items()}
-    cash=20_000_000; positions={}; curve=[cash]; fills=[]; events=0; total_gross=0
+    cash=20_000_000; positions={}; curve=[cash]; fills=[]; events=0; total_gross=0; equity_dates=[]
     days=sorted(set(dates)); suspended=False; highwater=cash
     for signal in days:
         idx={c:lookup[c].get(signal) for c in data}
@@ -65,20 +65,25 @@ def backtest(data, strategy, dates, kind='model'):
         equity=cash+sum(p['quantity']*prices[c] for c,p in positions.items()); highwater=max(highwater,equity)
         if equity<highwater*.85: suspended=True
         histories={c:d['raw'][:idx[c]+1] for c,d in data.items()}
+        valid_signal=True
         try:
             if kind=='model': weights=strategy.decide(histories,signal)['target_weights']
             elif kind=='momentum':
                 selected=sorted(data,key=lambda c:(-features(histories[c])[3],c))[:5]
                 weights={c:.16 for c in selected if features(histories[c])[3]>0}
             else: weights={c:.8/len(data) for c in data}
-        except ValueError: weights={}
+        except ValueError:
+            weights={};valid_signal=False
         # Only past-known corporate action history controls today's new risk.
         eligible={c:not corporate_action(data[c]['raw'][idx[c]-64:idx[c]+1],data[c]['adjusted'][idx[c]-64:idx[c]+1]) for c in data}
         budget=int(equity*.3); spent=0
         targets={c:int(equity*weights.get(c,0)/prices[c])//100*100 for c in data}
         for side in ('sell','buy'):
             for c in sorted(data):
-                if suspended: continue
+                if suspended or not valid_signal: continue
+                bar=data[c]['raw'][idx[c]+1]
+                previous_close=data[c]['raw'][idx[c]]['close']
+                if bar['volume']<=0 or abs(bar['open']/previous_close-1)>=.045: continue
                 p=positions.get(c,{'quantity':0,'cost':0,'day':''})
                 diff=targets[c]-p['quantity']
                 quantity=(-diff if side=='sell' else diff)//100*100
@@ -106,10 +111,12 @@ def backtest(data, strategy, dates, kind='model'):
             if corporate_action(data[c]['raw'][i:i+2],data[c]['adjusted'][i:i+2]): events+=1
         close={c:round(data[c]['raw'][i+1]['close']*100) for c,i in idx.items()}
         curve.append(cash+sum(p['quantity']*close[c] for c,p in positions.items()))
+        equity_dates.append(day)
     result=metrics(curve,trades=len(fills))
     result.update(win_rate=sum(p>0 for p in fills)/len(fills) if fills else None,
                   turnover=total_gross/(statistics.mean(curve) or 1),corporate_action_holding_days=events,
-                  risk_paused=suspended, start=days[0],end=days[-1], equity_curve=curve)
+                  risk_paused=suspended, start=days[0],end=equity_dates[-1] if equity_dates else days[-1],
+                  signal_start=days[0],signal_end=days[-1],equity_dates=[days[0],*equity_dates],equity_curve=curve)
     return result
 
 
@@ -159,11 +166,11 @@ def train(root, output, device='cuda'):
     layers=[{'weight':l.weight.detach().cpu().tolist(),'bias':l.bias.detach().cpu().tolist()} for l in net if isinstance(l,nn.Linear)]
     model={'schema':1,'feature_version':FEATURE_VERSION,'feature_names':FEATURE_NAMES,'mean':mean.tolist(),'scale':scale.tolist(),
            'layers':layers,'universe':list(data),'trained_through':max(r['label_end'] for r in parts[0]),'threshold':.005,
-           'version':'20261021-mlp-v1'}
+           'version':'20261021-mlp-v2'}
     report={'model_sha256':'','manifest':manifest,'device':device,'epochs':epoch+1,'training_seconds':round(time.time()-started,2),
             'gpu_peak_allocated_mib':round(torch.cuda.max_memory_allocated()/1024**2,2) if device=='cuda' else 0,
             'partitions':[{ 'start':p[0]['date'],'end':p[-1]['date'],'label_end':max(r['label_end'] for r in p),'rows':len(p)} for p in parts],
-            'limits':['当前股票池含幸存者及选择偏差','模拟器不处理分红送转；公司行为持仓日计数单列，未计分红，非精确总回报',
+            'limits':['15%回撤触发停止新交易，保留持仓；实际最大回撤可继续扩大','公司行为检测已修正为腾讯前复权仿射关系；旧版比率检测报告作废，保持原数据/配置重新训练','当前股票池含幸存者及选择偏差','模拟器不处理分红送转；公司行为持仓日计数单列，未计分红，非精确总回报',
                       '训练样本排除复权因子变化窗口；测试组合只按已知历史过滤，不提前知道未来公司行为',
                       '下一日开盘成交近似线上10点分钟成交；费用使用当前模拟盘固定费率，双边滑点10bp',
                       '离线历史结果不代表未来收益；测试仅用于最终报告，不参与模型与阈值选择']}
@@ -188,7 +195,7 @@ def train(root, output, device='cuda'):
     report['export_max_absolute_error']=max(differences)
     if max(differences)>1e-5: raise ValueError('导出推理不一致')
     report['dependencies']={'torch':torch.__version__,'numpy':np.__version__}
-    save();print(json.dumps({k:{m:v for m,v in r.items() if m!='equity_curve'} for k,r in report['test'].items()},ensure_ascii=False),flush=True)
+    save();print(json.dumps({k:{m:v for m,v in r.items() if m not in ('equity_curve','equity_dates')} for k,r in report['test'].items()},ensure_ascii=False),flush=True)
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--data',required=True);parser.add_argument('--output',required=True);parser.add_argument('--device',default='cuda')

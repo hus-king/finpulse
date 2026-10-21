@@ -38,7 +38,38 @@ class QuantTrainingTests(unittest.TestCase):
         result=backtest({'000001':{'raw':bars,'adjusted':bars}},Fixed(),[b['date'] for b in bars[70:80]])
         self.assertLess(result['total_return'],0)
         self.assertGreater(result['total_return'],-.01)
-        changed=[dict(b) for b in bars];changed[70]['close']=1000
+        changed=[dict(b) for b in bars];changed[70].update(close=10.1,high=10.1)
         # Signal close cannot be the fill price; next open remains 10.
         alternate=backtest({'000001':{'raw':changed,'adjusted':changed}},Fixed(),[bars[70]['date']])
         self.assertEqual(alternate['equity_curve'],result['equity_curve'][:2])
+
+    def test_tencent_additive_dividend_adjustment_is_not_daily_corporate_actions(self):
+        raw=history(100)
+        for i,b in enumerate(raw):
+            value=10+(i%7)*.3
+            b.update(open=value,close=value,high=value+.1,low=value-.1)
+        adjusted=[{**b,**{k:round(b[k]-3.36,2) for k in ('open','close','high','low')}} for b in raw]
+        self.assertFalse(corporate_action(raw,adjusted))
+        for b in adjusted[-20:]:
+            for k in ('open','close','high','low'):b[k]+=.3
+        self.assertTrue(corporate_action(raw,adjusted))
+
+    def test_backtest_skips_untradable_execution_day_and_invalid_signal(self):
+        from scripts.quant.train import backtest
+        bars=history(105)
+        for b in bars:b.update(open=10,close=10,high=10.1,low=9.9,volume=10000)
+        class Fixed:
+            def decide(self,histories,signal):return {'target_weights':{'000001':.2}}
+        for changed in [dict(bars[71],volume=0),dict(bars[71],open=11,close=11,high=11,low=11)]:
+            data=[dict(b) for b in bars];data[71]=changed
+            result=backtest({'000001':{'raw':data,'adjusted':data}},Fixed(),[bars[70]['date']])
+            self.assertEqual(result['equity_curve'],[20_000_000,20_000_000])
+        class FailingSecond:
+            def decide(self,histories,signal):
+                if signal==bars[71]['date']:raise ValueError('broken signal')
+                return {'target_weights':{'000001':.2}}
+        data={'000001':{'raw':bars,'adjusted':bars}}
+        first=backtest(data,Fixed(),[bars[70]['date']])
+        result=backtest(data,FailingSecond(),[bars[70]['date'],bars[71]['date']])
+        self.assertEqual(result['trades'],0)
+        self.assertEqual(result['equity_curve'][-1],first['equity_curve'][-1])

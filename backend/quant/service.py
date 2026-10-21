@@ -103,22 +103,28 @@ class QuantService:
 
     async def run_owner(self,owner,cfg,key,token):
         strategy=self.registry.get(cfg['strategy_id'])
+        metadata=strategy.metadata()
+        universe=metadata['universe']
+        if any(self.paper.catalog.get(code) is None for code in universe):
+            await self.paper.catalog.ensure()
+        if any(self.paper.catalog.get(code) is None for code in universe):
+            raise ValueError('官方股票池元数据尚未核验，等待交易所列表更新')
         signal=previous_trade_day(self.clock().date())
         if signal is None: raise ValueError('交易日历待更新')
         signal=signal.isoformat()
         decision=await asyncio.to_thread(self.store.records.get,'quant_decision',key,owner,default=None)
-        if decision and decision['model_version']!=strategy.model['version']:
+        if decision and decision['model_version']!=metadata['version']:
             raise ValueError('本轮模型版本已改变，请检查后切回手动再启用')
         if not decision:
             account=await asyncio.to_thread(self.paper.account,owner)
-            codes=list(dict.fromkeys([*strategy.model['universe'],*(p['code'] for p in account['positions'])]))
+            codes=list(dict.fromkeys([*universe,*(p['code'] for p in account['positions'])]))
             dataset=await self.history_loader(codes,signal)
             proposed=strategy.decide({c:d['raw'] for c,d in dataset.items()},signal)
             weights=proposed['target_weights']
-            if (len(weights)>5 or any(c not in strategy.model['universe'] or not math.isfinite(w) or not 0<=w<=.2 for c,w in weights.items())
+            if (len(weights)>5 or any(c not in universe or not math.isfinite(w) or not 0<=w<=.2 for c,w in weights.items())
                     or sum(weights.values())>.80000001): raise ValueError('策略输出超过风控上限')
             eligible=[c for c,d in dataset.items() if not corporate_action(d['raw'][-65:],d['adjusted'][-65:])]
-            managed=set(strategy.model['universe'])
+            managed=set(universe)
             needed=list(dict.fromkeys([*(p['code'] for p in account['positions']),*weights]))
             for code in needed:
                 await self.fresh(code)

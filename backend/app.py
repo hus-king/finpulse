@@ -183,11 +183,13 @@ def health():
     scheduler_enabled = bool(scheduler and scheduler.running and app.state.research.briefing.settings()['enabled'])
     warming = getattr(getattr(app.state, 'market_bundle', None), 'warm_task', None)
     market_warm_enabled = bool(warming and not warming.done())
+    quant = getattr(app.state, 'quant', None)
+    quant_enabled = bool(quant and quant.task and not quant.task.done())
     try:
         config = load_config()
-        return {"status": "ok", "configured": True, "model": config.model, "provider": urlparse(config.base_url).hostname, "data_source": "live", "tavily_configured": bool(tavily_keys()), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
+        return {"status": "ok", "configured": True, "model": config.model, "provider": urlparse(config.base_url).hostname, "data_source": "live", "tavily_configured": bool(tavily_keys()), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled, "quant_enabled": quant_enabled}
     except HTTPException:
-        return {"status": "ok", "configured": False, "model": None, "provider": None, "data_source": "live", "tavily_configured": bool(tavily_keys()), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled}
+        return {"status": "ok", "configured": False, "model": None, "provider": None, "data_source": "live", "tavily_configured": bool(tavily_keys()), "scheduler_enabled": scheduler_enabled, "market_warm_enabled": market_warm_enabled, "quant_enabled": quant_enabled}
 
 
 @app.get("/api/stocks")

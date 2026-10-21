@@ -20,11 +20,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m scripts.quant.run_guarded --root . \
 
 按全体股票共同日期切分60%训练、20%验证、20%测试，清除标签跨界样本。标准化仅拟合训练集；早停和三个固定阈值只用验证集。最终测试不用于调参，部署的是同一份被测试的模型，没有事后用测试区间重新训练。
 
-回测是未复权模拟价格损益，下一日开盘成交近似线上10点分钟成交；已计当前模拟费率与双边10bp滑点。训练过滤特征及标签跨公司行为的窗口；测试交易只按信号日已知历史过滤，绝不预知未来除权日。持仓跨公司行为时不补发分红/送转，事件次数单列，所以结果并非精确的真实总回报，也不能宣称可逐笔复制。基准使用相同费用、滑点和风险暂停；等权基准在30只股票间配置80%，模型与动量最多5只。
+回测是未复权模拟价格损益，下一日开盘成交近似线上10点分钟成交；已计当前模拟费率与双边10bp滑点。公司行为以腾讯前复权与原始OHLC之间的分段仿射关系检测，允许上游分位精度误差。训练过滤特征及标签跨公司行为的窗口；测试交易只按信号日已知历史过滤，绝不预知未来除权日。持仓跨公司行为时不补发分红/送转，事件次数单列，所以结果并非精确的真实总回报，也不能宣称可逐笔复制。基准使用相同费用、滑点和风险暂停；等权基准在30只股票间配置80%，模型与动量最多5只。
 
 ## 添加官方算法
 
-实现 `backend.quant.strategy.Strategy` 的 `metadata()`、`validate_config(config)` 和 `decide(histories, as_of)`，通过 `StrategyRegistry.register(id, adapter)` 注册。当前执行适配器读取 `adapter.model['universe']` 与 `['version']`，历史输入为代码→完整未复权日线，输出至少包含：
+实现 `backend.quant.strategy.Strategy` 的 `metadata()`、`validate_config(config)` 和 `decide(histories, as_of)`，通过 `StrategyRegistry.register(id, adapter)` 注册。当前执行适配器读取 `metadata()` 返回的 `universe` 与 `version`，不要求特定模型内部结构，历史输入为代码→完整未复权日线，输出至少包含：
 
 ```json
 {"as_of":"2026-10-20","model_version":"custom-v1","target_weights":{"000001":0.2},"reason":"策略解释"}

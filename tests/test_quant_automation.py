@@ -121,3 +121,74 @@ class QuantAutomationTests(unittest.TestCase):
         asyncio.run(self.service.tick())
         self.assertEqual(len(self.service.store.records.list('paper_trade')),1)
         self.assertEqual(self.client.get('/api/paper/automation/decisions').json()['items'][0]['status'],'completed')
+
+    def test_daily_budget_cannot_reset_by_switching_modes(self):
+        execution=self.execution_context()
+        self.service.store.records.put('quant_day',self.now.date().isoformat(),{'spent_fen':5_950_000,'budget_fen':6_000_000},self.owner)
+        self.configure('manual',1);self.configure('algorithm',2)
+        decision=self.service.store.records.get('quant_decision',execution['decision_key'],self.owner)
+        decision['revision']=3;self.service.store.records.put('quant_decision',execution['decision_key'],decision,self.owner)
+        execution['revision']=3
+        with self.assertRaises(PaperError) as failure:
+            asyncio.run(self.service.paper.submit(self.owner,str(uuid.uuid4()),'000001','buy',100,execution=execution))
+        self.assertEqual(failure.exception.code,'QUANT_RISK_LIMIT')
+        self.assertEqual(self.service.store.records.list('paper_trade'),[])
+
+    def test_pause_serializes_with_an_inflight_order(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        execution=self.execution_context(); entered=Event(); release=Event()
+        original=self.service.paper.store._put
+        def blocking(conn,namespace,*args):
+            if namespace=='paper_trade': entered.set();release.wait(3)
+            return original(conn,namespace,*args)
+        with ThreadPoolExecutor(max_workers=2) as pool, patch.object(self.service.paper.store,'_put',side_effect=blocking):
+            fill=pool.submit(lambda:asyncio.run(self.service.paper.submit(self.owner,str(uuid.uuid4()),'000001','buy',100,execution=execution)))
+            self.assertTrue(entered.wait(3))
+            pause=pool.submit(self.service.store.configure,self.owner,'manual',None,1)
+            self.assertFalse(pause.done());release.set();fill.result();pause.result()
+        with self.assertRaises(PaperError):
+            asyncio.run(self.service.paper.submit(self.owner,str(uuid.uuid4()),'000001','buy',100,execution=execution))
+        self.assertEqual(len(self.service.store.records.list('paper_trade')),1)
+
+    def test_other_holding_without_valid_quote_blocks_new_risk(self):
+        execution=self.execution_context()
+        # Buy once, then make its mark stale; a fresh candidate cannot conceal it.
+        asyncio.run(self.service.paper.submit(self.owner,str(uuid.uuid4()),'000001','buy',100,execution=execution))
+        self.service.store.records.put('minute_market','000001:1',{})
+        with self.assertRaises(PaperError):
+            asyncio.run(self.service.paper.submit(self.owner,str(uuid.uuid4()),'000001','buy',100,execution=execution))
+        self.assertEqual(len(self.service.store.records.list('paper_trade')),1)
+
+    def test_adapter_contract_uses_metadata_and_ensures_unattended_catalog(self):
+        from unittest.mock import AsyncMock
+        self.ready()
+        class Adapter:
+            def metadata(self):return {'id':'test','name':'Adapter','available':True,'universe':['600030'],'version':'test-v1'}
+            def validate_config(self,cfg):return {}
+            def decide(self,histories,as_of):return {}
+        self.service.registry.strategies={'test':Adapter()};self.configure()
+        catalogue=self.service.paper.catalog
+        catalogue.items.pop('600030',None)
+        async def ensure():catalogue.items['600030']={'code':'600030','name':'中信证券'}
+        async def probe(codes,signal):
+            self.assertEqual(codes,['600030'])
+            raise ValueError('history probe')
+        self.service.history_loader=probe
+        with patch.object(catalogue,'ensure',new=AsyncMock(side_effect=ensure)) as loaded:
+            with self.assertRaisesRegex(ValueError,'history probe'):
+                asyncio.run(self.service.run_owner(self.owner,self.service.store.config(self.owner),'probe','token'))
+            loaded.assert_awaited_once()
+
+    def test_background_scheduler_is_opt_in_and_shuts_down(self):
+        from unittest.mock import AsyncMock
+        self.ready()
+        self.assertIsNone(self.service.task)
+        self.assertFalse(self.client.get('/api/health').json()['quant_enabled'])
+        self.service.enabled=True
+        async def check():
+            with patch.object(self.service,'tick',new=AsyncMock()) as tick:
+                self.service.start();await asyncio.sleep(.01)
+                self.assertFalse(self.service.task.done());tick.assert_awaited_once()
+                await self.service.close();self.assertTrue(self.service.task.done())
+        asyncio.run(check())
