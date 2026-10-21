@@ -49,7 +49,7 @@ class PaperStore:
         conn.execute(sql, (namespace, key, owner, json.dumps(payload, ensure_ascii=False, allow_nan=False), now, now))
 
     def transact(self, owner: str, request_id: str, intent: dict,
-                 apply: Callable[[dict, dict], tuple[dict, dict]]) -> dict:
+                 apply: Callable[[dict, dict], tuple[dict, dict]], execution=None, now=None) -> dict:
         with self.db.transaction() as conn:
             suffix = ' FOR UPDATE' if self.db.dialect == 'mysql' else ''
             # The user always exists before a paper account does. Locking this row
@@ -66,7 +66,13 @@ class PaperStore:
                 return self._public(previous)
             account = self._get(conn, 'paper_account', 'account', owner, new_account())
             cached = self._get(conn, 'minute_market', intent['code'] + ':1', '', {})
+            from .quant.store import authorize_execution
+            from .news_cleaning import SHANGHAI
+            from datetime import datetime
+            timestamp = now() if now else datetime.now(SHANGHAI)
+            provenance = authorize_execution(self, conn, owner, account, intent, cached, execution, timestamp)
             updated, trade = apply(account, cached)
+            trade.update(provenance)
             sequence = account['sequence'] + 1
             updated['sequence'] = sequence
             saved = {**trade, 'request_id': request_id, 'sequence': sequence, 'intent': intent}

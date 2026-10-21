@@ -3,6 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock3, History, Info, Loade
 import { api, ApiError } from './api';
 import { useAuth } from './AuthContext';
 import PaperStockSearch from './PaperStockSearch';
+import PaperAutomation from './PaperAutomation';
 import { estimateFees, formatMoney, maxBuyQuantity, newRequestId } from './paperMath';
 import type { PaperAccount, PaperHistory, PaperIntent, PaperQuote, PaperTrade } from './paperTypes';
 import type { Stock } from './types';
@@ -15,7 +16,7 @@ const date = (value: string | null) => value ? new Date(value).toLocaleString('z
 // These rejections run after the transaction's successful-request lookup.
 // Auth, CSRF, routing and schema failures cannot resolve an earlier uncertain request.
 const definitiveRejections = new Set(['UNKNOWN_STOCK', 'UNSUPPORTED_STOCK', 'MARKET_CLOSED', 'CALENDAR_UNKNOWN',
-  'QUOTE_UNAVAILABLE', 'QUOTE_STALE', 'INVALID_SIDE', 'INVALID_QUANTITY', 'INSUFFICIENT_POSITION', 'T_PLUS_ONE', 'INSUFFICIENT_CASH']);
+  'QUOTE_UNAVAILABLE', 'QUOTE_STALE', 'AUTOMATION_ACTIVE', 'INVALID_SIDE', 'INVALID_QUANTITY', 'INSUFFICIENT_POSITION', 'T_PLUS_ONE', 'INSUFFICIENT_CASH']);
 
 function pendingIntent(owner?: string): PaperIntent | null {
   if (!owner) return null;
@@ -48,6 +49,7 @@ export default function PaperTradingPanel({ initialCode }: { initialCode: string
   const [unknown, setUnknown] = useState(!!restored);
   const [tradeError, setTradeError] = useState(restored ? '有一笔尚未确认的请求，请重试确认原成交，或刷新查看成交记录。' : '');
   const [notice, setNotice] = useState('');
+  const [operationMode, setOperationMode] = useState<'manual' | 'algorithm' | null>(null);
   const lifecycle = useRef<AbortController | null>(null);
   const intent = useRef<PaperIntent | null>(restored);
   const busy = useRef(false);
@@ -107,7 +109,7 @@ export default function PaperTradingPanel({ initialCode }: { initialCode: string
     return () => { controller.abort(); window.clearTimeout(timer); };
   }, [code, user?.id, refreshNonce]);
 
-  const frozen = submitting || unknown;
+  const frozen = submitting || unknown || operationMode === 'algorithm';
   const selected = quote?.stock.code === code ? quote : null;
   const position = account?.positions.find(item => item.code === code);
   const amount = /^\d+$/.test(quantity) ? Number(quantity) : 0;
@@ -124,6 +126,8 @@ export default function PaperTradingPanel({ initialCode }: { initialCode: string
   else if (side === 'buy' && (amount < selected.rules.min_quantity || amount % selected.rules.quantity_step !== 0)) invalid = `${selected.rules.board}最小买入 ${selected.rules.min_quantity} 股，按 ${selected.rules.quantity_step} 股递增。`;
   else if (amount > available) invalid = side === 'buy' ? '可用现金不足，需计入股款和交易费用。' : '可卖数量不足，当日买入的股份受 T+1 限制。';
   else if (side === 'sell' && (selected.rules.quantity_step === 1 ? amount < 200 && amount !== available : amount % 100 !== 0 && amount % 100 !== available % 100)) invalid = '零股需要一次卖完，不能拆分零股余额。';
+
+  if (!unknown && operationMode !== 'manual') invalid = operationMode === 'algorithm' ? '官方算法正在操作此账户，切回手动后可下单。' : '等待确认账户操作方式后可下单。';
 
   function chooseStock(stock: Pick<Stock, 'code'>) {
     if (frozen) return;
@@ -186,6 +190,7 @@ export default function PaperTradingPanel({ initialCode }: { initialCode: string
       <section className="panel paper-stat"><span>累计盈亏</span><strong className={`mono ${tone(account?.total_pnl_fen ?? 0)}`}>{account ? signed(account.total_pnl_fen) : '—'}<small>{account ? `${account.return_percent > 0 ? '+' : ''}${account.return_percent.toFixed(2)}%` : ''}</small></strong><small>已实现 {account ? signed(account.realized_pnl_fen) : '—'} · 浮动 {account ? signed(account.unrealized_pnl_fen) : '—'}</small></section>
     </div>
 
+    <PaperAutomation disabled={submitting || unknown} onModeChange={setOperationMode} />
     <div className="paper-trading-grid">
       <section className="panel paper-ticket"><header><div><span className="paper-eyebrow">PLACE A SIMULATED TRADE</span><h2>买卖股票</h2></div><span className="paper-mini-tag">T+1</span></header>
         <div className="paper-selected-stock"><div><strong>{selected?.stock.name ?? code}</strong><span>{code}{rule && ` · ${rule.board}`}</span></div><button type="button" className="paper-icon-button" aria-label="更换交易股票" disabled={frozen} onClick={() => setPicking(!picking)}>{picking ? <X size={17} /> : <Search size={17} />}</button></div>
@@ -212,7 +217,7 @@ export default function PaperTradingPanel({ initialCode }: { initialCode: string
     </div>
 
     <section className="panel paper-history"><header><div><span className="paper-eyebrow">TRADE JOURNAL</span><h2><History size={18} />成交记录</h2></div><span className="paper-mini-tag">仅模拟成交</span></header>
-      {history?.items.length ? <div className="paper-table-scroll"><table><thead><tr><th>成交时间 · 北京时间</th><th>股票</th><th>方向</th><th>股数</th><th>成交价</th><th>成交金额</th><th>费用与依据</th><th>成交后现金</th></tr></thead><tbody>{history.items.map(trade => <tr key={trade.request_id}><td>{date(trade.executed_at)}</td><td><strong>{trade.name}</strong><small>{trade.code}</small></td><td><span className={`paper-trade-side ${trade.side}`}>{trade.side === 'buy' ? '买入' : '卖出'}</span></td><td>{trade.quantity.toLocaleString()}</td><td className="mono">{formatMoney(trade.price_fen)}</td><td className="mono">{formatMoney(trade.gross_fen)}</td><td><details><summary>{money(trade.fees_fen)}</summary><div>佣金 {money(trade.commission_fen)}<br />过户费 {money(trade.transfer_fen)}<br />印花税 {money(trade.stamp_fen)}<br />{trade.source}<br />报价 {date(trade.quote_as_of)}<br />已实现 {signed(trade.realized_pnl_fen)}</div></details></td><td className="mono">{formatMoney(trade.cash_after_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-history-empty">{reading ? '正在读取成交记录…' : '暂时没有成交记录，每笔成功交易都会保存在这里。'}</div>}
+      {history?.items.length ? <div className="paper-table-scroll"><table><thead><tr><th>成交时间 · 北京时间</th><th>股票</th><th>方向</th><th>股数</th><th>成交价</th><th>成交金额</th><th>费用与依据</th><th>成交后现金</th></tr></thead><tbody>{history.items.map(trade => <tr key={trade.request_id}><td>{date(trade.executed_at)}</td><td><strong>{trade.name}</strong><small>{trade.code} · {trade.actor === 'algorithm' ? '官方算法' : '手动'}</small>{trade.model_version && <small>{trade.model_version}</small>}</td><td><span className={`paper-trade-side ${trade.side}`}>{trade.side === 'buy' ? '买入' : '卖出'}</span></td><td>{trade.quantity.toLocaleString()}</td><td className="mono">{formatMoney(trade.price_fen)}</td><td className="mono">{formatMoney(trade.gross_fen)}</td><td><details><summary>{money(trade.fees_fen)}</summary><div>佣金 {money(trade.commission_fen)}<br />过户费 {money(trade.transfer_fen)}<br />印花税 {money(trade.stamp_fen)}<br />{trade.source}<br />报价 {date(trade.quote_as_of)}<br />已实现 {signed(trade.realized_pnl_fen)}</div></details></td><td className="mono">{formatMoney(trade.cash_after_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-history-empty">{reading ? '正在读取成交记录…' : '暂时没有成交记录，每笔成功交易都会保存在这里。'}</div>}
       {history?.next_before_seq && <button className="paper-load-more" disabled={moreLoading} onClick={() => { void loadMore(); }}>{moreLoading ? '正在加载…' : '加载更早成交'}</button>}
     </section>
     <details className="panel paper-rules"><summary><ShieldCheck size={16} />模拟盘交易规则与费用</summary><div><p>每个账号初始资金 20 万元；仅在核验交易日 09:30–11:30、13:00–14:57 模拟成交。当天买入的股份下一交易日才能卖出。集合竞价、盘后和未经核验的交易日暂不支持。</p><p>主板、创业板买入为 100 股整数倍；科创板至少 200 股，之后可逐股增加。卖出时零股需一次处理；不支持融资、卖空、限价挂单或撤单。</p><p>固定模拟费用：双向佣金 0.03%，每笔最低 5 元；双向过户费 0.001%；卖出印花税 0.05%。费用分别四舍五入到分，不代表实际券商收费。</p><p>成交使用新鲜、有效的未复权 1 分钟价格；延迟或缺失行情暂停成交。估值可使用缓存或最近成交价格。第一版不处理分红、送股和拆股；所有资金均为虚拟资金。</p></div></details>

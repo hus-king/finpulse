@@ -49,7 +49,7 @@ class QuantStrategy:
             raise ValueError('股票池无效')
 
     def metadata(self):
-        return {'id': STRATEGY_ID, 'name':'官方日频多因子', 'version':self.model['version'],
+        return {'id': STRATEGY_ID, 'name':'官方日频多因子 · 研究版', 'version':self.model['version'],
                 'feature_version':FEATURE_VERSION, 'universe':self.model['universe'],
                 'cadence':'交易日10:00后每日一次', 'available':True, 'report':self.report}
 
@@ -103,4 +103,4 @@ class StrategyRegistry:
         return self.strategies[strategy_id]
 
     def list(self):
-        return [s.metadata() for s in self.strategies.values()] or [{'id':STRATEGY_ID,'name':'官方日频多因子', 'available':False,'reason':self.error}]
+        return [s.metadata() for s in self.strategies.values()] or [{'id':STRATEGY_ID,'name':'官方日频多因子 · 研究版', 'available':False,'reason':self.error}]

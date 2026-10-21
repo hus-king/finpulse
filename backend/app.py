@@ -35,6 +35,9 @@ from .paper_trading import PaperTradingService
 from .paper_rules import PaperError
 from .paper_api import router as paper_router, paper_error_handler
 
+from .quant.service import QuantService
+from .quant.api import router as quant_router
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.local.json"
 
@@ -53,6 +56,8 @@ async def lifespan(application):
     application.state.research = ResearchService(research_store, invoke)
     application.state.minute_market = MinuteMarketService(research_store)
     application.state.paper_trading = PaperTradingService(PaperStore(research_store), application.state.research.catalog, application.state.minute_market)
+    application.state.quant = QuantService(application.state.paper_trading, enabled=os.environ.get('FINPULSE_QUANT_ENABLED', '0') == '1')
+    application.state.quant.start()
     application.state.market_bundle = MarketBundleService(application.state.research, application.state.minute_market)
     application.state.research.briefing = MorningService(application.state.research)
     application.state.scheduler = start_scheduler(application.state.research)
@@ -63,6 +68,7 @@ async def lifespan(application):
     try:
         yield
     finally:
+        await application.state.quant.close()
         await application.state.market_bundle.close()
         await application.state.minute_market.close()
         await application.state.research.briefing.close()
@@ -77,6 +83,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(research_router)
 app.include_router(paper_router)
+app.include_router(quant_router)
 
 
 @app.exception_handler(pymysql.OperationalError)

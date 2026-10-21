@@ -20,9 +20,23 @@ export interface PaperQuote {
   quote_status: 'fresh' | 'stale' | 'unavailable';
 }
 export interface PaperTrade extends PaperFees {
+  actor?: 'manual' | 'algorithm'; strategy_id?: string; model_version?: string;
   request_id: string; sequence: number; code: string; name: string; side: 'buy' | 'sell';
   quantity: number; price_fen: number; gross_fen: number; cash_after_fen: number;
   realized_pnl_fen: number; executed_at: string; quote_as_of: string; quote_fetched_at: string; source: string;
 }
 export interface PaperHistory { items: PaperTrade[]; next_before_seq: number | null }
 export interface PaperIntent { request_id: string; code: string; side: 'buy' | 'sell'; quantity: number }
+
+export interface QuantMetrics { total_return: number; annualized_return: number; max_drawdown: number; trades: number; start: string; end: string }
+export interface PaperStrategy { id: string; name: string; available: boolean; reason?: string; version?: string; universe?: string[]; report?: { limits?: string[]; test?: { model: QuantMetrics; momentum: QuantMetrics; equal_weight: QuantMetrics } } }
+export interface QuantDecision {
+  key: string; date: string; as_of: string; status: string; model_version: string; reason?: string;
+  target_weights: Record<string, number>;
+  results?: { request_id: string; code: string; status: string; sequence?: number; reason?: string }[];
+}
+export interface PaperAutomationState {
+  mode: 'manual' | 'algorithm'; revision: number; strategy_id: string | null; scheduler_enabled: boolean;
+  reason: string | null; next_check: string; last_decision: QuantDecision | null;
+  runtime: { status?: string; checked_at?: string; reason?: string };
+}
