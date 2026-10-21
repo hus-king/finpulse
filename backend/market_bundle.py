@@ -117,6 +117,18 @@ class MarketBundleService:
         if sentiment is not None:
             dashboard['market_sentiment'] = sentiment
         minute_error = minute_error or base.get('error')
+        min_quote = base.get('quote') or {}
+        if min_quote.get('price') is not None:
+            dashboard.setdefault('stock', {})['price'] = min_quote['price']
+            if min_quote.get('change') is not None:
+                dashboard['stock']['change'] = min_quote['change']
+            dashboard.setdefault('quote', {})['price'] = min_quote['price']
+            if min_quote.get('change') is not None:
+                dashboard['quote']['change'] = min_quote['change']
+            dashboard['quote']['is_realtime'] = True
+            if base.get('candles'):
+                dashboard['quote']['as_of_date'] = base['candles'][-1]['date'][:10]
+                dashboard['quote']['collected_at'] = base['candles'][-1]['date']
         minutes = {}
         now = datetime.fromisoformat(base['market']['server_time'])
         for period in PERIODS:

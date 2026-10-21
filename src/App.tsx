@@ -17,17 +17,48 @@ import { number, percent, tone } from './format';
 
 const defaults = ['600519', '300750', '688981'];
 
-// A slow initial/cache read must not replace a newer staged result.
+const normalizeTime = (s?: string | null) => {
+  if (!s) return 0;
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? 0 : t;
+};
+
+// A slow initial/cache read must not replace a newer staged result or realtime quote.
 const newerSnapshot = (previous: Dashboard | null | undefined, next: Dashboard) => {
   if (!previous || previous.stock.code !== next.stock.code) return next;
   const base = previous.as_of && (!next.as_of || previous.as_of > next.as_of) ? previous : next;
-  const previousDate = previous.quote.as_of_date ?? '';
+
+  const prevDate = previous.quote.as_of_date ?? '';
   const nextDate = next.quote.as_of_date ?? '';
-  const previousPricesNewer = previousDate > nextDate || previousDate === nextDate && (previous.quote.collected_at ?? '') > (next.quote.collected_at ?? '');
-  const prices = previous.candles.length && (!next.candles.length || previousPricesNewer) ? previous : next;
-  return { ...base, quote: prices.quote, candles: prices.candles, stock: { ...base.stock, price: prices.stock.price, change: prices.stock.change },
-    backtest: prices.as_of === base.as_of ? prices.backtest : base.backtest,
-    daily_request: next.daily_request ?? previous.daily_request };
+  const prevTime = normalizeTime(previous.quote.collected_at);
+  const nextTime = normalizeTime(next.quote.collected_at);
+
+  const prevIsRealtime = !!previous.quote.is_realtime;
+  const nextIsRealtime = !!next.quote.is_realtime;
+
+  let usePreviousQuote = false;
+  if (prevIsRealtime && !nextIsRealtime) {
+    usePreviousQuote = prevDate >= nextDate || !nextDate;
+  } else if (!prevIsRealtime && nextIsRealtime) {
+    usePreviousQuote = false;
+  } else {
+    usePreviousQuote = prevDate > nextDate || (prevDate === nextDate && prevTime > nextTime);
+  }
+
+  const quote = usePreviousQuote ? previous.quote : next.quote;
+  const candles = next.candles.length ? next.candles : previous.candles;
+  const stockPrice = usePreviousQuote ? (previous.stock.price ?? next.stock.price) : (next.stock.price ?? previous.stock.price);
+  const stockChange = usePreviousQuote ? (previous.stock.change ?? next.stock.change) : (next.stock.change ?? previous.stock.change);
+
+  return {
+    ...base,
+    quote,
+    candles,
+    stock: { ...base.stock, price: stockPrice, change: stockChange },
+    backtest: next.candles.length ? next.backtest : (previous.candles.length ? previous.backtest : base.backtest),
+    daily_request: next.daily_request ?? previous.daily_request,
+  };
 };
 
 function Dialog({ title, children, close }: { title: string; children: React.ReactNode; close: () => void }) {
@@ -121,6 +152,8 @@ export default function App() {
             const next = { ...prev };
             for (const [stockCode, quote] of Object.entries(resp.items)) {
               const existing = next[stockCode];
+              const asOfDate = quote.as_of ? quote.as_of.slice(0, 10) : undefined;
+              const collectedAt = quote.as_of ? (quote.as_of.includes('T') ? quote.as_of : quote.as_of.replace(' ', 'T')) : new Date().toISOString();
               if (existing) {
                 next[stockCode] = {
                   ...existing,
@@ -129,7 +162,8 @@ export default function App() {
                     ...existing.quote,
                     price: quote.price,
                     change: quote.change,
-                    collected_at: quote.as_of,
+                    as_of_date: asOfDate ?? existing.quote.as_of_date,
+                    collected_at: collectedAt,
                     is_realtime: true,
                   },
                 };
@@ -149,7 +183,8 @@ export default function App() {
                     status: 'ok',
                     price: quote.price,
                     change: quote.change,
-                    collected_at: quote.as_of,
+                    as_of_date: asOfDate,
+                    collected_at: collectedAt,
                     is_realtime: true,
                   },
                   candles: [],
@@ -168,6 +203,8 @@ export default function App() {
             if (!prev) return prev;
             const quote = resp.items[prev.stock.code];
             if (!quote) return prev;
+            const asOfDate = quote.as_of ? quote.as_of.slice(0, 10) : undefined;
+            const collectedAt = quote.as_of ? (quote.as_of.includes('T') ? quote.as_of : quote.as_of.replace(' ', 'T')) : new Date().toISOString();
             return {
               ...prev,
               stock: { ...prev.stock, price: quote.price, change: quote.change },
@@ -175,7 +212,8 @@ export default function App() {
                 ...prev.quote,
                 price: quote.price,
                 change: quote.change,
-                collected_at: quote.as_of,
+                as_of_date: asOfDate ?? prev.quote.as_of_date,
+                collected_at: collectedAt,
                 is_realtime: true,
               },
             };

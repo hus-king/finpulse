@@ -743,6 +743,27 @@ class ResearchService:
             result['quote'], result['candles'] = daily['quote'], daily['candles']
             result['stock'] = {**result.get('stock', stock), 'price': daily['quote'].get('price'), 'change': daily['quote'].get('change')}
             result['backtest'] = forward_returns(result.get('news', []), daily['candles'])
+        minute_cache = self.store.get('minute_market', f'{code}:1', default={})
+        if minute_cache.get('candles'):
+            latest_candle = minute_cache['candles'][-1]
+            last_date = latest_candle['date'][:10]
+            daily_date = (result.get('quote') or {}).get('as_of_date') or ''
+            if last_date >= daily_date:
+                previous = next((b for b in reversed(minute_cache['candles']) if b['date'][:10] < last_date), None)
+                if not previous and daily.get('candles'):
+                    previous = next((b for b in reversed(daily['candles']) if b['date'][:10] < last_date), None)
+                prev_close = previous['close'] if previous else None
+                latest_price = latest_candle['close']
+                latest_change = round((latest_price / prev_close - 1) * 100, 2) if prev_close else None
+                result.setdefault('stock', {})['price'] = latest_price
+                if latest_change is not None:
+                    result['stock']['change'] = latest_change
+                result.setdefault('quote', {})['price'] = latest_price
+                if latest_change is not None:
+                    result['quote']['change'] = latest_change
+                result['quote']['is_realtime'] = True
+                result['quote']['as_of_date'] = last_date
+                result['quote']['collected_at'] = latest_candle['date']
         result['backtest'] = forward_returns(result.get('news',[]),result.get('candles',[]))
         result['research_overview'] = build_overview(result.get('news', []))
         return result

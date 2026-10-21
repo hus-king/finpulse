@@ -54,8 +54,8 @@ export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
   const candles = minutePeriod ? minute.data?.candles ?? [] : data.candles;
   const dailyBar = data.candles.at(-1);
   const quote = intraday ? session?.quote : minutePeriod ? minute.data?.quote : null;
-  const price = minutePeriod ? quote?.price : data.stock.price;
-  const change = minutePeriod ? quote?.change ?? null : data.stock.change;
+  const price = (minutePeriod ? quote?.price : null) ?? data.stock.price;
+  const change = (minutePeriod ? quote?.change : null) ?? data.stock.change;
   const busy = minute.loading || minute.data?.refreshing;
   const lastDate = intraday ? session?.day : minute.data?.as_of?.slice(0, 10);
   const dailyBase = lastDate ? [...data.candles].reverse().find(bar => bar.date < lastDate) : null;
