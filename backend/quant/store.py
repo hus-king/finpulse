@@ -28,11 +28,12 @@ class QuantStore:
     def config(self,owner):
         return self.records.get('quant_config','config',owner,default=None) or default_config()
 
-    def configure(self,owner,mode,strategy_id,expected_revision,reason=None):
+    def configure(self,owner,mode,strategy_id,expected_revision,reason=None,validator=None):
         with self.locked(owner) as conn:
             old=self.paper._get(conn,'quant_config','config',owner,default_config())
             if old['revision']!=expected_revision:
                 raise PaperError('AUTOMATION_CONFLICT','操作方式已变化，请刷新后再试。')
+            if validator:validator(conn)
             new={**old,'mode':mode,'strategy_id':strategy_id if mode=='algorithm' else None,
                  'revision':old['revision']+1,'reason':reason,'updated_at':int(time.time())}
             self.paper._put(conn,'quant_config','config',owner,new)
