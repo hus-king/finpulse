@@ -30,13 +30,13 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m scripts.quant.run_guarded --root . \
 {"as_of":"2026-10-20","model_version":"custom-v1","target_weights":{"000001":0.2},"reason":"策略解释"}
 ```
 
-策略只返回目标权重；持久化、风控、调度与成交由执行器负责。目标最多5只、单票20%、总仓80%，且只能选择已注册股票池。服务器仅加载可信发布目录的JSON，不提供用户代码执行或上传可执行模型的接口。
+策略只返回目标权重；持久化、风控、调度与成交由执行器负责。目标最多5只、单票20%、总仓80%，且只能选择已注册股票池。可信官方模型来自发布目录；客户可上传受限JSON规则，通过同一策略适配接口运行，详见[客户提交规范](strategy-submission.md)。不执行用户Python/JavaScript或可执行模型。
 
 账户接口（都需要登录，写入需要现有 CSRF 校验）：
 
-- `GET /api/paper/strategies`：策略目录与研究报告。
+- `GET /api/paper/strategies`：官方与本人策略目录，`origin` 标记来源；官方策略附研究报告。
 - `GET /api/paper/automation`：操作方式、配置版本、调度开关和最近状态。
-- `PUT /api/paper/automation`：`mode=manual|algorithm`、`strategy_id`、`expected_revision`；版本冲突409。
+- `PUT /api/paper/automation`：`mode=manual|algorithm`、`strategy_id`、`expected_revision`；本人策略还需 `strategy_revision`；版本冲突409。
 - `GET /api/paper/automation/decisions?before=...&limit=20`：账户隔离的决策分页。
 
 托管状态、决策、共享历史缓存、当日成交预算分别保存到 `quant_config`、`quant_decision`、`quant_history`、`quant_day` 命名空间。模型缺失或校验失败时不可启用。账户和成交仍复用原表与用户行锁，不需要新DDL。
