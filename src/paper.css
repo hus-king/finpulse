@@ -690,3 +690,6 @@
 .paper-decisions article small { display:block; color:var(--theme-muted); }
 .paper-decisions article p { margin:5px 0; overflow-wrap:anywhere; }
 @media(max-width:600px) { .paper-automation { padding:16px; } .paper-automation header { align-items:start; } .paper-automation h2 { font-size:16px; } .paper-pilot-controls label { max-width:none; } .paper-model-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+.paper-holding-link:hover strong { color:var(--theme-accent-text); text-decoration:underline; text-underline-offset:3px; }
+.paper-holding-link:focus-visible { outline:2px solid var(--theme-focus); outline-offset:5px; border-radius:3px; }
