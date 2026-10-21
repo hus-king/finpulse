@@ -1,5 +1,7 @@
 import copy
 import unittest
+import json
+from pathlib import Path
 from pydantic import ValidationError
 from backend.quant.rules import RulePackage, RuleStrategy, normalize_package, EXAMPLE
 from test_quant_model import history
@@ -45,3 +47,12 @@ class UserRuleTests(unittest.TestCase):
         self.assertIn('OperationExpr',schema['$defs'])
         bars=history();strategy=RuleStrategy(EXAMPLE,'user-test',1,'a'*64)
         with self.assertRaises(ValueError):strategy.decide({code:bars for code in EXAMPLE['universe']},'2099-01-01')
+
+    def test_exported_contract_matches_runtime_and_allocation_obeys_total_cap(self):
+        root=Path(__file__).resolve().parents[1]/'examples/strategies'
+        self.assertEqual(json.loads((root/'finpulse-rules-v1.schema.json').read_text()),RulePackage.model_json_schema())
+        self.assertEqual(json.loads((root/'momentum-v1.json').read_text()),EXAMPLE)
+        package={**EXAMPLE,'score':{'value':1},'filters':[],
+                 'selection':{'top_n':2,'min_score':1},'allocation':{'per_stock_weight':.2,'max_total_weight':.3}}
+        bars=history();result=RuleStrategy(package,'user-test',1,'a'*64).decide({code:bars for code in EXAMPLE['universe']},bars[-1]['date'])
+        self.assertEqual(result['target_weights'],{'000001':.15,'300750':.15})
