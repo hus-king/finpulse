@@ -6,3 +6,7 @@ argon2-cffi>=25.1,<26
 PyMySQL[rsa]>=1.1,<2
 APScheduler>=3.11,<4
 pypinyin>=0.55,<1
+pandas>=2,<4
+numpy>=1.26,<3
+requests>=2.32,<3
+openpyxl>=3.1,<4

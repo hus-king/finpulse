@@ -35,6 +35,9 @@ from .paper_trading import PaperTradingService
 from .paper_rules import PaperError
 from .paper_api import router as paper_router, paper_error_handler
 
+from .peg_service import PegService
+from .peg_api import router as peg_router
+
 from .quant.service import QuantService
 from .quant.api import router as quant_router
 from .quant.user_api import router as user_strategy_router, StrategyBodyLimitMiddleware
@@ -55,6 +58,8 @@ async def lifespan(application):
     async def invoke(messages, max_tokens=1100):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)
+    application.state.peg = PegService(research_store)
+    application.state.peg.start()
     application.state.minute_market = MinuteMarketService(research_store)
     application.state.paper_trading = PaperTradingService(PaperStore(research_store), application.state.research.catalog, application.state.minute_market)
     application.state.quant = QuantService(application.state.paper_trading, enabled=os.environ.get('FINPULSE_QUANT_ENABLED', '0') == '1')
@@ -69,6 +74,7 @@ async def lifespan(application):
     try:
         yield
     finally:
+        await application.state.peg.close()
         await application.state.quant.close()
         await application.state.market_bundle.close()
         await application.state.minute_market.close()
@@ -85,6 +91,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(research_router)
 app.include_router(paper_router)
+app.include_router(peg_router)
 app.include_router(quant_router)
 app.include_router(user_strategy_router)
 

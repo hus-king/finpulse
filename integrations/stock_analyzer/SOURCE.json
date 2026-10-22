@@ -1,0 +1,12 @@
+{
+  "project": "https://github.com/hus-king/Stock-Analyzer",
+  "base_commit": "266f5549934923a53d34441bc176938a59ed442a",
+  "snapshot_date": "2026-10-22",
+  "includes_uncommitted_peg_rules": true,
+  "files": {
+    "analyzer.py": "f1bee4e8d21f86c79ebcee21c92b2a7dd4884d459aef02fab7ad5963297e60bc",
+    "run_csi300.py": "c0356a1718d44eccc99dad23229c10b9f2104533b33824dec85f886459488cae",
+    "selection.py": "81be76c054ed0a778818eeda496e4d744ec83608c88c040678d0302903ae9f02",
+    "snapshot_diff.py": "645a37a4734fc3649d7a0239c40667ca8fbd8880ab75fafa1a347d514d9f4bf1"
+  }
+}

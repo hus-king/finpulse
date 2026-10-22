@@ -31,5 +31,9 @@
     "name": "finpulse_dev",
     "username": "finpulse_app",
     "password": ""
+  },
+  "peg": {
+    "enabled": true,
+    "workers": 4
   }
 }
