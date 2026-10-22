@@ -25,7 +25,7 @@
 - [x] 1. Pin the four required upstream Python files and provenance; test snapshot mapping, eligibility, groups, ties, deltas, invalid/partial input and failure preservation. Implement backend/peg_snapshot.py.
 - [x] 2. Test daily service with real temporary store and controlled upstream worker: publication, idempotence, lease conflicts/renewal, cancellation, 21:00 cron and restart catchup. Implement backend/peg_service.py, backend/peg_collect.py and read-only API/CSV integration in app.py.
 - [x] 3. Implement src/PegLeaderboard.tsx with scoped styling and DTOs; integrate navigation and existing stock/watchlist actions. Validate interactions and cache/error states in a browser.
-- [ ] 4. Run backend and frontend regressions/build, inspect a focused helper review, fix material findings. Commit and push, provision the pinned worker and persistent daily data path, create fresh first snapshot, activate release and verify live page/API/scheduler.
+- [x] 4. Run backend and frontend regressions/build, inspect a focused helper review, fix material findings. Commit and push, provision the pinned worker and persistent daily data path, create fresh first snapshot, activate release and verify live page/API/scheduler.
 
 ## Execution ledger
 Ruling: Human explicitly approved the design and said to start construction; execute the implementation without another plan approval prompt.
@@ -34,3 +34,7 @@ Ruling: Pin the user's current four Stock-Analyzer modules with SHA256 provenanc
 
 Review ruling: implement transactional lease fencing and atomic history/latest/completed-attempt publication, validate assessed membership, verify actual engine hashes at startup, and make scheduler startup idempotent. Four focused regressions were observed failing before their fixes. Explicit operator --force is a documented exception to scheduled daily idempotence; same-day forced publication intentionally retains the previous daily baseline rather than comparing against an earlier same-day attempt.
 Browser checks: real300-row dataset, financial/nonfinancial tabs, code search, unranked observation rows, details, pagination, dark/light theme and navigation to the existing 000001 stock dashboard passed.
+
+Release evidence (2026-10-22): feature commit 41e1d2a was pushed to origin/main and activated as /home/airhust/finpulse-deploy/releases/20261022-peg-41e1d2a. Backend regression suite passed locally (388 tests) and on the server (388 tests); all 56 Node tests and the production frontend build passed. The first fresh snapshot published at 20:09 Beijing time contains all 300 constituents: 235 eligible, 32 observing, 16 not applicable and 17 missing. Public health, snapshot membership/ranking, 300-row CSV and JavaScript asset hashes were verified. Service is active/running with zero restarts; scheduler reports the next daily collection at 2026-10-23 21:00 Asia/Shanghai. Verification artifacts remain under the primary checkout's ignored .runtime/peg-daily-20261022 directory.
+
+Verification limit: the local browser checks above passed before activation, and public assets match that build. The final live browser recheck timed out while the Mac was locked; no live screenshot or mobile browser check is claimed.
