@@ -10,6 +10,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import HTTPException
 
+from .instruments import is_index
 from .catalog import DEFAULT_WATCHLIST
 from .news_cleaning import SHANGHAI
 from .providers import read_config
@@ -153,7 +154,7 @@ class MorningService:
         for user in owners:
             user_codes = self.store.get('watchlist', 'list', user['id'], DEFAULT_WATCHLIST)
             codes.update(user_codes)
-        return [c for c in sorted(codes) if self.research.catalog.get(c)]
+        return [c for c in sorted(codes) if self.research.catalog.get(c) and not is_index(c)]
 
     async def run_community_batch(self):
         token = await asyncio.to_thread(self.store.claim, 'community-global', 600)
@@ -292,6 +293,8 @@ class MorningService:
         days = {}
         for owner in owners:
             for code in self.store.get('watchlist', 'list', owner, DEFAULT_WATCHLIST):
+                if is_index(code):
+                    continue
                 days[code] = max(days.get(code, settings['lookback_days']), preferences[owner].get('lookback_days', 7))
         return owners, days
 

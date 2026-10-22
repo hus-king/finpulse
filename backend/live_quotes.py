@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 import httpx
 
+from .instruments import is_index, provider_symbol, supported_code
 from .news_cleaning import SHANGHAI
 from .trading_calendar import market_state
 
@@ -13,13 +14,14 @@ logger = logging.getLogger(__name__)
 
 def code_to_symbol(code: str) -> str:
     code = code.strip()
-    return ('sh' if code.startswith('6') else 'sz') + code
+    return provider_symbol(code)
 
 
 async def fetch_tencent_quotes(codes: list[str], timeout: float = 3.5) -> dict[str, dict]:
     if not codes:
         return {}
-    symbols = [code_to_symbol(c) for c in codes]
+    requested = {code_to_symbol(c): c for c in codes}
+    symbols = list(requested)
     url = f"http://qt.gtimg.cn/q={','.join(symbols)}"
     headers = {"User-Agent": "Mozilla/5.0"}
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -36,7 +38,10 @@ async def fetch_tencent_quotes(codes: list[str], timeout: float = 3.5) -> dict[s
         if len(parts) > 35:
             try:
                 name = parts[1].strip()
-                code = parts[2].strip()
+                header = re.match(r'^v_((?:sh|sz)\d{6})=', line)
+                if not header or header[1] not in requested or parts[2].strip() != header[1][-6:]:
+                    continue
+                code = requested[header[1]]
                 price = float(parts[3])
                 prev_close = float(parts[4])
                 open_price = float(parts[5])
@@ -50,7 +55,7 @@ async def fetch_tencent_quotes(codes: list[str], timeout: float = 3.5) -> dict[s
                 change_pct = float(parts[32])
                 high = float(parts[33])
                 low = float(parts[34])
-                volume = int(float(parts[6])) * 100 if parts[6] else 0
+                volume = int(float(parts[6])) * (1 if is_index(code) else 100) if parts[6] else 0
                 turnover = float(parts[37]) * 10000 if len(parts) > 37 and parts[37] else 0.0
                 results[code] = {
                     "code": code,
@@ -63,6 +68,7 @@ async def fetch_tencent_quotes(codes: list[str], timeout: float = 3.5) -> dict[s
                     "high": high,
                     "low": low,
                     "volume": volume,
+                    "volume_unit": "source_units" if is_index(code) else "shares",
                     "turnover": turnover,
                     "as_of": as_of,
                     "source": "tencent",
@@ -75,7 +81,8 @@ async def fetch_tencent_quotes(codes: list[str], timeout: float = 3.5) -> dict[s
 async def fetch_sina_quotes(codes: list[str], timeout: float = 3.5) -> dict[str, dict]:
     if not codes:
         return {}
-    symbols = [code_to_symbol(c) for c in codes]
+    requested = {code_to_symbol(c): c for c in codes}
+    symbols = list(requested)
     url = f"http://hq.sinajs.cn/list={','.join(symbols)}"
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn"}
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -91,7 +98,9 @@ async def fetch_sina_quotes(codes: list[str], timeout: float = 3.5) -> dict[str,
         try:
             head, body = line.split("=", 1)
             raw_code = head.split("_")[-1].strip()
-            code = raw_code[-6:]
+            if raw_code not in requested:
+                continue
+            code = requested[raw_code]
             content = body.strip().strip('"')
             parts = content.split(",")
             if len(parts) > 31:
@@ -117,6 +126,7 @@ async def fetch_sina_quotes(codes: list[str], timeout: float = 3.5) -> dict[str,
                     "high": high,
                     "low": low,
                     "volume": volume,
+                    "volume_unit": "source_units" if is_index(code) else "shares",
                     "turnover": turnover,
                     "as_of": as_of,
                     "source": "sina",
@@ -127,7 +137,7 @@ async def fetch_sina_quotes(codes: list[str], timeout: float = 3.5) -> dict[str,
 
 
 async def get_batch_quotes(codes: list[str]) -> dict:
-    valid_codes = [c for c in dict.fromkeys(codes) if re.fullmatch(r"\d{6}", c)]
+    valid_codes = [c for c in dict.fromkeys(codes) if supported_code(c)]
     if not valid_codes:
         return {
             "status": "ok",

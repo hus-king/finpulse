@@ -12,8 +12,8 @@ export default function PaperStockSearch({ onSelect }: { onSelect: (stock: Stock
     const controller = new AbortController();
     setLoading(true); setError('');
     const timer = window.setTimeout(() => {
-      api<{ items: Stock[] }>(`/api/stocks?q=${encodeURIComponent(query.trim())}&limit=20`, undefined, controller.signal)
-        .then(result => { if (!controller.signal.aborted) setItems(result.items.filter(stock => !stock.code.startsWith('689'))); })
+      api<{ items: Stock[] }>(`/api/stocks?q=${encodeURIComponent(query.trim())}&limit=20&asset_type=stock`, undefined, controller.signal)
+        .then(result => { if (!controller.signal.aborted) setItems(result.items.filter(stock => stock.asset_type !== 'index' && /^\d{6}$/.test(stock.code) && !stock.code.startsWith('689'))); })
         .catch(error => { if (!controller.signal.aborted) setError(error.message); })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 250);

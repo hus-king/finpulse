@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
+from .instruments import is_index
 from . import providers
 from .community import collect_posts, MIN_POSTS
 from .market_sentiment import MarketSentimentService
@@ -124,6 +125,8 @@ class ResearchService:
             await asyncio.gather(*self.tasks, return_exceptions=True)
 
     async def launch(self, code, user, days=30, max_articles=None, community=False, start=True, community_only=False, analysis_only=False):
+        if is_index(code):
+            raise HTTPException(422, '指数支持行情跟踪，不进行公司新闻研判。')
         # A single process is intentional; concurrent refreshes of a stock reuse a job.
         key = (user['id'], code)
         if key in self.active:
@@ -191,6 +194,8 @@ class ResearchService:
 
     async def refresh_shared(self, code, days=7, maximum=None, community=False, progress=lambda stage: None, community_only=False, analysis_only=False):
         """Share identical concurrent work; each account keeps its own job record."""
+        if is_index(code):
+            raise HTTPException(422, '指数支持行情跟踪，不进行公司新闻研判。')
         key = (code, days, maximum, community, community_only, analysis_only)
         if key not in self.inflight:
             listeners = set()
@@ -348,6 +353,8 @@ class ResearchService:
         return result
 
     async def collect(self, code, days, maximum, include_community, progress=lambda stage: None):
+        if is_index(code):
+            raise HTTPException(422, '指数支持行情跟踪，不进行公司新闻研判。')
         stock = self.catalog.get(code)
         if not stock:
             raise HTTPException(404, '暂不支持该股票。')

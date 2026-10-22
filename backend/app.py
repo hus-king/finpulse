@@ -203,11 +203,11 @@ def health():
 
 
 @app.get("/api/stocks")
-async def stocks(q: str | None = Query(default=None, max_length=80), codes: str | None = Query(default=None, max_length=160), limit: int = Query(default=30, ge=1, le=50)):
+async def stocks(q: str | None = Query(default=None, max_length=80), codes: str | None = Query(default=None, max_length=160), limit: int = Query(default=30, ge=1, le=50), asset_type: Literal['all', 'stock', 'index'] = 'all'):
     catalog = app.state.research.catalog
-    if q is not None:
+    if q is not None and asset_type != 'index':
         await catalog.ensure()
-    return catalog.search(q or '', limit, codes.split(',') if codes is not None else None)
+    return catalog.search(q or '', limit, codes.split(',') if codes is not None else None, asset_type=asset_type)
 
 
 @app.get("/api/dashboard/{code}")

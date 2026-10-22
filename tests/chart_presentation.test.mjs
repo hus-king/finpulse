@@ -57,3 +57,9 @@ test('multiple panes retain readable independent plot space and a bottom time ax
   assert.ok(layout.height>=end+24);
  }
 });
+test('index source volumes never get displayed as equity shares', () => {
+ assert.equal(formatIndicatorValue(12000, 'volume', '源单位'), '1.20 万源单位');
+ assert.equal(formatIndicatorValue(123, 'volume', '源单位'), '123 源单位');
+ assert.equal(formatIndicatorValue(12000, 'volume'), '1.20 万股');
+ assert.equal(formatIndicatorValue(null, 'volume', '源单位'), '—');
+});

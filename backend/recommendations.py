@@ -4,6 +4,7 @@ import math
 import re
 from datetime import datetime
 
+from .instruments import is_index
 from .prompts import PROMPT_VERSION
 from .evidence import score_label
 from .catalog import DEFAULT_WATCHLIST, stock_by_code
@@ -34,6 +35,8 @@ def build_digest(store, owner, now=None):
     sections, candidates, warnings = [], [], []
     filtered = 0
     for code in codes:
+        if is_index(code):
+            continue
         snapshot = store.get('dashboard', code, default={})
         stock = store.catalog.get(code) if hasattr(store, 'catalog') else stock_by_code(code)
         stock = stock or snapshot.get('stock') or {'name': code}

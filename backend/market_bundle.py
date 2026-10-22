@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from .news_cleaning import SHANGHAI
 from .catalog import DEFAULT_WATCHLIST
+from .instruments import INDICES
 from .trading_calendar import market_state
 
 PERIODS = (1, 5, 15, 30, 60)
@@ -160,7 +161,7 @@ class MarketBundleService:
             return None
         cutoff = time.monotonic() - 1800
         recent = [code for code, viewed in reversed(list(self.recent_views.items())) if viewed >= cutoff]
-        codes = list(dict.fromkeys([*recent, *DEFAULT_WATCHLIST]))[:8]
+        codes = list(dict.fromkeys([*recent, *DEFAULT_WATCHLIST, *INDICES]))[:12]
         code = codes[self.warm_index % len(codes)]
         self.warm_index += 1
         stock = self.research.catalog.get(code)

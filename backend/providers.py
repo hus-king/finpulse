@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .instruments import is_index
 from .news_cleaning import SHANGHAI
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -195,7 +196,7 @@ async def akshare_news(stock, start, end):
 
 async def daily_market(stock, end):
     start = (date.fromisoformat(end) - timedelta(days=220)).isoformat()
-    result = await akshare_worker('history', stock['code'], start, end)
+    result = await akshare_worker('index_history' if is_index(stock['code']) else 'history', stock['code'], start, end)
     candles = []
     for row in result['rows']:
         try:
@@ -213,4 +214,4 @@ async def daily_market(stock, end):
         raise ProviderError('行情源没有返回有效日线')
     last = candles[-1]
     previous = candles[-2] if len(candles) > 1 else None
-    return {'status': 'ok', 'source': 'AkShare / 腾讯日线', 'is_realtime': False, 'adjustment': 'none', 'volume_unit': 'shares', 'as_of_date': last['date'], 'collected_at': datetime.now(SHANGHAI).isoformat(), 'price': last['close'], 'change': round((last['close'] / previous['close'] - 1) * 100, 2) if previous else None, 'candles': candles}
+    return {'status': 'ok', 'source': 'AkShare / 腾讯日线', 'is_realtime': False, 'adjustment': 'none', 'volume_unit': 'source_units' if is_index(stock['code']) else 'shares', 'as_of_date': last['date'], 'collected_at': datetime.now(SHANGHAI).isoformat(), 'price': last['close'], 'change': round((last['close'] / previous['close'] - 1) * 100, 2) if previous else None, 'candles': candles}

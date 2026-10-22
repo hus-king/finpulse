@@ -4,6 +4,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .instruments import is_index, supported_code
 from .auth import authorize_model_request, current_session, token_hash, require_admin, authorize_admin_write
 from .briefing import build_briefing
 from .catalog import DEFAULT_WATCHLIST
@@ -95,7 +96,7 @@ class WatchlistRequest(BaseModel):
     @field_validator('codes')
     @classmethod
     def supported(cls, value):
-        if len(set(value)) != len(value) or any(not re.fullmatch(r'\d{6}', code) for code in value):
+        if len(set(value)) != len(value) or any(not supported_code(code) for code in value):
             raise ValueError('Unknown or duplicate stock codes')
         return value
 
@@ -148,7 +149,14 @@ async def save_watchlist(data: WatchlistRequest, response: Response, user=Depend
 
 class AddStockRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    code: str = Field(pattern=r'^\d{6}$')
+    code: str = Field(max_length=8)
+
+    @field_validator('code')
+    @classmethod
+    def valid_code(cls, value):
+        if not supported_code(value):
+            raise ValueError('Unknown instrument code')
+        return value
 
 
 @router.post('/watchlist/add', status_code=202)
@@ -167,6 +175,9 @@ async def add_stock(data: AddStockRequest, response: Response, user=Depends(auth
             return {'codes': codes, 'stock': stock, 'added': False, 'job': await asyncio.to_thread(research.store.get, 'job', active, owner) if active else None}
         if len(codes) >= 20:
             raise HTTPException(422, '最多关注 20 只股票，请先移除不需要的标的。')
+        if is_index(data.code):
+            await asyncio.to_thread(research.store.put, 'watchlist', 'list', [*codes, data.code], owner)
+            return {'codes': [*codes, data.code], 'stock': stock, 'added': True, 'job': None}
         if len(research.active) >= research.max_pending:
             raise HTTPException(429, '任务队列已满，请稍后添加。')
         await asyncio.to_thread(research.store.db.check_rate_limit, [(token_hash('research:' + owner), 12)])
@@ -206,7 +217,7 @@ async def batch_analyze_watchlist(
     target_codes = data.codes
     if target_codes is None:
         target_codes = await asyncio.to_thread(research.store.get, 'watchlist', 'list', owner, DEFAULT_WATCHLIST)
-    valid_codes = [c for c in target_codes if research.catalog.get(c)]
+    valid_codes = [c for c in target_codes if research.catalog.get(c) and not is_index(c)]
     if not valid_codes:
         raise HTTPException(422, '自选股列表中无有效股票。')
 

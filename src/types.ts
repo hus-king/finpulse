@@ -1,5 +1,6 @@
 export interface Stock {
   code: string; name: string; initials: string; exchange: string;
+  symbol?: string; asset_type?: 'stock' | 'index';
   industry: string; price: number | null; change: number | null;
 }
 export interface Candle { date: string; open: number; close: number; low: number; high: number; volume: number; partial?: boolean }
@@ -7,7 +8,7 @@ export interface MinuteMarket {
   code: string; period: number; candles: Candle[]; as_of: string | null; fetched_at: string | null;
   source: string; status: 'ok' | 'stale' | 'unavailable'; refreshing: boolean; forming: boolean;
   is_realtime: boolean; error: string | null; next_poll_seconds: number; note: string;
-  derived_from?: string; partial_bars?: number;
+  derived_from?: string; partial_bars?: number; volume_unit?: 'shares' | 'source_units';
   quote: { price: number | null; change: number | null; open: number | null; high: number | null; low: number | null; volume: number | null };
   market: { state: string; label: string; is_trading: boolean; is_trade_day: boolean | null; expected_data_time: string | null; server_time: string; calendar_year: number | null };
 }

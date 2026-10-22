@@ -1,3 +1,4 @@
+import { headlineIndices } from './instruments';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, ExternalLink, FlaskConical, Github, LoaderCircle, Search, X } from 'lucide-react';
 import { api } from './api';
@@ -115,7 +116,7 @@ export default function App() {
 
   useEffect(() => {
     const abort = new AbortController();
-    Promise.all([api<{ items: Stock[] }>('/api/stocks?codes=600519,300750,688981,000001,002594', undefined, abort.signal), api<Health>('/api/health', undefined, abort.signal)])
+    Promise.all([api<{ items: Stock[] }>('/api/stocks?codes=sh000001,sz399001,sh000300,600519,300750,688981,000001,002594', undefined, abort.signal), api<Health>('/api/health', undefined, abort.signal)])
       .then(([stocks, status]) => { if (!abort.signal.aborted) { mergeCatalog(stocks.items); setHealth(status); } })
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
     return () => abort.abort();
@@ -141,7 +142,7 @@ export default function App() {
   }, [watchlist, mergeCatalog]);
 
   useEffect(() => {
-    if (!watchlist.length) return;
+    const quoteCodes = [...new Set([...headlineIndices, ...watchlist])];
     let stopped = false;
     let timer: number | undefined;
     let abort: AbortController | null = null;
@@ -152,7 +153,7 @@ export default function App() {
       abort = new AbortController();
       let delay = 30;
       try {
-        const resp = await api<BatchQuotesResponse>(`/api/market/quotes?codes=${watchlist.join(',')}`, undefined, abort.signal);
+        const resp = await api<BatchQuotesResponse>(`/api/market/quotes?codes=${quoteCodes.join(',')}`, undefined, abort.signal);
         if (stopped || abort.signal.aborted) return;
         if (resp && resp.items) {
           setSnapshots(prev => {
@@ -179,7 +180,7 @@ export default function App() {
                   code: stockCode,
                   name: quote.name,
                   initials: '',
-                  exchange: stockCode.startsWith('6') ? 'SH' : 'SZ',
+                  exchange: stockCode.startsWith('sh') || stockCode.startsWith('6') ? 'SH' : 'SZ',
                   industry: 'A 股',
                   price: quote.price,
                   change: quote.change,
@@ -377,9 +378,9 @@ export default function App() {
   const running = collecting === code || !!job && ['queued', 'running'].includes(job.status);
   const openAssistant = useCallback((news?: Dashboard['news'][number]) => { if (data) setDrawer({ stock: data.stock, news }); }, [data]);
   return <div className="finance-shell">
-    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/"><Activity size={25} /><span>Fin<strong>Pulse</strong><small>财经研究</small></span></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票名称、代码或拼音</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
-    <nav className="finance-nav" aria-label="主导航"><div>{[{ id: 'dashboard', label: '行情与新闻' }, { id: 'screener', label: 'PEG榜单' }, { id: 'paper', label: '模拟盘' }, { id: 'briefing', label: '自选股早报' }, { id: 'lab', label: '连接状态' }, ...(user?.role === 'admin' ? [{ id: 'admin', label: '管理中心' }] : [])].map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>{item.label}</button>)}<span>沪深 A 股 · 真实股票库</span></div></nav>
-    <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>历史日线收盘</span></div>{catalog.slice(0, 3).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待采集'}</small></span><strong className="mono">{number(cached?.stock.price)}</strong><span className={tone(cached?.stock.change ?? null)}>{percent(cached?.stock.change)}</span></button>; })}</div></div>
+    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/"><Activity size={25} /><span>Fin<strong>Pulse</strong><small>财经研究</small></span></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票、指数名称或代码</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
+    <nav className="finance-nav" aria-label="主导航"><div>{[{ id: 'dashboard', label: '行情与新闻' }, { id: 'screener', label: 'PEG榜单' }, { id: 'paper', label: '模拟盘' }, { id: 'briefing', label: '自选股早报' }, { id: 'lab', label: '连接状态' }, ...(user?.role === 'admin' ? [{ id: 'admin', label: '管理中心' }] : [])].map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>{item.label}</button>)}<span>沪深 A 股与主要指数</span></div></nav>
+    <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>主要指数 · 行情快照</span></div>{headlineIndices.flatMap(code => catalog.find(stock => stock.code === code) ?? []).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span><strong className="mono">{number(cached?.stock.price ?? stock.price)}</strong><span className={tone(cached?.stock.change ?? stock.change)}>{percent(cached?.stock.change ?? stock.change)}</span></button>; })}</div></div>
     <main className="finance-main"><div className="finance-heading"><div><p className="eyebrow">{view === 'paper' ? 'PRACTICE YOUR NEXT MOVE' : 'YOUR SIGNAL, IN CONTEXT'}</p><h1>{view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><span className="workspace-tag">LOCAL WORKSPACE <span>v0.3</span></span></div>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
       {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}

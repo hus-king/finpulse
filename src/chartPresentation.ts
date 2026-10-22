@@ -32,9 +32,9 @@ export function readoutIndex(value: unknown, dates: readonly string[]): number |
   if (typeof value === 'string') { const index = dates.indexOf(value); return index >= 0 ? index : null; }
   return null;
 }
-export function formatIndicatorValue(value: number | null | undefined, unit: IndicatorResult['unit']): string {
+export function formatIndicatorValue(value: number | null | undefined, unit: IndicatorResult['unit'], volumeUnit = '股'): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
-  if (unit === 'volume') return Math.abs(value) >= 10000 ? `${(value / 10000).toFixed(2)} 万股` : `${value.toLocaleString('en-US', { maximumFractionDigits: 2 })} 股`;
+  if (unit === 'volume') return Math.abs(value) >= 10000 ? `${(value / 10000).toFixed(2)} 万${volumeUnit}` : `${value.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${volumeUnit}`;
   return (Math.abs(value) < 0.005 ? 0 : value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 export function chartLayout(count: number, compact: boolean) {

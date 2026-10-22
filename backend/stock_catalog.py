@@ -8,6 +8,7 @@ from pypinyin import Style, lazy_pinyin
 
 from . import providers
 from .catalog import CATALOG
+from .instruments import INDICES, is_index
 from .news_cleaning import SHANGHAI, STOCK_ENTITIES, get_stock_aliases
 
 BOARDS = {'sh': 'SH', 'star': 'SH', 'sz': 'SZ'}
@@ -27,6 +28,8 @@ class StockCatalog:
         for record in self.boards.values():
             if record:
                 self.items.update({stock['code']: stock for stock in record['items']})
+
+        self.items.update({code: dict(stock) for code, stock in INDICES.items()})
 
     def get(self, code):
         return self.items.get(code)
@@ -71,15 +74,16 @@ class StockCatalog:
                 self.errors.pop(board, None)
             self._index()
 
-    def search(self, query='', limit=30, codes=None):
+    def search(self, query='', limit=30, codes=None, asset_type='all'):
         query = query.strip().casefold()
+        pool = {code: stock for code, stock in self.items.items() if asset_type == 'all' or is_index(code) == (asset_type == 'index')}
         if codes is not None:
-            items = [self.items[code] for code in codes if code in self.items]
+            items = [pool[code] for code in codes if code in pool]
         else:
-            items = [stock for stock in self.items.values() if query in (stock['name'] + stock['code'] + stock['initials']).casefold()]
-            items.sort(key=lambda stock: (stock['code'] != query, stock['name'].casefold() != query, stock['code']))
+            items = [stock for stock in pool.values() if query in (stock['name'] + stock['code'] + stock['initials'] + stock.get('aliases', '')).casefold()]
+            items.sort(key=lambda stock: (stock['code'] != query, stock['name'].casefold() != query, not is_index(stock['code']), stock['code']))
             items = items[:limit]
-        return {'items': items, 'total': len(self.items), 'data_source': 'live', 'scope': '沪深 A 股（含创业板、科创板）', 'sources': {board: {'source': record['source'], 'as_of': record['as_of'], 'count': len(record['items'])} for board, record in self.boards.items() if record}, 'warnings': [f'{board}: {error}；保留已缓存股票' for board, error in self.errors.items()]}
+        return {'items': items, 'total': len(pool), 'data_source': 'live', 'scope': '主要大盘指数' if asset_type == 'index' else '沪深 A 股' if asset_type == 'stock' else '沪深 A 股与主要大盘指数', 'sources': {board: {'source': record['source'], 'as_of': record['as_of'], 'count': len(record['items'])} for board, record in self.boards.items() if record}, 'warnings': [f'{board}: {error}；保留已缓存股票' for board, error in self.errors.items()]}
 
     def entities(self, stock):
         aliases = get_stock_aliases(stock['name'], {'code': stock['code'], 'aliases': [stock['name'], stock['code']]})

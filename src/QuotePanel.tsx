@@ -1,3 +1,4 @@
+import { displayCode, isIndex } from './instruments';
 import { useEffect, useState } from 'react';
 import { Activity, LoaderCircle } from 'lucide-react';
 import PriceChart from './PriceChart';
@@ -42,6 +43,8 @@ export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
   useEffect(() => {
     try { localStorage.setItem(preferenceKey, JSON.stringify(preferences)); } catch { /* Controls work without browser storage. */ }
   }, [preferences]);
+  const indexView = isIndex(data.stock);
+  const volumeUnit = indexView ? '源单位' : '股';
   const intraday=period==='分时';
   const minutePeriod = intraday ? 1 : period.endsWith('分钟') ? parseInt(period) : null;
   // The request depends only on the stock, never on the selected chart period.
@@ -64,16 +67,16 @@ export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
   const modes = minutePeriod ? ['当日', '近 5 日', '全部'] : ['近 1 月', '近 3 月', '全部'];
 
   return <section className={`panel live-quote ${visible ? '' : 'chart-collapsed'}`}>
-    <header><div><span className="industry-tag">{data.stock.industry}</span><h2>{data.stock.name}<small>{data.stock.exchange}:{data.stock.code}</small></h2>
-      <p>{minutePeriod ? minute.data?.source ?? '分钟行情' : data.quote.source ?? '尚未采集行情'} · {lastTime ?? '—'} · {intraday ? `分时 · ${session?.day ?? '等待交易日确认'}` : minutePeriod ? '分钟快照 · 未复权' : data.quote.status === 'stale' ? '上次保存的日线，本次更新失败' : '历史日线收盘'}</p>
+    <header><div><span className="industry-tag">{data.stock.industry}</span><h2>{data.stock.name}<small>{data.stock.exchange}:{displayCode(data.stock)}</small></h2>
+      <p>{minutePeriod ? minute.data?.source ?? '分钟行情' : data.quote.source ?? market.data?.dashboard.quote.source ?? '尚未采集行情'} · {lastTime ?? '—'} · {intraday ? `分时 · ${session?.day ?? '等待交易日确认'}` : minutePeriod ? '分钟快照 · 未复权' : data.quote.status === 'stale' ? '上次保存的日线，本次更新失败' : '历史日线收盘'}</p>
     </div><ChartControls visible={visible} toggleVisible={() => updatePreferences({ visible: !visible })}
       chartStyle={chartStyle} setChartStyle={chartStyle => updatePreferences({ chartStyle })}
       overlay={overlay} setOverlay={overlay => updatePreferences({ overlay })}
       period={period} setPeriod={period => updatePreferences({ period, mode: period === '分时' || period.endsWith('分钟') ? '当日' : '近 3 月' })}
       mode={mode} modes={modes} setMode={mode => updatePreferences({ mode })}
       busy={!!(minutePeriod ? busy : dailyBusy)} refresh={market.refresh} add={add} /></header>
-    <div className="live-price-row"><div><strong className={`mono ${tone(priceChange)}`}>{number(price)}</strong><span className={tone(priceChange)}>{percent(priceChange)}<small>较前一返回交易日</small></span></div>
-      <dl><div><dt>开盘</dt><dd>{number(minutePeriod ? quote?.open : dailyBar?.open)}</dd></div><div><dt>最高</dt><dd>{number(minutePeriod ? quote?.high : dailyBar?.high)}</dd></div><div><dt>最低</dt><dd>{number(minutePeriod ? quote?.low : dailyBar?.low)}</dd></div><div><dt>{minutePeriod ? '当日成交量' : '成交量'}</dt><dd>{minutePeriod ? quote?.volume != null ? `${(quote.volume / 10000).toFixed(1)} 万股` : '—' : dailyBar ? `${(dailyBar.volume / 10000).toFixed(1)} 万股` : '—'}</dd></div></dl>
+    <div className="live-price-row"><div><strong className={`mono ${tone(priceChange)}`}>{number(price)}{indexView && <small className="index-point-unit">点</small>}</strong><span className={tone(priceChange)}>{percent(priceChange)}<small>较前一返回交易日</small></span></div>
+      <dl><div><dt>开盘</dt><dd>{number(minutePeriod ? quote?.open : dailyBar?.open)}</dd></div><div><dt>最高</dt><dd>{number(minutePeriod ? quote?.high : dailyBar?.high)}</dd></div><div><dt>最低</dt><dd>{number(minutePeriod ? quote?.low : dailyBar?.low)}</dd></div><div><dt>{indexView ? '源成交量' : minutePeriod ? '当日成交量' : '成交量'}</dt><dd>{minutePeriod ? quote?.volume != null ? `${(quote.volume / 10000).toFixed(1)} 万${volumeUnit}` : '—' : dailyBar ? `${(dailyBar.volume / 10000).toFixed(1)} 万${volumeUnit}` : '—'}</dd></div></dl>
     </div>
     {visible && <>
     <div className="chart-context"><span>{intraday ? `分时走势 · ${session?.day ?? '等待交易日确认'}` : `${chartStyles.find(item => item.value === chartStyle)?.label} · ${period} · ${mode}`}</span><span>{intraday ? '分钟价格' : overlay === 'MA' || overlay === 'EMA' ? `${overlay}5 / 10 / 20` : overlay === 'BOLL' ? 'BOLL 20 · 2σ' : '不叠加均线'}{` · ${displayedIndicators(indicators).map(id => indicatorCatalog.find(entry => entry.id === id)?.label ?? id).join(' / ')}`}</span></div>
@@ -85,8 +88,8 @@ export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
     {!minutePeriod && <div className="minute-status" role="status"><span className="minute-market-state"><span className={`status-dot ${dailyBusy ? 'pending' : ''}`} />{dailyBusy ? candles.length ? '日线缓存已展示，后台更新中' : '正在获取日线' : dailyError ? '日线更新失败' : '日线行情已就绪'}</span><span>分时与日线分别就绪 · 切换周期直接绘图</span></div>}
     {!minutePeriod && dailyError && <div className="minute-warning" role="alert">{dailyError}{candles.length ? '；保留已获取的日线。' : '；可点击刷新行情重试。'}</div>}
     {(minute.error || minute.data?.error) && minutePeriod && <div className="minute-warning" role="alert">{minute.error || minute.data?.error}{candles.length ? '；保留已获取的分钟数据。' : ''}</div>}
-    {intraday && session ? <IntradayChart session={session} candles={candles} loading={!!busy} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} /> : candles.length && !intraday ? <PriceChart key={`${data.stock.code}:${period}`} candles={candles} news={data.news} mode={mode} period={period} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} chartStyle={chartStyle} overlay={overlay} onEvent={onEvent} /> : <div className="chart-empty">{market.loading ? <LoaderCircle size={32} className="spin" /> : <Activity size={32} />}<h3>{market.loading ? intraday ? '正在读取分时缓存' : '正在读取行情缓存' : '暂未取得该周期行情'}</h3><p>{market.loading ? '已保存的数据优先展示，最新行情在后台更新。' : '行情源未返回可用数据，可在图表工具中刷新行情。'}</p></div>}
-    <footer className="chart-footer"><span>{intraday ? '分时走势 · 未来时段与缺失分钟留空' : chartStyle === 'heikin' ? '平滑 K 线为计算后的趋势价格' : minutePeriod ? 'Ctrl + 滚轮缩放' : '新闻日期标记 · 点击查看原文与研判'}</span></footer>
+    {intraday && session ? <IntradayChart volumeUnit={volumeUnit} session={session} candles={candles} loading={!!busy} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} /> : candles.length && !intraday ? <PriceChart volumeUnit={volumeUnit} key={`${data.stock.code}:${period}`} candles={candles} news={data.news} mode={mode} period={period} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} chartStyle={chartStyle} overlay={overlay} onEvent={onEvent} /> : <div className="chart-empty">{market.loading ? <LoaderCircle size={32} className="spin" /> : <Activity size={32} />}<h3>{market.loading ? intraday ? '正在读取分时缓存' : '正在读取行情缓存' : '暂未取得该周期行情'}</h3><p>{market.loading ? '已保存的数据优先展示，最新行情在后台更新。' : '行情源未返回可用数据，可在图表工具中刷新行情。'}</p></div>}
+    <footer className="chart-footer"><span>{intraday ? '分时走势 · 未来时段与缺失分钟留空' : chartStyle === 'heikin' ? '平滑 K 线为计算后的趋势价格' : minutePeriod ? 'Ctrl + 滚轮缩放' : indexView ? '指数历史点位 · 日线与周线' : '新闻日期标记 · 点击查看原文与研判'}</span></footer>
     {!minutePeriod && market.data?.errors.minute && <div className="minute-warning" role="alert">分钟行情：{market.data.errors.minute}；日线可正常查看，分钟线可稍后刷新。</div>}
     {minutePeriod && <div className="minute-caption"><span>数据时间：{intraday ? session?.as_of ?? '—' : minute.data?.as_of ?? '—'}</span><span>获取时间：{minute.data?.fetched_at ? dateTime(minute.data.fetched_at) : '—'}</span><p>全部分钟周期来自同一份 1 分钟数据，历史范围相同。{minute.data?.partial_bars ? '部分 K 线含未结束或缺失的分钟；不补造数据。' : ''}获取中每 2 秒检查，完成后 30 秒检查；行情源更新可能延迟。{intraday ? '分时横轴固定全天，午间休市折叠。' : 'Ctrl + 滚轮缩放。'}</p></div>}
     </>}

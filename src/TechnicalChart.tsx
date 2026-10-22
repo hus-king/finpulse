@@ -22,7 +22,7 @@ type Series = LineSeriesOption | BarSeriesOption | CandlestickSeriesOption;
 type Session = ReturnType<typeof buildIntraday>;
 const noNews: News[] = [];
 type Props = {
-  candles: Candle[]; news?: News[]; mode: string; period: string; chartStyle?: ChartStyle; overlay?: ChartOverlay;
+  volumeUnit?: string; candles: Candle[]; news?: News[]; mode: string; period: string; chartStyle?: ChartStyle; overlay?: ChartOverlay;
   selection: IndicatorSelection; onSelectionChange: (value: IndicatorSelection) => void;
   onEvent?: (id: string) => void; session?: Session;
 };
@@ -42,7 +42,7 @@ function overlays(candles: Candle[], overlay: ChartOverlay): IndicatorLine[] {
   ].map((line, index) => ({ ...line, kind: 'line', colorIndex: index }));
 }
 
-export default function TechnicalChart({ candles, news = noNews, mode, period, chartStyle = 'candles', overlay = 'MA', selection, onSelectionChange, onEvent, session }: Props) {
+export default function TechnicalChart({ candles, news = noNews, mode, period, chartStyle = 'candles', overlay = 'MA', selection, onSelectionChange, onEvent, session, volumeUnit = '股' }: Props) {
   const { theme } = useTheme();
   const canvas = useRef<HTMLDivElement>(null);
   const instance = useRef<ReturnType<typeof echarts.init> | null>(null);
@@ -190,7 +190,7 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
 
   function values(lines: IndicatorLine[], unit: IndicatorResult['unit']) {
     return lines.map(line => <span className="chart-readout-value" key={line.key} style={{ color: palette[line.colorIndex % palette.length] }}>
-      <i aria-hidden="true" /><span>{line.label}<small>{line.description}</small></span><b className="mono">{formatIndicatorValue(line.values[active], unit)}</b>
+      <i aria-hidden="true" /><span>{line.label}<small>{line.description}</small></span><b className="mono">{formatIndicatorValue(line.values[active], unit, volumeUnit)}</b>
     </span>);
   }
   const empty = !latest;

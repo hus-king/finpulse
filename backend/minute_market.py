@@ -3,6 +3,7 @@ import asyncio
 import math
 from datetime import datetime, timedelta
 
+from .instruments import is_index
 from . import providers
 from .news_cleaning import SHANGHAI
 from .trading_calendar import market_state
@@ -51,7 +52,7 @@ class MinuteMarketService:
         self.closed = False
 
     async def _provider(self, stock, period):
-        data = await providers.akshare_worker('minute_' + str(period), stock['code'], '', '', retry=False)
+        data = await providers.akshare_worker(('index_minute_' if is_index(stock['code']) else 'minute_') + str(period), stock['code'], '', '', retry=False)
         return normalize_rows(data['rows'], period, self.clock())
 
     def _due(self, cached, state, force=False):
@@ -98,7 +99,7 @@ class MinuteMarketService:
         refreshing = key in self.tasks
         return {'code': stock['code'], 'period': period, 'candles': bars, 'quote': quote,
                 'source': 'AkShare / 新浪分钟行情', 'interface': 'stock_zh_a_minute',
-                'adjustment': 'none', 'volume_unit': 'shares', 'status': status,
+                'adjustment': 'none', 'volume_unit': 'source_units' if is_index(stock['code']) else 'shares', 'status': status,
                 'as_of': latest['date'] if latest else None, 'fetched_at': cached.get('fetched_at'),
                 'market': state, 'refreshing': refreshing, 'forming': forming,
                 'error': cached.get('error') or ('行情请求繁忙，请稍后重试' if busy else None),

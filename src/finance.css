@@ -80,3 +80,5 @@ body{min-width:320px;overflow-x:hidden}.finance-shell{min-height:100vh}button:di
 :root[data-theme="dark"] .contrarian-badge.frozen{background:var(--theme-success-bg);border-color:var(--theme-border);color:var(--theme-success)}
 
 .research-overview .score-weighting-rule{margin:8px 0 14px;color:var(--theme-muted);font-size:11px;line-height:1.6;text-align:center}
+
+.instrument-filters{display:flex;gap:8px;margin:16px 0}.instrument-filters button{padding:7px 20px;border:1px solid var(--border);border-radius:18px;color:var(--text-secondary)}.instrument-filters button[aria-pressed="true"]{background:var(--accent,#16856f);color:white;border-color:transparent}.index-notice{padding:24px}.index-notice h2{font-size:17px;margin:10px 0}.index-notice p{font-size:12px;line-height:1.9;color:var(--text-secondary);margin:10px 0}.index-point-unit{font-size:14px;margin-left:7px;font-weight:400}

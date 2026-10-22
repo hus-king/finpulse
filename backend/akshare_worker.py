@@ -4,12 +4,18 @@ import json
 import sys
 
 
+from .instruments import is_index, provider_symbol
 def main():
     try:
         with contextlib.redirect_stdout(sys.stderr):
             import akshare as ak
             kind, code, start, end = sys.argv[1:]
-            symbol = ('sh' if code.startswith('6') else 'sz') + code
+            if kind.startswith('index_'):
+                if not is_index(code):
+                    raise ValueError('Unknown index')
+                kind = kind.removeprefix('index_')
+            # Catalogue requests have no instrument; other requests are validated.
+            symbol = provider_symbol(code) if code else ''
             if kind == 'quant_daily':
                 from scripts.quant.collect import fetch_history
                 result = {'raw': fetch_history(code, start, end, ''), 'adjusted': fetch_history(code, start, end, 'qfq')}
