@@ -14,11 +14,15 @@ Implementation:
 - [x] Index watchlist additions save without paid company/news jobs. Scheduled research, private digest and batch research skip indices; direct company-research launch rejects them.
 - [x] Index dashboard hides company scoring and community panels; point/volume labels are instrument-aware. Paper stock picker excludes indices, and execution retains stock-only board validation.
 - [x] Major index ticker and bounded minute prewarming; cached results remain immediately visible.
-- [ ] Full regression, browser inspection, source-level final review and live application preflight.
-- [ ] Commit/push, immutable release deployment with rollback and public endpoint verification.
+- [x] Full regression, browser inspection, source-level final review and live application preflight.
+- [x] Commit/push, immutable release deployment with rollback and public endpoint verification.
 
 Baseline:407 Python tests passed before changes. New RED test failed because backend.instruments did not exist; initial focused GREEN16 tests passed. Further regressions cover both000001 identities across both quote channels, persisted daily/minute isolation, all8 index catalogue records, sources, research exclusion and paper rejection. No news model training or research/provider credentials are changed.
 
 Final review: Copilot requested_model=auto found a purported volume scaling bug. Rejected after verification:178043900 source units equals17804.39万源单位, a presentation abbreviation that preserves both quantity and unknown provider unit. No share conversion is asserted. PriceChart forwards the new volumeUnit prop through {...props}, confirmed in the full source. Existing and added formatting tests verify this. Local browser verified index ticker, index-only search, SH:000300 identity, points, daily and weekly chart switching, and hidden company/news panels.
 
 Verification:416 backend tests and57 Node tests passed; TypeScript/Vite build passed. Actual application adapters on the server returned147 daily bars and1970 one-minute bars for each of8 indices, plus9 distinct quotes including indexsh000001 and equity000001. Latest source data was2026-10-22; pre-open2026-10-23 correctly leaves the current intraday grid empty.
+
+Deployment: feature741bb95 pushed to main and pulled on server. Server416 tests passed in505.343s before configuration was linked. Preflight used MySQL shared storage, warmed all8 real daily/minute caches and created0 company jobs. Immutable release20261023-market-indices-741bb95 activated with rollback guard; process cwd and health confirmed scheduler, warming and quant enabled. Public verification found8 index catalogue entries,9 independent quotes,147 daily and1970 minute bars per index, and every frontend asset SHA-256 matched the manifest. Cached bundle requests took0.525–0.796s. User watchlists and strategy settings were not modified.
+
+Evidence limits: UI interactions and screenshot were verified locally against genuine server-source snapshots; public browser automation timed out, so online verification used HTTP endpoints, exact frontend asset hashes and the running process. No claim of a public screenshot is made. Ignored runtime evidence is in .runtime/indices; the local screenshot is in the primary checkout at .runtime/index-local-preview.png.
