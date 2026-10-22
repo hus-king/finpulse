@@ -1,5 +1,6 @@
 """Point-in-time, deterministic low-PEG paper allocation; no forecasting model."""
 import math
+import re
 from copy import deepcopy
 from datetime import datetime, time
 
@@ -46,7 +47,8 @@ class PegStrategy:
             if len(rows)!=300 or snapshot['summary']['total']!=300:return False
             codes=[]
             for row in rows:
-                board_rules(row['code']);codes.append(row['code'])
+                if not isinstance(row['code'],str) or not re.fullmatch(r'[036][0-9]{5}',row['code']):return False
+                codes.append(row['code'])
                 if timestamp(row['collected_at'])>published:return False
                 if row.get('status')=='合格':
                     peg=row.get('peg')
@@ -66,6 +68,9 @@ class PegStrategy:
         selected=sorted((r for r in snapshot['rows'] if r['status']=='合格' and
                          (normalized['group']=='all' or r['group']==normalized['group'])),key=lambda r:(r['peg'],r['code']))[:normalized['top_n']]
         if not selected:raise ValueError('当前比较组没有合格PEG样本，保留持仓')
+        for row in selected:
+            try:board_rules(row['code'])
+            except PaperError:raise ValueError(f"{row['name']}（{row['code']}）暂不在模拟盘支持范围，保留持仓并等待人工检查") from None
         return PegStrategy(snapshot,normalized,selected)
 
     def decide(self, histories, as_of):

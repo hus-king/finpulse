@@ -84,6 +84,14 @@ class PegStrategyTests(unittest.TestCase):
         self.assertEqual(adapter.snapshot['rows'][0]['peg'],.1)
         with self.assertRaises(ValueError):adapter.decide({},'2026-10-08')
 
+    def test_unselected_security_outside_paper_board_rules_does_not_invalidate_the_batch(self):
+        s=snapshot();s['rows'][-1].update(code='302132',name='中航成飞',status='合格',peg=99)
+        self.assertEqual(self.prepare(s).metadata()['universe'],CODES[:5])
+
+    def test_unsupported_selected_security_stops_with_an_explicit_message(self):
+        s=snapshot();s['rows'][-1].update(code='302132',name='中航成飞',status='合格',peg=.01)
+        with self.assertRaisesRegex(ValueError,'302132.*模拟盘'):self.prepare(s)
+
     def test_registry_keeps_peg_when_neural_model_is_unavailable(self):
         with patch('backend.quant.strategy.QuantStrategy',side_effect=OSError('missing model')):registry=StrategyRegistry()
         self.assertTrue(registry.get(PEG_STRATEGY_ID).metadata()['available'])
