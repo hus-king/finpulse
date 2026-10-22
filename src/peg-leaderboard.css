@@ -5,6 +5,16 @@
 .peg-eyebrow{font-size:10px;letter-spacing:2.6px;color:var(--theme-accent-text)}
 .peg-muted,.peg-timing,.peg-summary span{color:var(--theme-muted)}
 .peg-header .peg-muted{font-size:12px}
+.peg-intro{margin-top:22px;padding:18px 20px;background:var(--theme-raised);border:1px solid var(--theme-border);border-radius:10px}
+.peg-intro-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.peg-intro h3{margin:0;font-size:14px;font-weight:600}
+.peg-intro-heading p{margin:7px 0 0;color:var(--theme-muted);font-size:12px;line-height:1.8}
+.peg-intro-heading .peg-link{flex-shrink:0;margin-top:2px;font-size:11px}
+.peg-intro-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:16px}
+.peg-intro-grid h4{margin:0 0 7px;color:var(--theme-accent-text);font-size:11px;font-weight:600}
+.peg-intro-grid p{margin:4px 0 0;color:var(--theme-muted);font-size:12px;line-height:1.9}
+.peg-intro-grid strong{color:var(--theme-text);font-weight:500}
+.peg-intro-note{margin:14px 0 0;padding-top:11px;border-top:1px solid var(--theme-border);color:var(--theme-muted);font-size:11px;line-height:1.8}
 .peg-actions,.peg-timing,.peg-row-actions,.peg-pagination,.peg-pagination>div{display:flex;align-items:center;gap:10px}
 .peg-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--theme-border);border-radius:7px;padding:8px 11px;background:var(--theme-panel);color:var(--theme-text);font-size:12px;white-space:nowrap}
 .peg-button:hover:not(:disabled){background:var(--theme-hover)}
@@ -61,12 +71,14 @@
 .peg-page button:focus-visible,.peg-page a:focus-visible,.peg-page input:focus-visible,.peg-page select:focus-visible{outline:2px solid var(--theme-focus);outline-offset:3px}
 @media(max-width:850px){.peg-page{padding:20px}
 .peg-header{align-items:flex-start;flex-wrap:wrap}
+.peg-intro-grid{grid-template-columns:1fr;gap:12px}
 .peg-summary>div{padding:0 10px}
 .peg-summary strong{font-size:22px}
 .peg-details{grid-template-columns:repeat(3,minmax(100px,1fr))}
 }
 @media(max-width:520px){.peg-page{padding:15px;border-radius:11px}
 .peg-header h2{font-size:23px}
+.peg-intro{padding:15px}
 .peg-actions{width:100%}
 .peg-timing{font-size:10px}
 .peg-summary{gap:16px;grid-template-columns:repeat(3,1fr)}

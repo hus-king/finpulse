@@ -42,6 +42,15 @@ export default function PegLeaderboard({ onOpenStock, onAddStock, watchlist, sav
   const summary = data?.summary;
   return <section className="peg-page" aria-label="沪深300低PEG榜">
     <header className="peg-header"><div><p className="peg-eyebrow">STOCK ANALYZER / DAILY SCREEN</p><h2>沪深300 <span>低 PEG 榜</span></h2><p className="peg-muted">合格样本按前瞻 PEG 升序 · 金融与非金融分别排名</p></div><div className="peg-actions"><a href="/api/screener/csi300/export.csv" className="peg-button" download><Download size={15} />导出表格</a><button className="peg-button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? 'spin' : ''} size={15} />刷新榜单</button></div></header>
+    <section className="peg-intro" aria-labelledby="peg-intro-title">
+      <div className="peg-intro-heading"><div><h3 id="peg-intro-title">先了解 PEG</h3><p>把估值和增长放在一起看，衡量为预期盈利增长支付的价格。</p></div><a className="peg-link" href="https://www.fidelity.com/learning-center/trading-investing/fundamental-analysis/company-valuation-ratios" target="_blank" rel="noopener noreferrer">指标参考 <ExternalLink size={12} /></a></div>
+      <div className="peg-intro-grid">
+        <div><h4>怎么算</h4><p><strong>PEG = 市盈率（PE）÷ 盈利增长率</strong></p><p>增长率按百分数取值：PE 为 20、年增长率为 20%，PEG 就是 20 ÷ 20 = 1。</p></div>
+        <div><h4>怎么看</h4><p>同类公司、相近预测口径下，正 PEG 越低，意味着相对预期增长的估值越低。<strong>1 是常见参考，并非低估或高估的固定分界线。</strong></p></div>
+        <div><h4>本榜口径</h4><p>使用前瞻 PE ÷ 预测净利润年复合增长率（%），金融与非金融分别排名。结合可信度、风险标签和预测时间一起看。</p></div>
+      </div>
+      <p className="peg-intro-note">盈利预测可能偏离实际，低 PEG 不代表股价一定上涨。</p>
+    </section>
     <div className="peg-timing"><span><i className={`status-dot ${data?.status === 'updating' ? 'pending' : ''}`} />每日 {data?.schedule.time ?? '21:00'} 更新 · 北京时间{data && !data.schedule.enabled ? ' · 自动更新未启用' : ''}</span><span>上次发布：{at(data?.published_at)}</span><span>下次更新：{at(data?.schedule.next_run)}</span></div>
     <div className="peg-summary">{[['成分股', summary?.total], ['合格入榜', summary?.eligible], ['观察', summary?.observing], ['不适用', summary?.not_applicable], ['缺失 / 采集失败', (summary?.missing ?? 0) + (summary?.failed ?? 0)]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value ?? '—'}</strong></div>)}</div>
     {error && <p className="peg-notice peg-warning" role="alert">{error}{data?.snapshot_id ? ' · 已保留上次读取的榜单。' : ''}</p>}
