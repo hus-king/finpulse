@@ -41,12 +41,21 @@ class QuantService:
             except Exception: log.exception('Quant scheduler tick failed')
             await asyncio.sleep(60)
 
+    def opening_pending(self,owner,config,now):
+        if config.get('mode')!='algorithm' or config.get('strategy_id')!=PEG_STRATEGY_ID:return False
+        marker=self.store.records.get('quant_opening','once',owner,default={})
+        return bool(marker.get('reset_id') and marker.get('strategy_id')==PEG_STRATEGY_ID and
+                    type(marker.get('config_revision')) is int and marker['config_revision']==config['revision'] and
+                    marker.get('trade_date')==now.date().isoformat())
+
     def state(self,owner):
         config=self.store.config(owner)
         runtime=self.store.records.get('quant_runtime','state',owner,default={})
         latest=self.store.decisions(owner,limit=1)['items']
+        opening=self.opening_pending(owner,config,self.clock())
+        if latest and latest[0].get('revision')==config['revision'] and latest[0].get('date')==self.clock().date().isoformat() and latest[0]['status']!='running':opening=False
         return {**config,'scheduler_enabled':self.enabled,'runtime':runtime,'last_decision':latest[0] if latest else None,
-                'next_check':'交易日北京时间10:00后，每分钟检查；每日一次决策'}
+                'next_check':'重置后首次PEG建仓：今日09:30后每分钟检查，有效报价就绪后执行；之后恢复10:00' if opening else '交易日北京时间10:00后，每分钟检查；每日一次决策'}
 
     def strategy(self,owner,strategy_id):
         if isinstance(strategy_id,str) and strategy_id.startswith('user-'):
@@ -98,11 +107,17 @@ class QuantService:
         valid_quote(raw,self.clock())
         return raw
 
+    def save_runtime(self,owner,revision,payload):
+        try:return self.store.save_runtime(owner,revision,payload)
+        except AuthError:return False
+
     async def tick(self):
         now=self.clock()
-        if not session_state(now)['can_trade'] or now.hour<10: return
+        if not session_state(now)['can_trade']: return
         configs=await asyncio.to_thread(self.store.active)
         for owner,cfg in configs:
+            opening=self.opening_pending(owner,cfg,now)
+            if now.hour<10 and not opening:continue
             runtime=await asyncio.to_thread(self.store.records.get,'quant_runtime','state',owner,default={})
             if runtime.get('retry_at',0)>time.time(): continue
             key=now.date().isoformat()+':'+str(cfg['revision']).zfill(10)
@@ -114,15 +129,16 @@ class QuantService:
             if not lease: continue
             try:
                 await self.run_owner(owner,cfg,key,lease)
-                await asyncio.to_thread(self.store.records.put,'quant_runtime','state',{'status':'ok','checked_at':self.clock().isoformat()},owner)
+                await asyncio.to_thread(self.save_runtime,owner,cfg['revision'],{'status':'ok','checked_at':self.clock().isoformat()})
             except (AuthError,PaperError,ValueError,KeyError,providers.ProviderError) as exc:
-                await asyncio.to_thread(self.store.records.put,'quant_runtime','state',
-                    {'status':'waiting','reason':str(exc),'checked_at':self.clock().isoformat(),'retry_at':time.time()+300},owner)
+                delay=60 if opening and isinstance(exc,PaperError) and exc.code in ('QUOTE_STALE','QUOTE_UNAVAILABLE') else 300
+                await asyncio.to_thread(self.save_runtime,owner,cfg['revision'],
+                    {'status':'waiting','reason':str(exc),'checked_at':self.clock().isoformat(),'retry_at':time.time()+delay})
             except asyncio.CancelledError: raise
             except Exception:
                 log.exception('Quant execution failed owner=%s',owner)
-                await asyncio.to_thread(self.store.records.put,'quant_runtime','state',
-                    {'status':'error','reason':'执行暂时失败，5分钟后检查原决策恢复','checked_at':self.clock().isoformat(),'retry_at':time.time()+300},owner)
+                await asyncio.to_thread(self.save_runtime,owner,cfg['revision'],
+                    {'status':'error','reason':'执行暂时失败，5分钟后检查原决策恢复','checked_at':self.clock().isoformat(),'retry_at':time.time()+300})
             finally: await asyncio.to_thread(self.store.records.release,'quant:'+owner,lease)
 
     async def run_owner(self,owner,cfg,key,token):

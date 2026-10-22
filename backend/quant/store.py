@@ -40,6 +40,14 @@ class QuantStore:
             self.paper._put(conn,'quant_config','config',owner,new)
         return new
 
+    def save_runtime(self,owner,revision,payload):
+        # An obsolete worker must not impose its retry timer on a reset account.
+        with self.locked(owner) as conn:
+            cfg=self.paper._get(conn,'quant_config','config',owner,default_config())
+            if cfg['revision']!=revision or cfg['mode']!='algorithm':return False
+            self.paper._put(conn,'quant_runtime','state',owner,{**payload,'revision':revision})
+        return True
+
     def active(self):
         with self.db.connection() as conn:
             rows=conn.execute("SELECT r.owner,r.payload FROM research_records r JOIN users u ON u.id=r.owner WHERE r.namespace='quant_config' AND r.record_key='config' AND u.is_active=1").fetchall()

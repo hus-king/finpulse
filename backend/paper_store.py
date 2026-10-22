@@ -64,6 +64,8 @@ class PaperStore:
                 if previous['intent'] != intent:
                     raise PaperError('IDEMPOTENCY_CONFLICT', '这次请求编号已用于另一笔交易，请核对成交记录。')
                 return self._public(previous)
+            if self._get(conn, 'paper_retired_trade', request_id, owner, None):
+                raise PaperError('ACCOUNT_RESET', '模拟盘已重置，这笔旧请求已归档，请刷新后重新下单。')
             account = self._get(conn, 'paper_account', 'account', owner, new_account())
             cached = self._get(conn, 'minute_market', intent['code'] + ':1', '', {})
             from .quant.store import authorize_execution
