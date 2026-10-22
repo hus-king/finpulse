@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .features import FEATURE_NAMES, FEATURE_VERSION, features
+from .peg_strategy import PEG_STRATEGY_ID, PegStrategy
 
 STRATEGY_ID = 'official-multifactor-v1'
 MODEL_ROOT = Path(__file__).resolve().parents[2] / 'models' / 'official_quant'
@@ -91,6 +92,7 @@ class StrategyRegistry:
             self.register(STRATEGY_ID, QuantStrategy())
         except (OSError, ValueError, KeyError, TypeError) as exc:
             self.error = '官方模型尚未发布或未通过校验'
+        self.register(PEG_STRATEGY_ID, PegStrategy())
 
     def register(self, strategy_id, strategy: Strategy):
         if strategy_id in self.strategies:
@@ -103,4 +105,6 @@ class StrategyRegistry:
         return self.strategies[strategy_id]
 
     def list(self):
-        return [s.metadata() for s in self.strategies.values()] or [{'id':STRATEGY_ID,'name':'官方日频多因子 · 研究版', 'available':False,'reason':self.error}]
+        items = [s.metadata() for s in self.strategies.values()]
+        if self.error:items.insert(0,{'id':STRATEGY_ID,'name':'官方日频多因子 · 研究版','available':False,'reason':self.error})
+        return items

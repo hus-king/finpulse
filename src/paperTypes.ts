@@ -29,16 +29,20 @@ export interface PaperHistory { items: PaperTrade[]; next_before_seq: number | n
 export interface PaperIntent { request_id: string; code: string; side: 'buy' | 'sell'; quantity: number }
 
 export interface QuantMetrics { total_return: number; annualized_return: number; max_drawdown: number; trades: number; start: string; end: string }
-export interface PaperStrategy { id: string; name: string; available: boolean; origin?: 'official' | 'user'; revision?: number; digest?: string; description?: string; reason?: string; version?: string; universe?: string[]; rules_summary?: { top_n: number; per_stock_weight: number; max_total_weight: number }; report?: { limits?: string[]; test?: { model: QuantMetrics; momentum: QuantMetrics; equal_weight: QuantMetrics } } }
+export interface PaperStrategy { id: string; name: string; available: boolean; kind?: 'peg'; origin?: 'official' | 'user'; revision?: number; digest?: string; description?: string; reason?: string; version?: string; universe?: string[]; rules_summary?: { top_n: number; per_stock_weight: number; max_total_weight: number }; report?: { limits?: string[]; test?: { model: QuantMetrics; momentum: QuantMetrics; equal_weight: QuantMetrics } } }
 export interface UserStrategyRecord { id: string; revision: number; digest: string; strategy: Record<string, unknown> }
 export interface StrategySubmissionSchema { schema_version: string; json_schema: Record<string, unknown>; example: Record<string, unknown>; features: Record<string, string>; limits: { max_package_bytes: number; max_strategies: number; max_nodes: number; max_depth: number; writes_per_minute: number } }
 export interface QuantDecision {
   key: string; date: string; as_of: string; status: string; model_version: string; reason?: string;
   target_weights: Record<string, number>;
+  peg_snapshot?: { snapshot_id: string; method_version: string; market_date: string; published_at: string };
+  peg_selection?: { code: string; name: string; group: string; peg: number }[];
+  allocation_outcome?: { positions: Record<string, { quantity: number; weight: number }>; differences: Record<string, { target_weight: number; actual_weight: number }>; note: string };
   results?: { request_id: string; code: string; status: string; sequence?: number; reason?: string }[];
 }
 export interface PaperAutomationState {
   mode: 'manual' | 'algorithm'; revision: number; strategy_id: string | null; scheduler_enabled: boolean;
+  strategy_config?: { top_n?: number; group?: string };
   reason: string | null; next_check: string; last_decision: QuantDecision | null;
   runtime: { status?: string; checked_at?: string; reason?: string };
 }

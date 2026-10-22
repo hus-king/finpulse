@@ -1,0 +1,21 @@
+# Daily low PEG paper strategy
+
+Goal: Add a selectable, configurable daily paper strategy. Human selected the five lowest positive PEG stocks across all eligible CSI300 companies.
+
+Architecture: Register a deterministic PEG adapter independently of the neural model. Bind a complete immutable snapshot published before trading-day midnight and matching the previous trading day. Reuse the existing paper executor and its transaction, lease, T+1, 20% per-name, 80% total, five-holding, 30% daily turnover and 15% drawdown guards. Persist snapshot provenance, configuration, planned orders and target/actual differences. Do not enable any user's account automatically.
+
+Tasks:
+- [x] Test and implement backend/quant/peg_strategy.py: strict top_n/group config, all-group PEG/code ordering, equal weights, complete/compatible/point-in-time snapshots, immutable provenance and fail-closed behavior.
+- [x] Test and extend strategy registry, per-owner configuration/API and daily executor: dynamic selected universe, exits for existing holdings, spread initial buy budget, pinned restart replay, transaction intent checks, unchanged other strategies.
+- [x] Add PEG controls/description and snapshot/target-versus-actual decision display to PaperAutomation.tsx/paperTypes.ts; retain existing model report and manual workflows.
+- [ ] Run full regression/build and focused review; commit/push and deploy with rollback. Verify production strategy registration, default config, snapshot availability and unchanged scheduler; no production trades or account activation.
+
+Ruling: Reuse the prior clean isolated worktree, fast-forwarded to main 39e258a, on codex/peg-paper-strategy. Human's explicit action request and answers authorize implementation; existing push/deployment authorization persists.
+Ruling: Target 80% equal weights for five stocks (16% each); with fewer stocks preserve the 20% per-name cap. Allocate a constrained initial buy budget among candidates so cheap five-name baskets need not start in just two names. Turnover/T+1/quotes can defer convergence, so show residual differences.
+Ruling: All-group mode intentionally compares financial and nonfinancial PEG directly at the user's request, overriding the leaderboard's default separate comparison. Make that choice visible and configurable.
+Ruling: Missing/stale/invalid snapshots pause new plans without selling holdings. New decisions only use pre-day snapshots; running decisions resume their saved plan within the same trading day. Next-day decisions re-read the real account, never replay expired orders.
+Baseline: 388 tests ran; test_market_bundle.BundleServiceTests.test_background_warming_yields_to_active_source_and_stops_on_close had a temporary-directory cleanup race (OSError 66) before implementation. Re-run and final suite results will be recorded separately. Copilot's position-shape warning was rejected: the transaction uses raw position mappings while public account valuation returns lists, intentionally.
+
+Verification: 17 new strategy regressions passed, including drawdown-paused and cross-day-expired plans; full backend 405 passed in 28.662s. All 56 Node regressions passed and the final TypeScript/Vite production build passed. The pre-existing market-bundle cleanup error passed its 19-test focused rerun and the full final suite. Browser checks in an isolated local account passed: default5/all, activation, parameter changes to3/financial, reload persistence, pause/manual re-enable and return to5/all. Desktop screenshot and no horizontal overflow verified.
+
+Review rulings: accepted Copilot findings about terminal drawdown and expired plans; observed both new tests RED, fixed and verified GREEN. Rejected stale-planning-equity finding: run_owner explicitly fetches fresh quotes and re-reads account before creating the plan. Rejected wall-clock mismatch: lease claim, renew and transaction authorization all use the same host wall clock; trading-session clock is intentionally separate. Keep lease loss resumable. Strengthened PEG transaction authorization to require the saved snapshot, configuration, request ID and order intent.

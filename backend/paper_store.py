@@ -70,7 +70,7 @@ class PaperStore:
             from .news_cleaning import SHANGHAI
             from datetime import datetime
             timestamp = now() if now else datetime.now(SHANGHAI)
-            provenance = authorize_execution(self, conn, owner, account, intent, cached, execution, timestamp)
+            provenance = authorize_execution(self, conn, owner, account, intent, cached, execution, timestamp, request_id=request_id)
             updated, trade = apply(account, cached)
             trade.update(provenance)
             sequence = account['sequence'] + 1

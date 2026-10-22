@@ -14,6 +14,7 @@ from ..trading_calendar import previous_trade_day
 from .features import corporate_action, features
 from .store import QuantStore
 from .strategy import StrategyRegistry
+from .peg_strategy import PEG_STRATEGY_ID
 from .user_store import UserStrategyStore
 
 log=logging.getLogger(__name__)
@@ -55,10 +56,11 @@ class QuantService:
     def strategies(self,owner):
         return [{**item,'origin':'official'} for item in self.registry.list()]+self.users.metadata(owner)
 
-    def configure(self,owner,mode,strategy_id,expected_revision,strategy_revision=None):
+    def configure(self,owner,mode,strategy_id,expected_revision,strategy_revision=None,strategy_config=None):
         validator=None
+        normalized={}
         if mode=='algorithm':
-            try: self.strategy(owner,strategy_id).validate_config({})
+            try: normalized=self.strategy(owner,strategy_id).validate_config(strategy_config or {})
             except ValueError as exc: raise PaperError('STRATEGY_UNAVAILABLE',str(exc),422) from None
             if strategy_id.startswith('user-'):
                 if type(strategy_revision) is not int or strategy_revision<1:
@@ -69,7 +71,7 @@ class QuantService:
                     if record['revision']!=strategy_revision:
                         raise PaperError('STRATEGY_REVISION_CONFLICT','策略已更新，请刷新后重新选择。')
                     self.users.from_record(record)
-        return self.store.configure(owner,mode,strategy_id,expected_revision,validator=validator)
+        return self.store.configure(owner,mode,strategy_id,expected_revision,validator=validator,strategy_config=normalized)
 
     async def load_histories(self,codes,signal):
         result={}
@@ -105,6 +107,8 @@ class QuantService:
             if runtime.get('retry_at',0)>time.time(): continue
             key=now.date().isoformat()+':'+str(cfg['revision']).zfill(10)
             previous=await asyncio.to_thread(self.store.records.get,'quant_decision',key,owner,default=None)
+            if not previous and cfg['strategy_id']==PEG_STRATEGY_ID:
+                await asyncio.to_thread(self.store.expire_peg_plans,owner,now.date().isoformat())
             if previous and previous['status']!='running': continue
             lease=await asyncio.to_thread(self.store.records.claim,'quant:'+owner,300)
             if not lease: continue
@@ -123,28 +127,27 @@ class QuantService:
 
     async def run_owner(self,owner,cfg,key,token):
         strategy=self.strategy(owner,cfg['strategy_id'])
-        metadata=strategy.metadata()
-        universe=metadata['universe']
-        if any(self.paper.catalog.get(code) is None for code in universe):
-            await self.paper.catalog.ensure()
-        if any(self.paper.catalog.get(code) is None for code in universe):
-            raise ValueError('策略股票池元数据尚未核验，等待交易所列表更新')
+        is_peg=cfg['strategy_id']==PEG_STRATEGY_ID
         signal=previous_trade_day(self.clock().date())
         if signal is None: raise ValueError('交易日历待更新')
         signal=signal.isoformat()
         decision=await asyncio.to_thread(self.store.records.get,'quant_decision',key,owner,default=None)
-        if decision and decision['model_version']!=metadata['version']:
+        if decision and decision['model_version']!=strategy.metadata()['version']:
             raise ValueError('本轮模型版本已改变，请检查后切回手动再启用')
         if not decision:
+            if is_peg:strategy=await asyncio.to_thread(strategy.prepare,self.store.records,cfg.get('strategy_config',{}),signal,self.clock())
+            universe=strategy.metadata()['universe']
             account=await asyncio.to_thread(self.paper.account,owner)
             codes=list(dict.fromkeys([*universe,*(p['code'] for p in account['positions'])]))
+            if any(self.paper.catalog.get(code) is None for code in codes):await self.paper.catalog.ensure()
+            if any(self.paper.catalog.get(code) is None for code in codes):raise ValueError('策略股票池元数据尚未核验，等待交易所列表更新')
             dataset=await self.history_loader(codes,signal)
             proposed=strategy.decide({c:d['raw'] for c,d in dataset.items()},signal)
             weights=proposed['target_weights']
             if (len(weights)>5 or any(c not in universe or not math.isfinite(w) or not 0<=w<=.2 for c,w in weights.items())
                     or sum(weights.values())>.80000001): raise ValueError('策略输出超过风控上限')
             eligible=[c for c,d in dataset.items() if not corporate_action(d['raw'][-65:],d['adjusted'][-65:])]
-            managed=set(universe)
+            managed=set(codes if is_peg else universe)
             needed=list(dict.fromkeys([*(p['code'] for p in account['positions']),*weights]))
             for code in needed:
                 await self.fresh(code)
@@ -159,7 +162,12 @@ class QuantService:
                       'created_at':self.clock().isoformat(),'previous_close':{c:d['raw'][-1]['close'] for c,d in dataset.items()}}
             day=await asyncio.to_thread(self.store.records.get,'quant_day',decision['date'],owner,default={'spent_fen':0,'budget_fen':decision['budget_fen']})
             budget=max(0,min(day['budget_fen']-day['spent_fen'],decision['budget_fen']))
+            if is_peg:
+                # Fees reduce equity during execution; leave headroom under the
+                # transactional 30% limit rather than losing the final basket leg.
+                budget=max(0,budget-math.ceil(decision['budget_fen']*.001)-len(needed)*1000)
             positions={p['code']:p for p in account['positions']};cash=account['cash_fen'];total=account['market_value_fen']
+            buy_remaining=set(weights) if is_peg else set()
             for side in ('sell','buy'):
                 for code in needed:
                     if code not in managed or code not in eligible: continue
@@ -173,7 +181,11 @@ class QuantService:
                     target=int(account['equity_fen']*weights.get(code,0)/price)//step*step
                     difference=target-position['quantity']
                     quantity=(max(0,difference) if side=='buy' else min(max(0,-difference),position['sellable']))//step*step
-                    quantity=min(quantity,budget//price//step*step,rules['max_quantity'])
+                    available_budget=budget
+                    if side=='buy' and is_peg:
+                        available_budget=budget//max(1,len(buy_remaining))
+                        buy_remaining.discard(code)
+                    quantity=min(quantity,available_budget//price//step*step,rules['max_quantity'])
                     if side=='buy':
                         quantity=min(quantity,max(0,cash-1000)//price//step*step,
                                      max(0,int(account['equity_fen']*.8)-total)//price//step*step)
@@ -192,7 +204,8 @@ class QuantService:
         if decision['status']!='running': return
         execution={'revision':cfg['revision'],'decision_key':key,'lease_token':token,
                    'strategy_id':cfg['strategy_id'],'model_version':decision['model_version']}
-        results=[]
+        if is_peg:execution['peg_snapshot_id']=decision['peg_snapshot']['snapshot_id']
+        results=[];paused=False
         for order in decision['orders']:
             if not await asyncio.to_thread(self.store.records.renew,'quant:'+owner,token,300): raise ValueError('租约失效')
             # Replay a committed order without requiring a new quote or a still-open session.
@@ -202,9 +215,22 @@ class QuantService:
                 fill=await self.paper.submit(owner,**order,execution=execution)
                 results.append({'request_id':order['request_id'],'code':order['code'],'status':'filled','sequence':fill['sequence']})
             except PaperError as exc:
-                if exc.code in ('AUTOMATION_CHANGED','QUANT_LEASE_LOST','IDEMPOTENCY_CONFLICT'): raise
+                if exc.code=='AUTOMATION_CHANGED':
+                    await asyncio.to_thread(self.store.finish,owner,key,cfg['revision'],'paused',results,exc.message)
+                    raise
+                if exc.code in ('QUANT_LEASE_LOST','IDEMPOTENCY_CONFLICT'):raise
                 if exc.code=='QUANT_DRAWDOWN':
                     await asyncio.to_thread(self.store.configure,owner,'manual',None,cfg['revision'],'回撤达到15%，自动暂停。')
+                    paused=True
                 results.append({'request_id':order['request_id'],'code':order['code'],'status':'skipped','reason':exc.message,'code_reason':exc.code})
-        await asyncio.to_thread(self.store.finish,owner,key,cfg['revision'],'completed',results,
-                                None if decision['orders'] else '未产生可执行订单：阈值、公司行为、费用或风险限制。')
+                if paused:break
+        outcome=None
+        if is_peg:
+            account=await asyncio.to_thread(self.paper.account,owner)
+            positions={p['code']:{'quantity':p['quantity'],'weight':p['market_value_fen']/account['equity_fen']} for p in account['positions']}
+            outcome={'positions':positions,'differences':{code:{'target_weight':decision['target_weights'].get(code,0),
+                     'actual_weight':positions.get(code,{}).get('weight',0)} for code in dict.fromkeys([*decision['target_weights'],*positions])
+                     if abs(decision['target_weights'].get(code,0)-positions.get(code,{}).get('weight',0))>.001},
+                     'note':'目标与实际可能因每日30%成交额、T+1、整手、行情或费用限制而不同；未完成部分下个交易日重新评估。'}
+        reason='回撤达到15%，本轮计划已暂停。' if paused else ((decision['reason'] if is_peg else None) if decision['orders'] else '未产生可执行订单：阈值、公司行为、费用或风险限制。')
+        await asyncio.to_thread(self.store.finish,owner,key,cfg['revision'],'paused' if paused else 'completed',results,reason,outcome)

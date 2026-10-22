@@ -9,7 +9,7 @@ from ..paper_rules import PaperError, new_account, valid_quote, value_account
 
 
 def default_config():
-    return {'mode':'manual','strategy_id':None,'revision':0,'peak_equity_fen':20_000_000,'reason':None}
+    return {'mode':'manual','strategy_id':None,'strategy_config':{},'revision':0,'peak_equity_fen':20_000_000,'reason':None}
 
 
 class QuantStore:
@@ -28,13 +28,14 @@ class QuantStore:
     def config(self,owner):
         return self.records.get('quant_config','config',owner,default=None) or default_config()
 
-    def configure(self,owner,mode,strategy_id,expected_revision,reason=None,validator=None):
+    def configure(self,owner,mode,strategy_id,expected_revision,reason=None,validator=None,strategy_config=None):
         with self.locked(owner) as conn:
             old=self.paper._get(conn,'quant_config','config',owner,default_config())
             if old['revision']!=expected_revision:
                 raise PaperError('AUTOMATION_CONFLICT','操作方式已变化，请刷新后再试。')
             if validator:validator(conn)
             new={**old,'mode':mode,'strategy_id':strategy_id if mode=='algorithm' else None,
+                 'strategy_config':(strategy_config or {}) if mode=='algorithm' else {},
                  'revision':old['revision']+1,'reason':reason,'updated_at':int(time.time())}
             self.paper._put(conn,'quant_config','config',owner,new)
         return new
@@ -63,11 +64,12 @@ class QuantStore:
             self.paper._put(conn,'quant_decision',decision['key'],owner,decision)
         return decision
 
-    def finish(self,owner,key,revision,status,results,reason=None):
+    def finish(self,owner,key,revision,status,results,reason=None,allocation_outcome=None):
         with self.locked(owner) as conn:
             decision=self.paper._get(conn,'quant_decision',key,owner,None)
             if decision and decision['revision']==revision:
                 decision.update(status=status,results=results,reason=reason)
+                if allocation_outcome is not None:decision['allocation_outcome']=allocation_outcome
                 self.paper._put(conn,'quant_decision',key,owner,decision)
 
     def mark_peak(self,owner,revision,equity):
@@ -81,8 +83,18 @@ class QuantStore:
             self.paper._put(conn,'quant_config','config',owner,cfg)
         return cfg
 
+    def expire_peg_plans(self,owner,date):
+        """Never replay yesterday's orders; preserve their committed fills."""
+        with self.locked(owner) as conn:
+            rows=conn.execute("SELECT record_key,payload FROM research_records WHERE namespace='quant_decision' AND owner=? AND record_key<?",(owner,date)).fetchall()
+            for row in rows:
+                decision=json.loads(row['payload'])
+                if decision.get('strategy_id')=='official-low-peg-v1' and decision.get('status')=='running':
+                    decision.update(status='expired',reason='上一交易日未完成的计划已过期；已成交记录保留，新一日根据实际持仓重新决策。')
+                    self.paper._put(conn,'quant_decision',row['record_key'],owner,decision)
 
-def authorize_execution(paper,conn,owner,account,intent,cached,execution,now):
+
+def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,request_id=None):
     """Called AFTER replay lookup, INSIDE the money transaction and owner lock."""
     cfg=paper._get(conn,'quant_config','config',owner,default_config())
     if execution is None:
@@ -98,6 +110,13 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now):
     decision=paper._get(conn,'quant_decision',execution['decision_key'],owner,None)
     if not decision or decision['revision']!=cfg['revision'] or decision['model_version']!=execution['model_version'] or decision['date']!=now.date().isoformat() or decision['status']!='running':
         raise PaperError('AUTOMATION_CHANGED','决策已过期或结束。')
+    if cfg['strategy_id']=='official-low-peg-v1':
+        planned=next((o for o in decision.get('orders',[]) if o['request_id']==request_id),None)
+        if (decision.get('strategy_id')!=cfg['strategy_id'] or
+                execution.get('peg_snapshot_id')!=decision.get('peg_snapshot',{}).get('snapshot_id') or
+                cfg.get('strategy_config',{})!=decision.get('strategy_config',{}) or not planned or
+                any(planned[k]!=intent[k] for k in ('code','side','quantity'))):
+            raise PaperError('AUTOMATION_CHANGED','PEG配置、快照或订单与保存的决策不符。')
     if intent['code'] not in decision['eligible']:
         raise PaperError('QUANT_RISK_LIMIT','股票未通过本轮行情和公司行为校验。')
     quote=valid_quote(cached,now)

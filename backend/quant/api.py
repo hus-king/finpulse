@@ -17,6 +17,7 @@ class AutomationRequest(BaseModel):
     strategy_id:str | None=Field(default=None,max_length=80)
     expected_revision:int=Field(strict=True,ge=0)
     strategy_revision:int | None=Field(default=None,strict=True,ge=1)
+    strategy_config:dict=Field(default_factory=dict,max_length=8)
 
 
 @router.get('/strategies')
@@ -34,7 +35,7 @@ async def state(response:Response,session=Depends(current_session),service=Depen
 @router.put('/automation')
 async def configure(data:AutomationRequest,response:Response,user=Depends(authorize_model_request),service=Depends(quant)):
     response.headers['Cache-Control']='no-store'
-    await asyncio.to_thread(service.configure,user['id'],data.mode,data.strategy_id,data.expected_revision,data.strategy_revision)
+    await asyncio.to_thread(service.configure,user['id'],data.mode,data.strategy_id,data.expected_revision,data.strategy_revision,data.strategy_config)
     return await asyncio.to_thread(service.state,user['id'])
 
 
