@@ -41,7 +41,7 @@ def publication_time(article):
     return datetime.combine(day, time(23, 59, 59), SHANGHAI)
 
 
-def documents(corpus):
+def documents(corpus, *, include_filtered=False):
     accepted, rejected = [], Counter()
     identities = set()
     for item in corpus['news']:
@@ -50,7 +50,8 @@ def documents(corpus):
             reason = 'not_full_body'
         elif item.get('date_status') != 'body_verified':
             reason = 'date_not_body_verified'
-        elif not isinstance(item.get('text'), str) or len(item['text'].strip()) < 80:
+        elif (not isinstance(item.get('text'), str)
+              or (len(item['text'].strip()) < 80 and not (include_filtered and item.get('direction_excluded')))):
             reason = 'short_body'
         elif not re.fullmatch(r'\d{6}', str(item.get('code', ''))):
             reason = 'invalid_code'
@@ -66,6 +67,9 @@ def documents(corpus):
         if not isinstance(identity, str) or not identity or identity in identities:
             raise ValueError('Document IDs must be unique nonempty strings')
         identities.add(identity)
+        if item.get('direction_excluded') and not include_filtered:
+            rejected['direction_filtered'] += 1
+            continue
         text_hash = hashlib.sha256(re.sub(r'\s+', '', item['text']).encode()).hexdigest()
         accepted.append({**item, 'published': pub, 'observed': max(pub, seen), 'text_hash': text_hash})
     return accepted, dict(rejected)
@@ -124,7 +128,12 @@ def build_samples(corpus, mode='observed', *, prediction=False):
     if corpus.get('schema_version') != 1 or mode not in ('observed', 'publication_replay'):
         raise ValueError('Unsupported corpus schema or time protocol')
     exported = timestamp(corpus['exported_at'])
-    articles, rejected = documents(corpus)
+    policy = corpus.get('direction_policy', {})
+    if policy and policy.get('version') != 'event-news-session-v2':
+        raise ValueError('Unsupported news direction policy')
+    # Retain tombstones until after version selection: an excluded new version
+    # must not resurrect the previous text at the same URL.
+    articles, rejected = documents(corpus, include_filtered=True)
     by_code = defaultdict(list)
     for article in articles:
         if article['published'] <= exported:
@@ -145,14 +154,18 @@ def build_samples(corpus, mode='observed', *, prediction=False):
         adjusted = valid_bars(corpus['markets'][code].get('adjusted', []))
         positions = [len(calendar) - 1] if prediction else range(20, len(calendar) - HORIZON)
         for index in positions:
-            if index < 20 or calendar[index] < first_news:
+            if index < 20 or calendar[index] < max(first_news, policy.get('signal_start', first_news)):
                 continue
             days = calendar[index - 20:index + (1 if prediction else HORIZON + 1)]
             if any(day not in bars or bars[day]['volume'] <= 0 for day in days):
                 skipped['missing_or_suspended_bar'] += 1
                 continue
             window = [bars[d] for d in days]
-            if action_in_window(window, adjusted):
+            adjustment = action_in_window(window, adjusted)
+            if policy.get('require_adjustment_reference') and adjustment is None:
+                skipped['missing_adjustment_reference'] += 1
+                continue
+            if adjustment:
                 skipped['corporate_action'] += 1
                 continue
             sequence = [[] for _ in range(NEWS_DAYS)]
@@ -164,7 +177,10 @@ def build_samples(corpus, mode='observed', *, prediction=False):
                     versions[article['url'] or article['id']] = article
             hashes = set()
             for article in sorted(versions.values(), key=lambda a: (a['published'], a['id']), reverse=True):
-                bucket = bisect_left(cutoffs, article['published'])
+                if article.get('direction_excluded'):
+                    continue
+                bucket_time = article['observed'] if policy and mode == 'observed' else article['published']
+                bucket = bisect_left(cutoffs, bucket_time)
                 offset = bucket - (index - NEWS_DAYS + 1)
                 if 0 <= offset < NEWS_DAYS and article['text_hash'] not in hashes:
                     hashes.add(article['text_hash'])
@@ -174,6 +190,8 @@ def build_samples(corpus, mode='observed', *, prediction=False):
                       'market': market_features(window[:21]), 'news': sequence,
                       'news_count': sum(map(len, sequence)),
                       'adjustment_checked': action_in_window(window, adjusted) is not None}
+            if policy:
+                record['news_protocol'] = mode
             if not prediction:
                 ret = bars[calendar[index + HORIZON]]['close'] / bars[calendar[index]]['close'] - 1
                 if ret == 0:
@@ -182,6 +200,8 @@ def build_samples(corpus, mode='observed', *, prediction=False):
                 record.update(label=int(ret > 0), return_3d=ret, label_end=calendar[index + HORIZON])
             samples.append(record)
     audit = {'protocol': mode, 'accepted_document_versions': len(articles), 'rejected_documents': rejected,
+             'eligible_document_versions': sum(not a.get('direction_excluded') for a in articles),
+             'direction_exclusions': dict(Counter(a.get('direction_category', 'unknown') for a in articles if a.get('direction_excluded'))),
              'sample_count': len(samples), 'sample_dates': len({s['date'] for s in samples}),
              'samples_with_news': sum(s['news_count'] > 0 for s in samples),
              'adjustment_unchecked_samples': sum(not s['adjustment_checked'] for s in samples),

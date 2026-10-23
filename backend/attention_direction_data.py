@@ -11,6 +11,40 @@ import statistics
 from .news_direction import NEWS_DAYS, SHANGHAI, documents, timestamp, valid_bars
 
 DAY_MARKET_NAMES = ['return_1', 'return_5', 'ma_5', 'volume_5', 'range', 'close_open']
+SESSION_NEWS_NAMES = ['publication_age_log_days', 'unknown_publication_time', 'availability_age_log_days',
+                      'preopen', 'morning', 'afternoon', 'off_session', 'trading_age']
+
+
+def trading_clock(stamp, calendar):
+    """Trading-day coordinate; nights/weekends do not create trading exposure."""
+    stamp = timestamp(stamp) if isinstance(stamp, str) else stamp
+    day = stamp.date().isoformat()
+    index = bisect_left(calendar, day)
+    if index == len(calendar) or calendar[index] != day:
+        return float(index)
+    minute = stamp.hour * 60 + stamp.minute + stamp.second / 60
+    elapsed = min(120., max(0., minute - 570)) + min(120., max(0., minute - 780))
+    return index + elapsed / 240
+
+
+def session_news_time(article, cutoff, calendar, mode):
+    published = article['published']
+    available = article['observed'] if mode == 'observed' else published
+    unknown = len(article.get('publication_timestamp') or '') <= 10
+    # EOD is a conservative AVAILABILITY bound, not proof of an after-hours
+    # publication. Use the oldest plausible intraday age for the recency prior.
+    freshness_time = published.replace(hour=0, minute=0, second=0, microsecond=0) if unknown else published
+    minute = published.hour * 60 + published.minute
+    on_day = not unknown and published.date().isoformat() in calendar
+    preopen = on_day and minute < 570
+    morning = on_day and 570 <= minute < 690
+    afternoon = on_day and 780 <= minute < 900
+    age = max(0., (cutoff - freshness_time).total_seconds() / 86400)
+    available_age = max(0., (cutoff - available).total_seconds() / 86400)
+    return [math.log1p(age) / math.log(32), float(unknown),
+            math.log1p(available_age) / math.log(32), float(preopen), float(morning), float(afternoon),
+            float(not unknown and not (preopen or morning or afternoon)),
+            max(0., trading_clock(cutoff, calendar) - trading_clock(freshness_time, calendar))]
 
 
 def company_cards(snapshot):
@@ -65,6 +99,7 @@ def indexed_features(samples, corpus, bundle, vector_ids):
     articles = {a['id']: a for a in documents(corpus)[0]}
     prices = {code: valid_bars(market['raw']) for code, market in corpus['markets'].items()}
     exported = timestamp(corpus['exported_at'])
+    sessions = bool(corpus.get('direction_policy'))
     calendar = sorted({day for bars in prices.values() for day in bars
                        if datetime.combine(date.fromisoformat(day), time(15), SHANGHAI) <= exported})
     output = {name: [] for name in ('news_ids', 'news_time', 'fact_ids', 'day_market', 'day_time', 'market')}
@@ -79,9 +114,12 @@ def indexed_features(samples, corpus, bundle, vector_ids):
             article_times = []
             for key in keys:
                 article = articles[key]
-                age = max(0, (cutoff - article['published']).total_seconds() / 86400)
-                article_times.append([math.log1p(age) / math.log(32), float(not article.get('publication_timestamp') or len(article['publication_timestamp']) <= 10)])
-            ages.append(article_times + [[0., 0.]] * (32 - len(keys)))
+                if sessions:
+                    article_times.append(session_news_time(article, cutoff, calendar, sample['news_protocol']))
+                else:
+                    age = max(0, (cutoff - article['published']).total_seconds() / 86400)
+                    article_times.append([math.log1p(age) / math.log(32), float(not article.get('publication_timestamp') or len(article['publication_timestamp']) <= 10)])
+            ages.append(article_times + [[0.] * (8 if sessions else 2)] * (32 - len(keys)))
             lag = (date.fromisoformat(sample['date']) - date.fromisoformat(days[-NEWS_DAYS + day])).days
             time_features.append([(NEWS_DAYS - 1 - day) / 9, lag / 20, float(bool(keys)), math.log1p(len(keys)) / math.log(33)])
         facts = available_cards(bundle, sample['code'], sample['cutoff'])
