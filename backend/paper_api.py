@@ -29,9 +29,9 @@ class PaperTradeRequest(BaseModel):
 
 
 @router.get('/account')
-async def account(response: Response, session=Depends(current_session), service=Depends(paper_service)):
+async def account(response: Response, refresh: bool = False, session=Depends(current_session), service=Depends(paper_service)):
     response.headers['Cache-Control'] = 'no-store'
-    return await asyncio.to_thread(service.account, session['user']['id'])
+    return await service.snapshot(session['user']['id'], refresh=refresh)
 
 
 @router.get('/quote/{code}')

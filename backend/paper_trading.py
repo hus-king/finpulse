@@ -23,6 +23,26 @@ class PaperTradingService:
         quotes = {code: self.store.records.get('minute_market', code + ':1', default={}) for code in account['positions']}
         return value_account(account, quotes, self.clock())
 
+    async def snapshot(self, owner: str, refresh: bool = False) -> dict:
+        """A portfolio read schedules all held quotes, independent of trading decisions."""
+        book = await asyncio.to_thread(self.store.get_account, owner)
+        async def schedule(code, position):
+            try:
+                board_rules(code)
+                # A persisted, previously validated holding can outlive a catalogue cache.
+                stock = self.catalog.get(code) or {'code': code, 'name': position['name']}
+                return code, await self.minute_market.snapshot(stock, 1, force=refresh)
+            except (PaperError, ValueError, TypeError, KeyError, AttributeError):
+                return code, {'refreshing': False, 'error': '持仓行情暂不可用，保留缓存估值。'}
+        states = dict(await asyncio.gather(*(schedule(code, position) for code, position in book['positions'].items())))
+        # Re-read the live book: a source response cannot restore a sold position.
+        account = await asyncio.to_thread(self.account, owner)
+        held = {position['code'] for position in account['positions']}
+        refreshing = any(state.get('refreshing') for code, state in states.items() if code in held)
+        errors = {code: state['error'] for code, state in states.items() if code in held and state.get('error')}
+        return {**account, 'valuation_refreshing': refreshing, 'valuation_errors': errors,
+                'next_poll_seconds': 2 if refreshing else 30}
+
     def trades(self, owner: str, limit: int = 20, before_seq: int | None = None) -> dict:
         return self.store.list_trades(owner, limit, before_seq)
 

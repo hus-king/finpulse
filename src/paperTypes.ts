@@ -9,6 +9,7 @@ export interface PaperPosition {
   valuation_status: 'fresh' | 'stale' | 'estimated'; market_value_fen: number; unrealized_pnl_fen: number;
 }
 export interface PaperAccount {
+  valuation_refreshing?: boolean; valuation_errors?: Record<string, string>; next_poll_seconds?: number;
   initial_cash_fen: number; cash_fen: number; market_value_fen: number; equity_fen: number;
   realized_pnl_fen: number; unrealized_pnl_fen: number; total_pnl_fen: number;
   return_percent: number; total_fees_fen: number; positions: PaperPosition[]; market: PaperMarket;

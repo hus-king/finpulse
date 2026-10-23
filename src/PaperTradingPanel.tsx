@@ -54,6 +54,7 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
   const intent = useRef<PaperIntent | null>(restored);
   const busy = useRef(false);
   const accountVersion = useRef(0);
+  const accountTimer = useRef<number | undefined>(undefined);
   function saveIntent(value: PaperIntent | null) {
     if (!user) return;
     try {
@@ -63,19 +64,32 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
     } catch { /* The in-memory retry remains available if browser storage is blocked. */ }
   }
 
-  const loadAccount = useCallback(async () => {
+  const loadAccount = useCallback(async (refresh = false): Promise<void> => {
     const controller = lifecycle.current;
     if (!controller || controller.signal.aborted) return;
+    window.clearTimeout(accountTimer.current);
     const version = ++accountVersion.current;
+    let nextPollSeconds = 30;
     setReading(true);
     try {
       const [next, trades] = await Promise.all([
-        api<PaperAccount>('/api/paper/account', undefined, controller.signal),
+        api<PaperAccount>(`/api/paper/account${refresh ? '?refresh=true' : ''}`, undefined, controller.signal),
         api<PaperHistory>('/api/paper/trades', undefined, controller.signal),
       ]);
+      nextPollSeconds = next.valuation_refreshing ? 2 : 30;
       if (!controller.signal.aborted && version === accountVersion.current) { setAccount(next); setHistory(trades); setReadError(''); }
     } catch (error) { if (!controller.signal.aborted && version === accountVersion.current) setReadError((error as Error).message); }
-    finally { if (!controller.signal.aborted && version === accountVersion.current) setReading(false); }
+    finally {
+      if (!controller.signal.aborted && version === accountVersion.current) {
+        setReading(false);
+        const poll = () => {
+          if (controller.signal.aborted) return;
+          if (busy.current) { accountTimer.current = window.setTimeout(poll, 2000); return; }
+          void loadAccount();
+        };
+        accountTimer.current = window.setTimeout(poll, nextPollSeconds * 1000);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -83,8 +97,7 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
     const controller = new AbortController();
     lifecycle.current = controller;
     void loadAccount();
-    const timer = window.setInterval(() => { if (!busy.current) void loadAccount(); }, 30000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => { controller.abort(); window.clearTimeout(accountTimer.current); };
   }, [user?.id, loadAccount]);
 
   useEffect(() => {
@@ -149,7 +162,7 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
       intent.current = null; setUnknown(false);
       saveIntent(null);
       setNotice(`模拟${trade.side === 'buy' ? '买入' : '卖出'}成功 · ${trade.name} ${trade.quantity} 股 · 成交价 ${money(trade.price_fen)}`);
-      await loadAccount();
+      await loadAccount(true);
       setRefreshNonce(value => value + 1);
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -181,8 +194,8 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
   if (!user) return <section className="panel paper-welcome"><span className="paper-welcome-icon"><WalletCards size={38} /></span><span className="paper-tag">PAPER TRADING</span><h2>用 20 万虚拟资金，练习你的交易判断。</h2><p>独立模拟账户 · A 股交易时段 · T+1 · 持仓盈亏与成交记录</p><button className="primary-button" disabled={authLoading} onClick={() => requestLogin('登录后拥有独立的 20 万元模拟账户，资金与成交记录保存在你的账号下。')}>登录体验模拟盘<ArrowUpRight size={16} /></button><small>虚拟资金，不连接券商，不产生真实交易。</small></section>;
 
   return <div className="paper-workspace">
-    <div className="paper-topbar"><div><span className="paper-tag"><ShieldCheck size={13} />虚拟资金 · 模拟成交</span><span className={`paper-session ${account?.market.can_trade ? 'trading' : ''}`}><Clock3 size={13} />{account?.market.label ?? '读取交易状态'}<small>北京时间</small></span></div><button className="paper-refresh" aria-label="刷新模拟账户" disabled={reading || submitting} onClick={() => { void loadAccount(); }}><RefreshCw size={15} className={reading ? 'spin' : ''} />刷新账户</button></div>
-    {readError && <div className="paper-error" role="alert">{readError}<button onClick={() => { void loadAccount(); }}>重试</button></div>}
+    <div className="paper-topbar"><div><span className="paper-tag"><ShieldCheck size={13} />虚拟资金 · 模拟成交</span><span className={`paper-session ${account?.market.can_trade ? 'trading' : ''}`}><Clock3 size={13} />{account?.market.label ?? '读取交易状态'}<small>北京时间</small></span></div><button className="paper-refresh" aria-label="刷新模拟账户" disabled={reading || submitting} onClick={() => { void loadAccount(true); }}><RefreshCw size={15} className={reading ? 'spin' : ''} />刷新账户</button></div>
+    {readError && <div className="paper-error" role="alert">{readError}<button onClick={() => { void loadAccount(true); }}>重试</button></div>}
     <div className="paper-stats">
       <section className="panel paper-stat paper-equity"><span>模拟账户总资产</span><strong className="mono" data-testid="paper-equity">{money(account?.equity_fen ?? null)}</strong><small>初始本金 ¥ 200,000.00</small></section>
       <section className="panel paper-stat"><span>可用现金</span><strong className="mono" data-testid="paper-cash">{money(account?.cash_fen ?? null)}</strong><small>买入时需预留交易费用</small></section>
@@ -210,9 +223,11 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
         </form>
       </section>
 
-      <section className="panel paper-holdings"><header><div><span className="paper-eyebrow">YOUR POSITIONS</span><h2>我的持仓 <small>{account?.positions.length ?? 0}</small></h2></div><span className="paper-mini-tag">当日买入锁定</span></header>
-        {account?.positions.length ? <div className="paper-table-scroll"><table><thead><tr><th>股票</th><th>持仓 / 可卖</th><th>成本 / 估值价</th><th>市值</th><th>浮动盈亏</th></tr></thead><tbody>{account.positions.map(item => <tr key={item.code} data-testid={`paper-holding-${item.code}`} data-sellable={item.sellable}><td><button type="button" className="paper-holding-link" aria-label={`查看${item.name}（${item.code}）详情`} onClick={() => onOpenStock(item.code)}><strong>{item.name}</strong><small>{item.code}</small></button></td><td><strong>{item.quantity.toLocaleString()} / {item.sellable.toLocaleString()}</strong><small>锁定 {item.locked.toLocaleString()} 股</small></td><td><strong className="mono">{formatMoney(item.average_cost_fen)} / {formatMoney(item.price_fen)}</strong><small>{item.valuation_status === 'estimated' ? '按成交价估算' : `${item.valuation_status === 'stale' ? '缓存 ' : ''}${date(item.price_as_of)}`}</small></td><td className="mono">{formatMoney(item.market_value_fen)}</td><td className={`mono ${tone(item.unrealized_pnl_fen)}`}>{signed(item.unrealized_pnl_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-empty"><WalletCards size={35} /><h3>{reading ? '正在读取持仓' : '你的第一笔模拟交易，从这里开始。'}</h3><p>选择股票，输入股数，体验资金与持仓的变化。</p><div><span>20 万元虚拟本金</span><span>T+1 交易规则</span><span>账号独立记录</span></div></div>}
-        <div className="paper-holdings-note"><Info size={14} /><p>买入费用计入持仓成本，卖出使用平均成本计算已实现盈亏。市值按缓存分钟价格估算，报价时间单独展示。</p></div>
+      <section className="panel paper-holdings"><header><div><span className="paper-eyebrow">YOUR POSITIONS</span><h2>我的持仓 <small>{account?.positions.length ?? 0}</small></h2></div><span className="paper-mini-tag">T+1 · 下一交易日可卖</span></header>
+        {account?.valuation_refreshing && <p className="paper-validation" role="status"><LoaderCircle size={14} className="spin" />正在更新全部持仓报价，先展示已保存的估值。</p>}
+        {!!Object.keys(account?.valuation_errors ?? {}).length && <p className="paper-error" role="alert">部分持仓报价更新失败：{Object.entries(account?.valuation_errors ?? {}).map(([code, error]) => `${code} ${error}`).join('；')}</p>}
+        {account?.positions.length ? <div className="paper-table-scroll"><table><thead><tr><th>股票</th><th>持仓 / 可卖</th><th>成本 / 估值价</th><th>市值</th><th>浮动盈亏</th></tr></thead><tbody>{account.positions.map(item => <tr key={item.code} data-testid={`paper-holding-${item.code}`} data-sellable={item.sellable}><td><button type="button" className="paper-holding-link" aria-label={`查看${item.name}（${item.code}）详情`} onClick={() => onOpenStock(item.code)}><strong>{item.name}</strong><small>{item.code}</small></button></td><td><strong>{item.quantity.toLocaleString()} / {item.sellable.toLocaleString()}</strong><small>{item.locked > 0 ? `今日买入 ${item.locked.toLocaleString()} 股 · T+1` : '无当日买入锁定'}</small></td><td><strong className="mono">{formatMoney(item.average_cost_fen)} / {formatMoney(item.price_fen)}</strong><small>{item.valuation_status === 'estimated' ? '按成交价估算' : `${item.valuation_status === 'stale' ? account.market.can_trade ? '延迟 ' : '快照 ' : ''}${date(item.price_as_of)}`}</small></td><td className="mono">{formatMoney(item.market_value_fen)}</td><td className={`mono ${tone(item.unrealized_pnl_fen)}`}>{signed(item.unrealized_pnl_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-empty"><WalletCards size={35} /><h3>{reading ? '正在读取持仓' : '你的第一笔模拟交易，从这里开始。'}</h3><p>选择股票，输入股数，体验资金与持仓的变化。</p><div><span>20 万元虚拟本金</span><span>T+1 交易规则</span><span>账号独立记录</span></div></div>}
+        <div className="paper-holdings-note"><Info size={14} /><p>买入费用计入持仓成本，卖出使用平均成本计算已实现盈亏。市值与盈亏按分钟行情更新，数据时间单独展示。T+1限制当日卖出，持仓估值持续更新。</p></div>
       </section>
     </div>
 
