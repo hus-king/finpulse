@@ -1,0 +1,10 @@
+{
+  "reason": "User requested stopping collection and training on currently saved responses",
+  "new_requests_after_stop": 0,
+  "collected_news_windows": 62,
+  "remaining_news_windows": 53,
+  "collected_market_requests": 28,
+  "remaining_market_requests": 18,
+  "corpus_sha256": "351d8cbf41fb86a3ea7fb8c493ba66f5757913df063f227827b040b3057abcc6",
+  "collector_sha256": "b98d9935da454ae796560426ec9e1818f23ff16ef3d450509402b2a3c5025553"
+}

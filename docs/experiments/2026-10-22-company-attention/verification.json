@@ -1,0 +1,78 @@
+{
+  "saved_models": [
+    {
+      "protocol": "observed",
+      "model": "market_logistic",
+      "rows": 37,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "observed",
+      "model": "news_logistic",
+      "rows": 37,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "observed",
+      "model": "fusion_gru",
+      "rows": 37,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "observed",
+      "model": "hierarchical_gru",
+      "rows": 37,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "observed",
+      "model": "company_attention_gru",
+      "rows": 37,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "publication_replay",
+      "model": "market_logistic",
+      "rows": 640,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "publication_replay",
+      "model": "news_logistic",
+      "rows": 640,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "publication_replay",
+      "model": "fusion_gru",
+      "rows": 640,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "publication_replay",
+      "model": "hierarchical_gru",
+      "rows": 640,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    },
+    {
+      "protocol": "publication_replay",
+      "model": "company_attention_gru",
+      "rows": 640,
+      "max_prediction_difference": 0.0,
+      "hash_valid": true
+    }
+  ],
+  "latest_prediction_items": 19,
+  "corrupted_checkpoint_rejected": true,
+  "prediction_protocol": "observed news and observed company availability",
+  "eligible_for_trading": false
+}

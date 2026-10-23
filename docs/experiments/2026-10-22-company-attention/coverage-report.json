@@ -1,0 +1,325 @@
+{
+  "audited_at": "2026-10-21T16:19:14.251834+00:00",
+  "source_counts": {
+    "saved_search_windows": 62,
+    "returned_search_rows": 611
+  },
+  "reported_search_credits": 124,
+  "qualified_before": 472,
+  "qualified_after": 568,
+  "new_qualified_versions": 96,
+  "new_independent_bodies": 94,
+  "qualified_independent_bodies": 484,
+  "new_qualified_publication_range": [
+    "2026-09-22",
+    "2026-10-21"
+  ],
+  "revision_fields": {
+    "adjusted:volume": 616
+  },
+  "stock_coverage": {
+    "600519": {
+      "new_qualified_versions": 0
+    },
+    "300205": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 2
+    },
+    "688981": {
+      "new_qualified_versions": 0
+    },
+    "688825": {
+      "new_qualified_versions": 0
+    },
+    "688836": {
+      "new_qualified_versions": 0
+    },
+    "600418": {
+      "new_qualified_versions": 0
+    },
+    "600036": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 0
+    },
+    "000039": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 6
+    },
+    "002594": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 24
+    },
+    "600104": {
+      "new_qualified_versions": 0
+    },
+    "300750": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 25
+    },
+    "601766": {
+      "new_qualified_versions": 0
+    },
+    "600926": {
+      "new_qualified_versions": 0
+    },
+    "300274": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 6
+    },
+    "000019": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 1
+    },
+    "000425": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 2
+    },
+    "600028": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 0
+    },
+    "000159": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 4
+    },
+    "300308": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 18
+    },
+    "600383": {
+      "new_qualified_versions": 0
+    },
+    "000725": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 2
+    },
+    "002624": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 4
+    },
+    "000002": {
+      "raw": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "adjusted": {
+        "bars": 242,
+        "range": [
+          "2025-10-22",
+          "2026-10-21"
+        ]
+      },
+      "new_qualified_versions": 2
+    }
+  },
+  "corpus_sha256": "351d8cbf41fb86a3ea7fb8c493ba66f5757913df063f227827b040b3057abcc6",
+  "protocols": {
+    "observed": {
+      "protocol": "observed",
+      "accepted_document_versions": 568,
+      "rejected_documents": {
+        "not_full_body": 1785,
+        "date_not_body_verified": 811
+      },
+      "sample_count": 137,
+      "sample_dates": 7,
+      "samples_with_news": 106,
+      "adjustment_unchecked_samples": 55,
+      "skipped": {
+        "corporate_action": 22,
+        "flat_target": 2
+      },
+      "target": "unadjusted close(t+3)/close(t)-1; flat targets excluded; no trading return claim"
+    },
+    "publication_replay": {
+      "protocol": "publication_replay",
+      "accepted_document_versions": 568,
+      "rejected_documents": {
+        "not_full_body": 1785,
+        "date_not_body_verified": 811
+      },
+      "sample_count": 2710,
+      "sample_dates": 153,
+      "samples_with_news": 348,
+      "adjustment_unchecked_samples": 795,
+      "skipped": {
+        "flat_target": 33,
+        "corporate_action": 336,
+        "missing_or_suspended_bar": 440
+      },
+      "target": "unadjusted close(t+3)/close(t)-1; flat targets excluded; no trading return claim"
+    }
+  }
+}

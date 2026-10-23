@@ -1,0 +1,45 @@
+{
+  "completed_at": "2026-10-21T16:18:41.080333+00:00",
+  "complete": false,
+  "assemble_only": true,
+  "counts": {
+    "reused_market_requests": 28,
+    "added_raw_bars": 1260,
+    "added_adjusted_bars": 2464,
+    "reused_news_requests": 62,
+    "search_results": 611,
+    "saturated_windows": 2,
+    "finished_news_windows": 62,
+    "missing_news_requests": 53,
+    "missing_market_requests": 18
+  },
+  "failures": [],
+  "cleaner_rejections": {
+    "not_primary_entity": 303,
+    "garbled_title": 56,
+    "missing_date": 62,
+    "out_of_range": 15,
+    "quote_page": 11,
+    "duplicate_event": 15,
+    "insufficient_event_evidence": 5,
+    "company_profile": 2,
+    "non_news_material": 1
+  },
+  "qualified_before": 472,
+  "qualified_after": 568,
+  "new_qualified_versions": 96,
+  "rejected_documents": {
+    "not_full_body": 1785,
+    "date_not_body_verified": 811
+  },
+  "new_qualified_publication_range": [
+    "2026-09-22",
+    "2026-10-21"
+  ],
+  "raw_bars": 9386,
+  "adjusted_bars": 7238,
+  "market_revisions": 616,
+  "search_completeness": "bounded search, not a complete historical news archive",
+  "strict_evaluation": "Backfilled news is first observable now; cannot enlarge past observed test dates.",
+  "corpus_sha256": "351d8cbf41fb86a3ea7fb8c493ba66f5757913df063f227827b040b3057abcc6"
+}

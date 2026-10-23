@@ -1,0 +1,74 @@
+{
+  "schema_version": "company-attention-direction-v1",
+  "seed": 42,
+  "candidates": [
+    "market_logistic",
+    "news_logistic",
+    "fusion_gru",
+    "hierarchical_gru",
+    "company_attention_gru"
+  ],
+  "width": 32,
+  "batch_size_attention": 64,
+  "optimizer": "AdamW",
+  "learning_rate_attention": 0.003,
+  "weight_decay": 0.01,
+  "max_epochs": 200,
+  "patience": 25,
+  "dropout": 0.2,
+  "tiny_fixed_epochs": 30,
+  "early_stopping_metric": "validation BCE on logits",
+  "tiny_preset_model": "company_attention_gru",
+  "selection": "validation balanced_accuracy then log_loss; frozen before test",
+  "company_availability": "known_at <= cutoff in all protocols; no static snapshot replay",
+  "protocols": [
+    "observed",
+    "publication_replay"
+  ],
+  "training_device": "cpu",
+  "corpus_sha256": "351d8cbf41fb86a3ea7fb8c493ba66f5757913df063f227827b040b3057abcc6",
+  "news_embedding": {
+    "schema_version": 1,
+    "model": "Qwen3-Embedding-0.6B",
+    "weights_sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd",
+    "corpus_sha256": "351d8cbf41fb86a3ea7fb8c493ba66f5757913df063f227827b040b3057abcc6",
+    "max_length": 1024,
+    "input_format": "company-code-title-body-v1; no retrieval instruction",
+    "pooling": "left padding, last nonpadding token, L2 normalization",
+    "dimension": 1024,
+    "documents": 568,
+    "truncated_documents": 348,
+    "device": "cuda",
+    "seconds": 42.806126510724425
+  },
+  "company_embedding": {
+    "weights_sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd",
+    "dimension": 1024,
+    "max_length": 1024,
+    "pooling": "left padding, last nonpadding token, L2 normalization",
+    "input_format": "company-code-card-kind-verbatim-text-v1; no retrieval instruction",
+    "facts_sha256": "0d055e6fbbcfae52029fe9f1ec4d51d5b49839c066326c53733d5ceaa77879be",
+    "cards_sha256": "9b6bc8678d9a652d55d7327490cf8d8afaa9def3eefbb582831b438088690cbc",
+    "cards": 84,
+    "versions": 46,
+    "truncated_cards": 0,
+    "device": "cuda",
+    "seconds": 2.058864137157798
+  },
+  "architectural_changes_vs_old_gru": [
+    "article-level news pooling",
+    "company cross attention",
+    "daily market sequence",
+    "article age and missing-time flags",
+    "temporal attention"
+  ],
+  "ablation": "hierarchical_gru disables company cards and company-present flag; other features unchanged",
+  "source_sha256": {
+    "backend/news_direction.py": "5bcf40ca3a41b639c7640b04472a6cf2aaeb86887a1c448ec4ee70a8f752eacb",
+    "backend/attention_direction_data.py": "fd7d2dc5403822ee81707a8d5bbdbb8b584fa6736d67166c6a10eb5574aa8be3",
+    "backend/attention_direction.py": "0397da66a8e2779ffe153155e35f86e9302f1e0b421f739f0e49cc2a27c83230",
+    "scripts/train_news_direction.py": "4c67cb6b69e41eed817e16d293b0ba1dee468b525419cdeeb4c463d2c5a53b17",
+    "scripts/train_attention_direction.py": "b7b3d8696bad39ed99018e2a73881d02398b4b8dd65f4b882fd46af1505fea9b",
+    "scripts/embed_company_facts.py": "e5b96e4a319f8df8da54547bccc7624213460eb98cd4bea58bf65627a18280cb"
+  }
+}

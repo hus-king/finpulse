@@ -1,0 +1,31 @@
+{
+  "shared_rows": 36,
+  "previous_gru_correct": 27,
+  "current_gru_correct": 26,
+  "baseline_down_correct": 25,
+  "removed_rows": [
+    [
+      "000425",
+      "2026-10-16"
+    ],
+    [
+      "300274",
+      "2026-10-16"
+    ],
+    [
+      "600028",
+      "2026-10-15"
+    ],
+    [
+      "600028",
+      "2026-10-16"
+    ]
+  ],
+  "added_rows": [
+    [
+      "000002",
+      "2026-10-16"
+    ]
+  ],
+  "note": "Descriptive paired comparison on previously inspected test dates; no new independent test"
+}

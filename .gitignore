@@ -20,3 +20,4 @@ data/
 *.sqlite3-wal
 *.sqlite3-shm
 *.log
+AGENTS.md
