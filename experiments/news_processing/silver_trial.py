@@ -31,7 +31,7 @@ SETTINGS={'epochs':2,'micro_batch':1,'grad_accum':8,'encoder_lr':1e-5,'head_lr':
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def question_schema(expanded=False):
+def question_schema(expanded=False,staged=False):
     questions=copy.deepcopy(QUESTIONS)
     if expanded:
         questions['event_relation']={'type':'choice','instructions':'仅按提供的单事件与业务证据判断关系，不推断股价涨跌。多步传导优先归DISTANT；资料不足归UNKNOWN。',
@@ -42,6 +42,10 @@ def question_schema(expanded=False):
                 'SENTIMENT':'行业指数、交易或资金等板块情绪信号，没有企业基本面传导证据。',
                 'NONE':'事件明确且已提供具体主营背景，没有支持实质关联的路径。',
                 'UNKNOWN':'所给事件或主营证据不足，无法判断关联，需要补证。'}}
+    if staged:
+        if not expanded:raise ValueError('Staged relation task requires expanded schema')
+        del questions['event_relation']['criteria']['OWN']
+        questions['event_relation']['instructions']='目标自身事件由单独的来源主体核验处理。本题只判断给定外部事件与目标业务的行业关系；多步传导归DISTANT，资料不足归UNKNOWN。'
     return questions
 
 
@@ -100,12 +104,19 @@ def adapt(source,questions=None):
             'reference_type':'AI_source_supported_silver','human_verified':False}
 
 
-def prepare(source,root,*,heldout_groups,research_silver,base_checkpoint,base_weight_sha256,sampling='original',expanded=False):
+def prepare(source,root,*,heldout_groups,research_silver,base_checkpoint,base_weight_sha256,sampling='original',expanded=False,
+            loss_balance=False,staged=False,epochs=2):
     if not research_silver:raise ValueError('Explicit research-only silver opt-in required')
     source,root=Path(source),Path(root)
     if root.exists():raise ValueError('New trial directory required')
-    questions=question_schema(expanded);settings=SETTINGS
-    path=source/'silver_candidates.jsonl';rows=[adapt(r,questions) for r in read_jsonl(path)]
+    if isinstance(epochs,bool) or not isinstance(epochs,int) or not 1<=epochs<=8:raise ValueError('Research epoch budget is 1..8')
+    if loss_balance and sampling!='original':raise ValueError('Loss balancing uses full original-row coverage')
+    questions=question_schema(expanded,staged);settings={**SETTINGS,'epochs':epochs}
+    path=source/'silver_candidates.jsonl';source_rows=read_jsonl(path)
+    # Validate every source before projecting reference OWN out of the external-only task.
+    validated=[(r,adapt(r,question_schema(expanded))) for r in source_rows]
+    excluded=[r['id'] for r,a in validated if staged and a['expected'].get('event_relation')=='OWN']
+    rows=[adapt(r,questions) for r,a in validated if r['id'] not in excluded]
     groups=set(heldout_groups)
     if not groups or not groups<={r['group_id'] for r in rows}:raise ValueError('Invalid held-out event groups')
     train=[r for r in rows if r['group_id'] not in groups];dev=[r for r in rows if r['group_id'] in groups]
@@ -121,14 +132,20 @@ def prepare(source,root,*,heldout_groups,research_silver,base_checkpoint,base_we
     write_json(root/'sampling.json',{'mode':sampling,'indices':indices,'draws':len(indices),
         'unique_rows':len(set(indices)),'unique_groups':len({train[i]['group_id'] for i in indices}),
         'counts':dict(Counter(next(iter(train[i]['expected']))+':'+next(iter(train[i]['expected'].values())) for i in indices))})
+    if loss_balance:
+        from .loss_balance import row_weights
+        write_json(root/'loss_weights.json',{'rows':[{'id':r['id'],'weight':w} for r,w in zip(train,row_weights(train))],
+            'rule':'N / (task_count * supported_classes_in_task * semantic_class_count); mean row weight is 1',
+            'coverage':'Every original row exactly once per epoch; semantic weights do not depend on shuffled option slots'})
     code=root/'code'/'experiments'/'news_processing';code.mkdir(parents=True)
     (code.parent/'__init__.py').write_text('');(code/'__init__.py').write_text('')
-    for name in ['silver_trial.py','contract.py','storage.py']:shutil.copyfile(Path(__file__).with_name(name),code/name)
-    protocol={'version':'silver-research-trial-v13','source_sha256':sha(path),'questions':questions,'settings':settings,'expanded':expanded,
+    for name in ['silver_trial.py','contract.py','storage.py','loss_balance.py']:shutil.copyfile(Path(__file__).with_name(name),code/name)
+    protocol={'version':'silver-research-trial-v14','source_sha256':sha(path),'questions':questions,'settings':settings,'expanded':expanded,
+        'loss_balance':loss_balance,'staged':staged,'reference_own_rows_not_external_training':excluded,
         'base_checkpoint':base_checkpoint,'base_weight_sha256':base_weight_sha256,
         'heldout_event_groups':sorted(groups),'counts':counts,'research_silver_opt_in':True,
         'source_admission_unchanged':True,'human_verified':False,'independent_test':False,'production_enabled':False,
-        'selection':'Fixed final epoch 2; no checkpoint selection, calibration or hyperparameter search',
+        'selection':f'Fixed final epoch {epochs}; no checkpoint selection, calibration or hyperparameter search',
         'sampling':sampling,'defer_evaluation':expanded,
         'limitation':('Locked source/event-held-out AI silver, not human gold or a prospective market backtest; correlated rows share articles.'
                       if expanded else 'All sources previously seen; company profiles recur across roles; absent development classes not evaluated.')}
@@ -162,8 +179,9 @@ def run(root,research_silver):
         path=(root/name).resolve()
         if not path.is_relative_to(root.resolve()) or sha(path)!=h:raise ValueError('Frozen trial changed: '+name)
     protocol=json.loads((root/'protocol.json').read_text());settings=protocol['settings'];base=Path(protocol['base_checkpoint'])
-    questions=question_schema(protocol.get('expanded',False))
-    if protocol['questions']!=questions or settings!=SETTINGS:raise ValueError('Execution task or settings changed')
+    questions=question_schema(protocol.get('expanded',False),protocol.get('staged',False))
+    if protocol['questions']!=questions or {**settings,'epochs':SETTINGS['epochs']}!=SETTINGS:raise ValueError('Execution task or settings changed')
+    if isinstance(settings['epochs'],bool) or not 1<=settings['epochs']<=8:raise ValueError('Research epoch budget exceeded')
     if sha(base/'model.safetensors')!=protocol['base_weight_sha256']:raise ValueError('Original base weights changed')
     import torch
     import laya
@@ -212,7 +230,21 @@ def run(root,research_silver):
         if not math.isfinite(loss):raise ValueError('Nonfinite training loss')
         progress.append(entry);write_json(root/'progress.json',progress);print(json.dumps(entry),flush=True)
     indices=json.loads((root/'sampling.json').read_text())['indices']
-    losses=t.train_model(model,tok,[items['train'][i] for i in indices],config,device,settings['max_len'],settings['head_max_len'],on_epoch_end=epoch_done)
+    trace=[]
+    if protocol.get('loss_balance') and indices!=list(range(len(items['train']))):
+        raise ValueError('Weighted run would omit original rows')
+    if indices==list(range(len(items['train']))):
+        from .loss_balance import train_weighted
+        weights=(json.loads((root/'loss_weights.json').read_text())['rows'] if protocol.get('loss_balance')
+                 else [{'id':r['id'],'weight':1.0} for r in roles['train']])
+        if [x['id'] for x in weights]!=[r['id'] for r in roles['train']]:raise ValueError('Weight row identities changed')
+        losses=train_weighted(t,model,tok,items['train'],config,device,settings['max_len'],settings['head_max_len'],
+            [x['id'] for x in weights],[x['weight'] for x in weights],trace=trace,on_epoch_end=epoch_done)
+    else:
+        losses=t.train_model(model,tok,[items['train'][i] for i in indices],config,device,settings['max_len'],settings['head_max_len'],on_epoch_end=epoch_done)
+    write_json(root/'training_coverage.json',{'epochs':settings['epochs'],'original_train_rows':len(items['train']),
+        'full_coverage_each_epoch':indices==list(range(len(items['train']))),'audited_loss_calls':len(trace),
+        'trace':trace})
     seconds=time.perf_counter()-started
     checkpoint=root/'checkpoint';cfg.pop('temperature_by_options',None);cfg['temperature']=[1,1,1]
     cfg.update(max_len=settings['max_len'],head_max_len=settings['head_max_len'],fine_tuned=True,
@@ -243,8 +275,10 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,required=True);p.add_argument('--research-silver',action='store_true')
     p.add_argument('--prepare-from',type=Path);p.add_argument('--holdout-group',action='append');p.add_argument('--base-checkpoint');p.add_argument('--base-weight-sha256')
     p.add_argument('--sampling',choices=['original','balanced'],default='original');p.add_argument('--expanded',action='store_true')
+    p.add_argument('--loss-balance',action='store_true');p.add_argument('--staged',action='store_true');p.add_argument('--epochs',type=int,default=2)
     args=p.parse_args()
     if args.prepare_from:
         print(json.dumps(prepare(args.prepare_from,args.root,heldout_groups=args.holdout_group or [],research_silver=args.research_silver,
-            base_checkpoint=args.base_checkpoint,base_weight_sha256=args.base_weight_sha256,sampling=args.sampling,expanded=args.expanded),ensure_ascii=False))
+            base_checkpoint=args.base_checkpoint,base_weight_sha256=args.base_weight_sha256,sampling=args.sampling,expanded=args.expanded,
+            loss_balance=args.loss_balance,staged=args.staged,epochs=args.epochs),ensure_ascii=False))
     else:run(args.root,args.research_silver)

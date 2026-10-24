@@ -114,3 +114,20 @@ class BalancedTrialTests(unittest.TestCase):
         row['messages'][1]['content']=canonical(inputs);row['sha256']=digest({k:v for k,v in row.items() if k!='sha256'})
         self.assertIn('news_context',s.adapt(row)['state'])
         with self.assertRaisesRegex(ValueError,'context evidence'):s.adapt(row,s.question_schema(True))
+
+    def test_staged_projection_excludes_own_without_changing_source_or_mapping_none(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);rows=[example('a:F1','a','COMPANY_EVENT'),example('b:F1','b','INDUSTRY_SIGNAL')]
+            rows += [example('r'+str(i)+':F1','r'+str(i),v,'event_target_relation')
+                     for i,v in enumerate(s.question_schema(True)['event_relation']['criteria'])]
+            rows.append(example('held:F1','held','NONE','event_target_relation'))
+            write_jsonl(root/'silver_candidates.jsonl',rows);before=(root/'silver_candidates.jsonl').read_bytes()
+            result=s.prepare(root,root/'run',heldout_groups=['held'],research_silver=True,base_checkpoint='/base',base_weight_sha256='a'*64,
+                             expanded=True,staged=True,loss_balance=True,epochs=8)
+            self.assertEqual(result['train'],8)
+            self.assertEqual((root/'silver_candidates.jsonl').read_bytes(),before)
+            protocol=json.loads((root/'run/protocol.json').read_text())
+            self.assertEqual(protocol['reference_own_rows_not_external_training'],['r0:F1'])
+            self.assertNotIn('OWN',protocol['questions']['event_relation']['criteria'])
+            weights=json.loads((root/'run/loss_weights.json').read_text())['rows']
+            self.assertEqual(len(weights),8);self.assertAlmostEqual(sum(x['weight'] for x in weights),8)
