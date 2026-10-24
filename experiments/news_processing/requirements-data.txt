@@ -1,0 +1,3 @@
+# Optional offline collection dependencies; not needed by the production service.
+beautifulsoup4==4.15.0
+pdfplumber==0.11.10
