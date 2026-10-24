@@ -3,6 +3,8 @@ import argparse
 import hashlib
 import json
 import math
+import copy
+import random
 import shutil
 import time
 from collections import Counter
@@ -29,7 +31,40 @@ SETTINGS={'epochs':2,'micro_batch':1,'grad_accum':8,'encoder_lr':1e-5,'head_lr':
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def adapt(source):
+def question_schema(expanded=False):
+    questions=copy.deepcopy(QUESTIONS)
+    if expanded:
+        questions['event_relation']={'type':'choice','instructions':'仅按提供的单事件与业务证据判断关系，不推断股价涨跌。多步传导优先归DISTANT；资料不足归UNKNOWN。',
+            'criteria':{'OWN':'来源主体证据证明是目标公司自身事件。',
+                'DIRECT':'产品与业务暴露明确的一步外部传导；市场信号不等于公司已实现业绩。',
+                'CONDITIONAL':'一步业务关联，但具体产品、地区、客户或采购暴露还需确认。',
+                'DISTANT':'至少两步经济链条才能到达目标公司，条件缺失作为次要限制。',
+                'SENTIMENT':'行业指数、交易或资金等板块情绪信号，没有企业基本面传导证据。',
+                'NONE':'事件明确且已提供具体主营背景，没有支持实质关联的路径。',
+                'UNKNOWN':'所给事件或主营证据不足，无法判断关联，需要补证。'}}
+    return questions
+
+
+def sampling_indices(rows,questions,mode,seed):
+    if mode=='original':return list(range(len(rows)))
+    if mode!='balanced':raise ValueError('Unknown sampling mode')
+    rng=random.Random(seed);indices=[]
+    for task_i,(q,question) in enumerate(questions.items()):
+        quota=len(rows)//len(questions)+(task_i<len(rows)%len(questions))
+        labels=list(question['criteria'])
+        if quota<len(labels):raise ValueError('Sampling budget cannot cover every declared class')
+        for label_i,label in enumerate(labels):
+            bucket=[i for i,r in enumerate(rows) if r['expected'].get(q)==label]
+            if not bucket:raise ValueError('Cannot sample an unsupported class')
+            n=quota//len(labels)+(label_i<quota%len(labels))
+            for _ in range(n//len(bucket)):indices.extend(rng.sample(bucket,len(bucket)))
+            indices.extend(rng.sample(bucket,n%len(bucket)))
+    rng.shuffle(indices)
+    return indices
+
+
+def adapt(source,questions=None):
+    questions=QUESTIONS if questions is None else questions
     if source.get('sha256')!=digest({k:v for k,v in source.items() if k!='sha256'}):raise ValueError('Silver record changed')
     if source.get('label_tier')!='source_supported_silver_candidate' or source.get('human_verified') is not False:
         raise ValueError('This trial accepts only explicitly nonhuman silver candidates')
@@ -41,7 +76,7 @@ def adapt(source):
     is_fact=source['task']=='fact_structuring'
     if not is_fact and source['task']!='event_target_relation':raise ValueError('Unsupported task')
     qid='fact_scope' if is_fact else 'event_relation';label=target['scope' if is_fact else 'relation']
-    if label not in QUESTIONS[qid]['criteria']:raise ValueError('Unsupported label; never remap to NONE')
+    if label not in questions[qid]['criteria']:raise ValueError('Unsupported label; never remap to NONE')
     ids=inputs['fact_evidence_ids'] if is_fact else inputs['event']['news_evidence_ids']
     if not ids or any(id_ not in byid for id_ in ids):raise ValueError('Missing event evidence')
     event=[byid[id_] for id_ in ids]
@@ -49,6 +84,11 @@ def adapt(source):
     table=any(' | ' in q['text'] for q in evidence)
     context=[q['text'] for q in evidence] if not is_fact and not table else [evidence[0]['text']]+[
         q['text'] for q in evidence if q['text'].startswith('注：')]
+    if questions!=QUESTIONS and 'event_context_evidence_ids' in inputs:
+        context_ids=inputs['event_context_evidence_ids']
+        if not isinstance(context_ids,list) or not context_ids or any(id_ not in byid for id_ in context_ids):
+            raise ValueError('Missing explicit event context evidence')
+        context=[byid[id_] for id_ in context_ids]
     state={'news_context':context,'event_evidence':event,'publication_date':article.get('publication_date','')}
     if not is_fact:
         c=inputs['company']['company']
@@ -56,44 +96,50 @@ def adapt(source):
             for k in ('code','name','products','upstream','downstream','regions')}
     return {'id':source['id'],'article_id':source['lineage'].get('article_id',source['id'].split(':')[0].split('__')[0]),
             'group_id':source['lineage']['group_id'],'source_record_sha256':source['sha256'],
-            'state':state,'questions':{qid:QUESTIONS[qid]},'expected':{qid:label},
+            'state':state,'questions':{qid:questions[qid]},'expected':{qid:label},
             'reference_type':'AI_source_supported_silver','human_verified':False}
 
 
-def prepare(source,root,*,heldout_groups,research_silver,base_checkpoint,base_weight_sha256):
+def prepare(source,root,*,heldout_groups,research_silver,base_checkpoint,base_weight_sha256,sampling='original',expanded=False):
     if not research_silver:raise ValueError('Explicit research-only silver opt-in required')
     source,root=Path(source),Path(root)
     if root.exists():raise ValueError('New trial directory required')
-    path=source/'silver_candidates.jsonl';rows=[adapt(r) for r in read_jsonl(path)]
+    questions=question_schema(expanded);settings=SETTINGS
+    path=source/'silver_candidates.jsonl';rows=[adapt(r,questions) for r in read_jsonl(path)]
     groups=set(heldout_groups)
     if not groups or not groups<={r['group_id'] for r in rows}:raise ValueError('Invalid held-out event groups')
     train=[r for r in rows if r['group_id'] not in groups];dev=[r for r in rows if r['group_id'] in groups]
     if not train or not dev:raise ValueError('Empty research role')
     if {r['article_id'] for r in train}&{r['article_id'] for r in dev}:raise ValueError('One article crosses roles')
-    counts={name:{q:dict(Counter(r['expected'][q] for r in rs if q in r['expected'])) for q in QUESTIONS}
+    counts={name:{q:dict(Counter(r['expected'][q] for r in rs if q in r['expected'])) for q in questions}
             for name,rs in [('train',train),('development',dev)]}
-    if any(not counts['train'][q].get(label) for q in QUESTIONS for label in QUESTIONS[q]['criteria']):
+    if any(not counts['train'][q].get(label) for q in questions for label in questions[q]['criteria']):
         raise ValueError('Declared training class has no source support')
+    indices=sampling_indices(train,questions,sampling,settings['seed'])
     root.mkdir(parents=True);shutil.copyfile(path,root/'source_silver.jsonl')
     write_jsonl(root/'train.jsonl',train);write_jsonl(root/'development.jsonl',dev)
+    write_json(root/'sampling.json',{'mode':sampling,'indices':indices,'draws':len(indices),
+        'unique_rows':len(set(indices)),'unique_groups':len({train[i]['group_id'] for i in indices}),
+        'counts':dict(Counter(next(iter(train[i]['expected']))+':'+next(iter(train[i]['expected'].values())) for i in indices))})
     code=root/'code'/'experiments'/'news_processing';code.mkdir(parents=True)
     (code.parent/'__init__.py').write_text('');(code/'__init__.py').write_text('')
     for name in ['silver_trial.py','contract.py','storage.py']:shutil.copyfile(Path(__file__).with_name(name),code/name)
-    protocol={'version':'silver-research-trial-v12','source_sha256':sha(path),'questions':QUESTIONS,'settings':SETTINGS,
+    protocol={'version':'silver-research-trial-v13','source_sha256':sha(path),'questions':questions,'settings':settings,'expanded':expanded,
         'base_checkpoint':base_checkpoint,'base_weight_sha256':base_weight_sha256,
         'heldout_event_groups':sorted(groups),'counts':counts,'research_silver_opt_in':True,
         'source_admission_unchanged':True,'human_verified':False,'independent_test':False,'production_enabled':False,
         'selection':'Fixed final epoch 2; no checkpoint selection, calibration or hyperparameter search',
-        'sampling':'Original rows once per epoch; no class replication',
-        'limitation':'All sources previously seen; company profiles recur across roles; absent development classes not evaluated.'}
+        'sampling':sampling,'defer_evaluation':expanded,
+        'limitation':('Locked source/event-held-out AI silver, not human gold or a prospective market backtest; correlated rows share articles.'
+                      if expanded else 'All sources previously seen; company profiles recur across roles; absent development classes not evaluated.')}
     write_json(root/'protocol.json',protocol)
     write_json(root/'training_freeze.json',{'files':{str(p.relative_to(root)):sha(p) for p in sorted(root.rglob('*')) if p.is_file()}})
     return {'train':len(train),'development':len(dev),'counts':counts,'independent_test':False}
 
 
-def metrics(predictions):
+def metrics(predictions,questions=None):
     result={}
-    for q,question in QUESTIONS.items():
+    for q,question in (questions or QUESTIONS).items():
         labels=list(question['criteria']);selected=[p for p in predictions if p['question']==q]
         confusion={a:{b:0 for b in labels} for a in labels}
         for p in selected:confusion[p['expected']][p['label']]+=1
@@ -116,7 +162,8 @@ def run(root,research_silver):
         path=(root/name).resolve()
         if not path.is_relative_to(root.resolve()) or sha(path)!=h:raise ValueError('Frozen trial changed: '+name)
     protocol=json.loads((root/'protocol.json').read_text());settings=protocol['settings'];base=Path(protocol['base_checkpoint'])
-    if protocol['questions']!=QUESTIONS or settings!=SETTINGS:raise ValueError('Execution task or settings changed')
+    questions=question_schema(protocol.get('expanded',False))
+    if protocol['questions']!=questions or settings!=SETTINGS:raise ValueError('Execution task or settings changed')
     if sha(base/'model.safetensors')!=protocol['base_weight_sha256']:raise ValueError('Original base weights changed')
     import torch
     import laya
@@ -157,25 +204,37 @@ def run(root,research_silver):
                 'cross_entropy':top+math.log(total)-values[labels.index(expected)]})
         if len(output)!=len(roles[role]):raise ValueError('Missing prediction')
         return output
-    baseline={role:predict(role) for role in roles}
+    baseline={role:predict(role) for role in roles if not (protocol.get('defer_evaluation') and role=='development')}
     for role,rows in baseline.items():write_jsonl(root/('base_'+role+'_predictions.jsonl'),rows)
     progress=[];started=time.perf_counter()
     def epoch_done(epoch,loss):
         entry={'epoch':epoch+1,'mean_train_loss':loss,'elapsed_seconds':time.perf_counter()-started}
         if not math.isfinite(loss):raise ValueError('Nonfinite training loss')
         progress.append(entry);write_json(root/'progress.json',progress);print(json.dumps(entry),flush=True)
-    losses=t.train_model(model,tok,items['train'],config,device,settings['max_len'],settings['head_max_len'],on_epoch_end=epoch_done)
+    indices=json.loads((root/'sampling.json').read_text())['indices']
+    losses=t.train_model(model,tok,[items['train'][i] for i in indices],config,device,settings['max_len'],settings['head_max_len'],on_epoch_end=epoch_done)
     seconds=time.perf_counter()-started
     checkpoint=root/'checkpoint';cfg.pop('temperature_by_options',None);cfg['temperature']=[1,1,1]
     cfg.update(max_len=settings['max_len'],head_max_len=settings['head_max_len'],fine_tuned=True,
         training={'research_silver':True,'epochs':settings['epochs'],'production_enabled':False,'independent_test':False,'human_verified':False})
-    t.save_checkpoint(model,tok,cfg,str(checkpoint));write_json(checkpoint/'questions.json',QUESTIONS)
+    t.save_checkpoint(model,tok,cfg,str(checkpoint));write_json(checkpoint/'questions.json',questions)
+    write_json(root/'weights_fixed_before_evaluation.json',{'checkpoint_sha256':sha(checkpoint/'model.safetensors'),'fixed_at_unix':time.time()})
+    # Evaluate the exported weights, including their saved precision.
+    del model
+    torch.cuda.empty_cache()
+    model,_,_=t.load_checkpoint(str(checkpoint));model.to(device)
     candidate={role:predict(role) for role in roles}
     for role,rows in candidate.items():write_jsonl(root/('candidate_'+role+'_predictions.jsonl'),rows)
+    if protocol.get('defer_evaluation'):
+        del model
+        torch.cuda.empty_cache()
+        model,_,_=t.load_checkpoint(str(base));model.to(device)
+        baseline['development']=predict('development')
+        write_jsonl(root/'base_development_predictions.jsonl',baseline['development'])
     result={'completed':True,'epochs':settings['epochs'],'epoch_losses':losses,'optimization_seconds':seconds,
         'peak_reserved_gib':torch.cuda.max_memory_reserved()/1024**3,'gpu':torch.cuda.get_device_name(0),
         'laya_version':laya.__version__,'torch_version':torch.__version__,'checkpoint_sha256':sha(checkpoint/'model.safetensors'),
-        'base':{role:metrics(rows) for role,rows in baseline.items()},'candidate':{role:metrics(rows) for role,rows in candidate.items()},
+        'base':{role:metrics(rows,questions) for role,rows in baseline.items()},'candidate':{role:metrics(rows,questions) for role,rows in candidate.items()},
         'human_verified':False,'independent_test':False,'production_enabled':False,'automatic_deletion':False}
     write_json(root/'results.json',result);print(json.dumps(result),flush=True)
 
@@ -183,8 +242,9 @@ def run(root,research_silver):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,required=True);p.add_argument('--research-silver',action='store_true')
     p.add_argument('--prepare-from',type=Path);p.add_argument('--holdout-group',action='append');p.add_argument('--base-checkpoint');p.add_argument('--base-weight-sha256')
+    p.add_argument('--sampling',choices=['original','balanced'],default='original');p.add_argument('--expanded',action='store_true')
     args=p.parse_args()
     if args.prepare_from:
         print(json.dumps(prepare(args.prepare_from,args.root,heldout_groups=args.holdout_group or [],research_silver=args.research_silver,
-            base_checkpoint=args.base_checkpoint,base_weight_sha256=args.base_weight_sha256),ensure_ascii=False))
+            base_checkpoint=args.base_checkpoint,base_weight_sha256=args.base_weight_sha256,sampling=args.sampling,expanded=args.expanded),ensure_ascii=False))
     else:run(args.root,args.research_silver)
