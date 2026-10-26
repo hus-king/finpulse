@@ -32,6 +32,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m scripts.quant.run_guarded --root . \
 
 策略只返回目标权重；持久化、风控、调度与成交由执行器负责。目标最多5只、单票20%、总仓80%，且只能选择已注册股票池。可信官方模型来自发布目录；客户可上传受限JSON规则，通过同一策略适配接口运行，详见[客户提交规范](strategy-submission.md)。不执行用户Python/JavaScript或可执行模型。
 
+上述比例限制适用于量价及客户规则策略；低 PEG v2 使用整手优先的全资金分配规则，详见[低 PEG 每日持仓](paper-trading.md#低-peg-每日持仓)。
+
 账户接口（都需要登录，写入需要现有 CSRF 校验）：
 
 - `GET /api/paper/strategies`：官方与本人策略目录，`origin` 标记来源；官方策略附研究报告。

@@ -6,6 +6,7 @@ from contextlib import contextmanager
 
 from ..auth import AuthError
 from ..paper_rules import PaperError, new_account, valid_quote, value_account
+from .peg_strategy import PEG_STRATEGY_ID, price_change_limit
 
 
 def default_config():
@@ -118,7 +119,8 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,req
     decision=paper._get(conn,'quant_decision',execution['decision_key'],owner,None)
     if not decision or decision['revision']!=cfg['revision'] or decision['model_version']!=execution['model_version'] or decision['date']!=now.date().isoformat() or decision['status']!='running':
         raise PaperError('AUTOMATION_CHANGED','决策已过期或结束。')
-    if cfg['strategy_id']=='official-low-peg-v1':
+    is_peg=cfg['strategy_id']==PEG_STRATEGY_ID
+    if is_peg:
         planned=next((o for o in decision.get('orders',[]) if o['request_id']==request_id),None)
         if (decision.get('strategy_id')!=cfg['strategy_id'] or
                 execution.get('peg_snapshot_id')!=decision.get('peg_snapshot',{}).get('snapshot_id') or
@@ -129,7 +131,7 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,req
         raise PaperError('QUANT_RISK_LIMIT','股票未通过本轮行情和公司行为校验。')
     quote=valid_quote(cached,now)
     previous=decision['previous_close'].get(intent['code'])
-    if not previous or abs(quote['price_fen']/100/previous-1)>=.045 or float(cached['candles'][-1]['volume'])<=0:
+    if not previous or abs(quote['price_fen']/100/previous-1)>=(price_change_limit(intent['code']) if is_peg else .045) or float(cached['candles'][-1]['volume'])<=0:
         raise PaperError('QUANT_PRICE_LIMIT','报价靠近涨跌停、停牌或价格基准异常，跳过。')
     quotes={c:paper._get(conn,'minute_market',c+':1','',{}) for c in account['positions']}
     for raw in quotes.values(): valid_quote(raw,now)
@@ -137,13 +139,13 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,req
     if equity<cfg['peak_equity_fen']*.85:
         raise PaperError('QUANT_DRAWDOWN','回撤达到15%，暂停本轮自动交易。')
     day=paper._get(conn,'quant_day',decision['date'],owner,{'spent_fen':0,'budget_fen':int(equity*.3)})
-    if day['spent_fen']+gross>min(day['budget_fen'],int(equity*.3)) or decision['spent_fen']+gross>decision['budget_fen']:
+    if not is_peg and (day['spent_fen']+gross>min(day['budget_fen'],int(equity*.3)) or decision['spent_fen']+gross>decision['budget_fen']):
         raise PaperError('QUANT_RISK_LIMIT','已达到每日30%调仓上限。')
     if intent['side']=='buy':
         position=account['positions'].get(intent['code'],{'quantity':0})
-        if (valued['market_value_fen']+gross>int(equity*.8) or position['quantity']*quote['price_fen']+gross>int(equity*.2)
+        if (not is_peg and (valued['market_value_fen']+gross>int(equity*.8) or position['quantity']*quote['price_fen']+gross>int(equity*.2))
                 or intent['code'] not in account['positions'] and len(account['positions'])>=5):
-            raise PaperError('QUANT_RISK_LIMIT','订单将超过单票20%、总仓80%或5只持仓上限。')
+            raise PaperError('QUANT_RISK_LIMIT','订单将超过5只持仓上限。' if is_peg else '订单将超过单票20%、总仓80%或5只持仓上限。')
     decision['spent_fen']+=gross;day['spent_fen']+=gross
     paper._put(conn,'quant_decision',execution['decision_key'],owner,decision)
     paper._put(conn,'quant_day',decision['date'],owner,day)

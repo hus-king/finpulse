@@ -43,6 +43,12 @@
 .peg-rank{color:var(--theme-muted);font-family:Consolas,monospace;font-size:16px}
 .peg-stock{display:flex;flex-direction:column;gap:6px;text-align:left;padding:0}
 .peg-stock strong{font-size:13px;font-weight:600;color:var(--theme-text)}
+.peg-stock-title{display:inline-flex;align-items:center;gap:7px}
+.peg-board-tag{flex-shrink:0;padding:0 5px;border:1px solid;border-radius:4px;font-size:10px;font-weight:500;line-height:17px}
+.peg-board-tag.star{color:#7858b4;background:#9a79cf0d;border-color:#9a79cf33}
+.peg-board-tag.growth{color:#3272b8;background:#548ccc0d;border-color:#548ccc33}
+:root[data-theme="dark"] .peg-board-tag.star{color:#c0a1ef;background:#9a79cf1a;border-color:#9a79cf40}
+:root[data-theme="dark"] .peg-board-tag.growth{color:#91b7ee;background:#548ccc1a;border-color:#548ccc40}
 .peg-stock small{font-size:10px;color:var(--theme-muted)}
 .peg-value{font-size:16px;color:var(--theme-accent-text);font-weight:600}
 .peg-rise,.peg-fall{display:inline-flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums}

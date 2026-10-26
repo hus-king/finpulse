@@ -9,7 +9,12 @@ from ..paper_rules import board_rules, PaperError
 from ..peg_snapshot import METHOD_VERSION
 
 PEG_STRATEGY_ID = 'official-low-peg-v1'
-PEG_VERSION = 'daily-low-peg-v1'
+PEG_VERSION = 'daily-low-peg-v2'
+
+
+def price_change_limit(code):
+    # Keep half a percentage point clear of the ordinary board's daily limit.
+    return .195 if board_rules(code)['board'] in ('创业板','科创板') else .095
 
 
 def timestamp(value):
@@ -28,7 +33,7 @@ class PegStrategy:
         return {'id':PEG_STRATEGY_ID,'name':'低 PEG 每日持仓','version':PEG_VERSION,'available':True,
                 'kind':'peg','universe':[r['code'] for r in self.selected],
                 'cadence':'交易日10:00后每日一次','config_defaults':{'top_n':5,'group':'all'},
-                'description':'按前一晚已发布榜单的正前瞻PEG升序选股，等权目标配置；仅供模拟实验，尚未回测。'}
+                'description':'按前一晚已发布榜单的正前瞻PEG升序选股，整手优先、尽量等额投入全部资金，预留交易费用；仅供模拟实验，尚未回测。'}
 
     def validate_config(self, config):
         if not isinstance(config,dict) or set(config)-{'top_n','group'}:raise ValueError('低PEG策略仅支持持股数量和比较组参数')
@@ -78,11 +83,34 @@ class PegStrategy:
         for row in self.selected:
             bars=histories.get(row['code'],[])
             if not bars or bars[-1]['date']!=as_of:raise ValueError('PEG目标股票日线未对齐上一完整交易日')
-        weight=min(.2,.8/len(self.selected))
+        weight=1/len(self.selected)
         group='全部合格股票' if self.config['group']=='all' else self.config['group']
         return {'as_of':as_of,'target_weights':{r['code']:weight for r in self.selected},
                 'scores':{r['code']:r['peg'] for r in self.selected},'model_version':PEG_VERSION,
                 'strategy_config':dict(self.config),
                 'peg_snapshot':{k:self.snapshot[k] for k in ('snapshot_id','method_version','published_at','market_date')},
                 'peg_selection':[{k:r[k] for k in ('code','name','group','peg')} for r in self.selected],
-                'reason':f'{group}按正前瞻PEG升序，选择前{len(self.selected)}只；等权目标，实际持仓受成交额、T+1、整手和行情限制。'}
+                'reason':f'{group}按正前瞻PEG升序，严格选择前{len(self.selected)}只；先满足最小申报数量，再尽量等额投入全部资金，预留交易费用。'}
+
+    def allocate(self, prices, equity, reserve):
+        """Integer share targets, with minimum lots as lower bounds on equal amounts."""
+        codes=[row['code'] for row in self.selected]
+        rules={code:board_rules(code) for code in codes}
+        minimum={code:prices[code]*rules[code]['min_quantity'] for code in codes}
+        capital=equity-reserve
+        if sum(minimum.values())>capital:
+            raise ValueError('资金不足以覆盖PEG前列股票的最小整手数量及费用，保留持仓等待检查')
+        amounts={};remaining=list(codes);available=capital
+        for code in sorted(codes,key=minimum.get,reverse=True):
+            if minimum[code]<=available//len(remaining):break
+            amounts[code]=minimum[code];available-=minimum[code];remaining.remove(code)
+        amounts.update(dict.fromkeys(remaining,available//len(remaining)))
+        quantities={code:max(rules[code]['min_quantity'],amounts[code]//prices[code]//rules[code]['quantity_step']*rules[code]['quantity_step']) for code in codes}
+        available=capital-sum(prices[code]*quantities[code] for code in codes)
+        # Invest rounding residue in the least-funded affordable name.
+        while True:
+            affordable=[code for code in codes if prices[code]*rules[code]['quantity_step']<=available]
+            if not affordable:break
+            code=min(affordable,key=lambda c:prices[c]*quantities[c])
+            quantities[code]+=rules[code]['quantity_step'];available-=prices[code]*rules[code]['quantity_step']
+        return quantities

@@ -66,7 +66,8 @@ async def lifespan(application):
     application.state.peg = PegService(research_store)
     application.state.peg.start()
     application.state.minute_market = MinuteMarketService(research_store)
-    application.state.paper_trading = PaperTradingService(PaperStore(research_store), application.state.research.catalog, application.state.minute_market)
+    application.state.paper_trading = PaperTradingService(PaperStore(research_store), application.state.research.catalog, application.state.minute_market,
+                                                        daily_market=application.state.research.daily_market)
     application.state.quant = QuantService(application.state.paper_trading, enabled=os.environ.get('FINPULSE_QUANT_ENABLED', '0') == '1')
     application.state.quant.start()
     application.state.market_bundle = MarketBundleService(application.state.research, application.state.minute_market)

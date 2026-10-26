@@ -88,7 +88,7 @@ class PegResetTests(unittest.TestCase):
         self.assertEqual(self.service.paper.store.get_account(self.owner),before)
         self.assertEqual(self.records.list('paper_reset_archive',owner=self.owner),[])
 
-    def test_reset_account_opens_five_positions_after_0930_once_with_existing_risk_limits(self):
+    def test_reset_account_opens_five_positions_after_0930_once_with_full_capital(self):
         self.seed_account();self.reset();self.now=self.now.replace(hour=9,minute=31)
         for code in CODES:self.records.put('minute_market',code+':1',cache(self.now,10))
         asyncio.run(self.service.tick())
@@ -96,7 +96,7 @@ class PegResetTests(unittest.TestCase):
         self.assertEqual(len(trades),5,self.service.state(self.owner))
         self.assertEqual({r['code'] for r in trades},set(CODES[:5]))
         self.assertEqual({r['sequence'] for r in trades},set(range(1,6)))
-        self.assertLessEqual(sum(r['gross_fen'] for r in trades),6_000_000)
+        self.assertGreater(sum(r['gross_fen'] for r in trades),19_000_000)
         asyncio.run(self.service.tick())
         self.assertEqual(len(self.service.paper.trades(self.owner)['items']),5)
         self.assertNotIn('09:30',self.service.state(self.owner)['next_check'])

@@ -3,13 +3,15 @@ import asyncio
 from datetime import datetime
 
 from .news_cleaning import SHANGHAI
-from .paper_rules import PaperError, apply_trade, board_rules, cached_quote, session_state, valid_quote, value_account
+from .paper_rules import PaperError, _price, apply_trade, board_rules, cached_quote, daily_performance, session_state, valid_quote, value_account
+from .trading_calendar import previous_trade_day
 
 
 class PaperTradingService:
-    def __init__(self, store, catalog, minute_market, clock=None):
+    def __init__(self, store, catalog, minute_market, clock=None, daily_market=None):
         self.store, self.catalog, self.minute_market = store, catalog, minute_market
         self.clock = clock or (lambda: datetime.now(SHANGHAI))
+        self.daily_market = daily_market
 
     def _stock(self, code):
         stock = self.catalog.get(code)
@@ -18,10 +20,48 @@ class PaperTradingService:
         board_rules(code)
         return stock
 
-    def account(self, owner: str) -> dict:
+    def _previous_closes(self, codes, day):
+        records=self.store.records;prices={}
+        history=records.get_many('quant_history',[code+':'+day for code in codes])
+        daily=records.get_many('daily_market',codes)
+        minutes=records.get_many('minute_market',[code+':1' for code in codes])
+        for code in codes:
+            sources=[(history.get(code+':'+day),'raw',False),(daily.get(code),'candles',False),(minutes.get(code+':1'),'candles',True)]
+            for source,key,minute in sources:
+                if not isinstance(source,dict):continue
+                if key=='candles' and not minute:
+                    quote=source.get('quote',{})
+                    if not isinstance(quote,dict) or quote.get('adjustment','none')!='none':continue
+                bars=source.get(key,[])
+                if not isinstance(bars,list):continue
+                for bar in reversed(bars):
+                    try:
+                        stamp=str(bar['date'])
+                        if minute:
+                            parsed=datetime.fromisoformat(stamp)
+                            parsed=parsed.replace(tzinfo=SHANGHAI) if parsed.tzinfo is None else parsed.astimezone(SHANGHAI)
+                            if parsed.date().isoformat()!=day or parsed.strftime('%H:%M:%S')!='15:00:00':continue
+                        elif stamp!=day:continue
+                        prices[code]=_price(bar['close']);break
+                    except (ValueError,TypeError,KeyError,ArithmeticError):continue
+                if code in prices:break
+        return prices
+
+    def account(self, owner: str, daily: bool = False) -> dict:
         account = self.store.get_account(owner)
         quotes = {code: self.store.records.get('minute_market', code + ':1', default={}) for code in account['positions']}
-        return value_account(account, quotes, self.clock())
+        now=self.clock();valued=value_account(account, quotes, now)
+        if not daily:return valued
+        day=previous_trade_day(now.astimezone(SHANGHAI).date(),include=True)
+        reference=previous_trade_day(day) if day else None
+        dates={'daily_pnl_date':day.isoformat() if day else None,'daily_reference_date':reference.isoformat() if reference else None}
+        if reference is None:
+            return {**valued,**dates,'daily_pnl_fen':None,'daily_return_percent':None,'daily_pnl_base_equity_fen':None,
+                    'daily_pnl_status':'unavailable','daily_pnl_missing_codes':[],'daily_pnl_reason':'交易日历待更新'}
+        trades=self.store.day_trades(owner,day.isoformat(),account['sequence'])
+        codes=set(account['positions'])|{trade['code'] for trade in trades}
+        closes=self._previous_closes(codes,reference.isoformat())
+        return {**valued,**dates,**daily_performance(account,trades,closes,valued['equity_fen'])}
 
     async def snapshot(self, owner: str, refresh: bool = False) -> dict:
         """A portfolio read schedules all held quotes, independent of trading decisions."""
@@ -36,10 +76,17 @@ class PaperTradingService:
                 return code, {'refreshing': False, 'error': '持仓行情暂不可用，保留缓存估值。'}
         states = dict(await asyncio.gather(*(schedule(code, position) for code, position in book['positions'].items())))
         # Re-read the live book: a source response cannot restore a sold position.
-        account = await asyncio.to_thread(self.account, owner)
+        account = await asyncio.to_thread(self.account, owner, daily=True)
         held = {position['code'] for position in account['positions']}
         refreshing = any(state.get('refreshing') for code, state in states.items() if code in held)
         errors = {code: state['error'] for code, state in states.items() if code in held and state.get('error')}
+        if self.daily_market:
+            for code in account['daily_pnl_missing_codes']:
+                stock=self.catalog.get(code) or {'code':code,'name':code}
+                try:state=await self.daily_market.snapshot(stock,force=True)
+                except (ValueError,TypeError,KeyError,AttributeError):continue
+                if state['refreshing']:
+                    refreshing=True;account['daily_pnl_status']='pending';account['daily_pnl_reason']='正在补齐上一交易日收盘价'
         return {**account, 'valuation_refreshing': refreshing, 'valuation_errors': errors,
                 'next_poll_seconds': 2 if refreshing else 30}
 
