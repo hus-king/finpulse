@@ -22,6 +22,9 @@ from pydantic import BaseModel, Field, ValidationError
 from .research import ResearchService, now_iso
 from .research_store import ResearchStore
 from .research_api import router as research_router
+from .hot_news_board import HotNewsBoardService
+from .hot_stock_impact import HotStockImpactService
+from .hot_news_api import router as hot_news_router
 from .briefing import start_scheduler
 from .morning import MorningService
 from .prompts import PROMPT_VERSION, EvidenceAnalysis, NEWS_SYSTEM, parse_json
@@ -58,6 +61,8 @@ async def lifespan(application):
     async def invoke(messages, max_tokens=1100):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)
+    application.state.hot_news = HotNewsBoardService(research_store, invoke)
+    application.state.hot_stock_impact = HotStockImpactService(application.state.research, application.state.hot_news)
     application.state.peg = PegService(research_store)
     application.state.peg.start()
     application.state.minute_market = MinuteMarketService(research_store)
@@ -90,6 +95,7 @@ app.add_exception_handler(PaperError, paper_error_handler)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(research_router)
+app.include_router(hot_news_router)
 app.include_router(paper_router)
 app.include_router(peg_router)
 app.include_router(quant_router)

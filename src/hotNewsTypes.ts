@@ -1,0 +1,40 @@
+export type MarketChannel = 'trade' | 'supply' | 'cost' | 'demand' | 'regulation' | 'funding' | 'risk';
+export type ImpactDirection = 'positive' | 'negative' | 'mixed' | 'unclear';
+export const impactDirections = { positive: '利好', negative: '利空', mixed: '正反并存', unclear: '影响不明' };
+export interface SectorImpact {
+  id: string; name: string; direction: ImpactDirection; reason: string; evidence: string; method: 'rules' | 'model';
+}
+export interface HotSource {
+  id: string; name: string; rank: number; heat: string | null; url: string;
+  observed_at: string; observed_timestamp: number; stale: boolean;
+}
+export interface HotTopic {
+  id: string; title: string; summary: string; sources: HotSource[]; rank: number; rank_score: number;
+  sector_impacts: SectorImpact[];
+  screening: { id: string; decision: 'keep' | 'review' | 'exclude'; channels: MarketChannel[];
+    reason: string; evidence: string; method: 'rules' | 'model'; model?: string };
+}
+export interface HotFeed {
+  items: HotTopic[]; status: 'ok' | 'partial' | 'stale' | 'unavailable'; fetched_at: string | null;
+  sources: { id: string; name: string; url: string; status: 'ok' | 'stale' | 'unavailable'; fetched_at: string | null; error: string | null }[];
+  screening: 'rules' | 'model' | 'mixed'; warnings: string[];
+  counts: { keep: number; review: number; exclude: number }; note: string; ranking_note: string;
+  matched_total: number; candidate_total: number;
+  filters: { decision: 'all' | 'keep' | 'review' | 'exclude'; source: string; channel: string; q: string; sort: 'hot' | 'latest'; limit: number };
+  channel_options: { id: MarketChannel; name: string }[];
+}
+export interface HotStockImpact {
+  code: string; relation: 'direct' | 'indirect' | 'none' | 'uncertain';
+  direction: 'positive' | 'negative' | 'mixed' | 'unclear'; confidence: 'high' | 'medium' | 'low';
+  news_evidence: string[]; business_evidence: string; mechanism: string; uncertainty: string;
+}
+export interface HotImpactRow {
+  code: string; name: string; status: 'ok' | 'pending' | 'failed'; analysis: HotStockImpact | null;
+  model?: string; analyzed_at?: string; error?: string;
+  business: { main_business: string; source: string | null; url: string | null; fetched_at: number | null; status: string };
+}
+export interface HotImpactSnapshot {
+  topic_id: string; title: string; summary: string; sources: HotSource[]; items: HotImpactRow[]; version: string; note: string;
+  counts: { total: number; completed: number; pending: number; failed: number; related: number };
+}
+export type HotImpactPreview = Omit<HotImpactSnapshot, 'items'> & { items: Omit<HotImpactRow, 'business'>[] };
