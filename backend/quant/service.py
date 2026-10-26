@@ -14,7 +14,7 @@ from ..trading_calendar import previous_trade_day
 from .features import corporate_action, features
 from .store import QuantStore
 from .strategy import StrategyRegistry
-from .peg_strategy import PEG_STRATEGY_ID
+from .peg_strategy import PEG_STRATEGY_ID, price_change_limit
 from .user_store import UserStrategyStore
 
 log=logging.getLogger(__name__)
@@ -160,9 +160,12 @@ class QuantService:
             dataset=await self.history_loader(codes,signal)
             proposed=strategy.decide({c:d['raw'] for c,d in dataset.items()},signal)
             weights=proposed['target_weights']
-            if (len(weights)>5 or any(c not in universe or not math.isfinite(w) or not 0<=w<=.2 for c,w in weights.items())
-                    or sum(weights.values())>.80000001): raise ValueError('策略输出超过风控上限')
-            eligible=[c for c,d in dataset.items() if not corporate_action(d['raw'][-65:],d['adjusted'][-65:])]
+            if (len(weights)>5 or any(c not in universe or not math.isfinite(w) or not 0<=w<=(1 if is_peg else .2) for c,w in weights.items())
+                    or sum(weights.values())>(1.00000001 if is_peg else .80000001)): raise ValueError('策略输出超过风控上限')
+            # PEG uses the latest ranking, not 65-day price features. A distant
+            # ex-date must not exclude a new position for three months.
+            window=2 if is_peg else 65
+            eligible=[c for c,d in dataset.items() if not corporate_action(d['raw'][-window:],d['adjusted'][-window:])]
             managed=set(codes if is_peg else universe)
             needed=list(dict.fromkeys([*(p['code'] for p in account['positions']),*weights]))
             for code in needed:
@@ -172,50 +175,73 @@ class QuantService:
             if any(p['valuation_status']!='fresh' for p in account['positions']): raise ValueError('持仓报价不完整，暂停新增风险')
             current=await asyncio.to_thread(self.store.mark_peak,owner,cfg['revision'],account['equity_fen'])
             if current['mode']!='algorithm': return
+            prices={}
+            if is_peg:
+                for code in needed:
+                    raw=await asyncio.to_thread(self.store.records.get,'minute_market',code+':1',default={})
+                    prices[code]=valid_quote(raw,self.clock())['price_fen']
+                # Upper bound for selling the current book and buying a new one:
+                # actual fees are lower when existing positions can be retained.
+                reserve=sum(fees(p['market_value_fen'],'sell')['fees_fen'] for p in account['positions'])+math.ceil(account['equity_fen']*.00031)+len(weights)*500
+                targets=strategy.allocate(prices,account['equity_fen'],reserve)
+                weights={code:prices[code]*quantity/account['equity_fen'] for code,quantity in targets.items()}
+                proposed.update(target_weights=weights,target_quantities=targets,skipped_targets={})
             decision={**proposed,'key':key,'revision':cfg['revision'],'strategy_id':cfg['strategy_id'],
                       'date':self.clock().date().isoformat(),'status':'running','budget_fen':int(account['equity_fen']*.3),
                       'spent_fen':0,'orders':[],'results':[],'eligible':eligible,
                       'created_at':self.clock().isoformat(),'previous_close':{c:d['raw'][-1]['close'] for c,d in dataset.items()}}
-            day=await asyncio.to_thread(self.store.records.get,'quant_day',decision['date'],owner,default={'spent_fen':0,'budget_fen':decision['budget_fen']})
-            budget=max(0,min(day['budget_fen']-day['spent_fen'],decision['budget_fen']))
-            if is_peg:
-                # Fees reduce equity during execution; leave headroom under the
-                # transactional 30% limit rather than losing the final basket leg.
-                budget=max(0,budget-math.ceil(decision['budget_fen']*.001)-len(needed)*1000)
+            budget=0
+            if not is_peg:
+                day=await asyncio.to_thread(self.store.records.get,'quant_day',decision['date'],owner,default={'spent_fen':0,'budget_fen':decision['budget_fen']})
+                budget=max(0,min(day['budget_fen']-day['spent_fen'],decision['budget_fen']))
             positions={p['code']:p for p in account['positions']};cash=account['cash_fen'];total=account['market_value_fen']
-            buy_remaining=set(weights) if is_peg else set()
             for side in ('sell','buy'):
-                for code in needed:
-                    if code not in managed or code not in eligible: continue
+                # Establish missing names before topping up existing positions.
+                for code in (sorted(needed,key=lambda c:c in positions) if is_peg and side=='buy' else needed):
+                    if code not in managed:continue
+                    if code not in eligible:
+                        if is_peg and code in weights:decision['skipped_targets'][code]='最近交易日有除权或复权参照变化，暂不新增风险'
+                        continue
                     stock=self.paper._stock(code)
-                    if 'ST' in stock['name'].upper() or '退' in stock['name']: continue
+                    if 'ST' in stock['name'].upper() or '退' in stock['name']:
+                        if is_peg and code in weights:decision['skipped_targets'][code]='风险警示或退市股票暂停自动买入'
+                        continue
                     cached=await asyncio.to_thread(self.store.records.get,'minute_market',code+':1',default={})
                     price=valid_quote(cached,self.clock())['price_fen']
-                    if abs(price/100/decision['previous_close'][code]-1)>=.045: continue
+                    if abs(price/100/decision['previous_close'][code]-1)>=(price_change_limit(code) if is_peg else .045):
+                        if is_peg and code in weights:decision['skipped_targets'][code]='报价接近该板块涨跌停边界，暂停自动成交'
+                        continue
                     position=positions.get(code,{'quantity':0,'sellable':0})
                     rules=board_rules(code);step=rules['quantity_step']
-                    target=int(account['equity_fen']*weights.get(code,0)/price)//step*step
+                    target=decision['target_quantities'].get(code,0) if is_peg else int(account['equity_fen']*weights.get(code,0)/price)//step*step
                     difference=target-position['quantity']
                     quantity=(max(0,difference) if side=='buy' else min(max(0,-difference),position['sellable']))//step*step
-                    available_budget=budget
-                    if side=='buy' and is_peg:
-                        available_budget=budget//max(1,len(buy_remaining))
-                        buy_remaining.discard(code)
-                    quantity=min(quantity,available_budget//price//step*step,rules['max_quantity'])
+                    if is_peg and quantity>rules['max_quantity']:decision['skipped_targets'][code]='达到单笔申报股数上限，剩余目标留待下次评估'
+                    quantity=min(quantity,rules['max_quantity'])
+                    if not is_peg:quantity=min(quantity,budget//price//step*step)
                     if side=='buy':
-                        quantity=min(quantity,max(0,cash-1000)//price//step*step,
-                                     max(0,int(account['equity_fen']*.8)-total)//price//step*step)
-                        if code not in positions and len(positions)>=5: continue
-                    if quantity<rules['min_quantity']: continue
+                        cash_reserve=fees(price*quantity,'buy')['fees_fen'] if is_peg else 1000
+                        quantity=min(quantity,max(0,cash-cash_reserve)//price//step*step)
+                        if not is_peg:quantity=min(quantity,max(0,int(account['equity_fen']*.8)-total)//price//step*step)
+                        if code not in positions and len(positions)>=5:
+                            if is_peg:decision['skipped_targets'][code]='已有5只持仓，等待旧股票满足T+1后卖出'
+                            continue
+                    liquidating_remainder=is_peg and side=='sell' and 0<quantity==position['sellable']<rules['min_quantity']
+                    if quantity<rules['min_quantity'] and not liquidating_remainder:
+                        if is_peg and side=='buy' and difference>0:decision['skipped_targets'][code]='整手或可用现金限制，未达到最小买入数量'
+                        continue
                     request_id=str(uuid.uuid5(uuid.NAMESPACE_URL,f'finpulse:quant:{owner}:{key}:{code}:{side}'))
                     decision['orders'].append({'request_id':request_id,'code':code,'side':side,'quantity':quantity})
-                    gross=price*quantity;budget-=gross
+                    gross=price*quantity
+                    if not is_peg:budget-=gross
                     if side=='buy':
                         cash-=gross+fees(gross,side)['fees_fen'];total+=gross;positions[code]={**position,'quantity':position['quantity']+quantity}
                     else:
                         cash+=gross-fees(gross,side)['fees_fen'];total-=gross
                         if quantity==position['quantity']: positions.pop(code,None)
                         else: positions[code]={**position,'quantity':position['quantity']-quantity}
+            if is_peg:
+                decision['budget_fen']=sum(prices[o['code']]*o['quantity'] for o in decision['orders'])
             decision=await asyncio.to_thread(self.store.save_decision,owner,decision)
         if decision['status']!='running': return
         execution={'revision':cfg['revision'],'decision_key':key,'lease_token':token,
@@ -247,6 +273,6 @@ class QuantService:
             outcome={'positions':positions,'differences':{code:{'target_weight':decision['target_weights'].get(code,0),
                      'actual_weight':positions.get(code,{}).get('weight',0)} for code in dict.fromkeys([*decision['target_weights'],*positions])
                      if abs(decision['target_weights'].get(code,0)-positions.get(code,{}).get('weight',0))>.001},
-                     'note':'目标与实际可能因每日30%成交额、T+1、整手、行情或费用限制而不同；未完成部分下个交易日重新评估。'}
+                     'note':'目标与实际可能因T+1、整手、行情或费用限制而不同；未完成部分下个交易日重新评估。'}
         reason='回撤达到15%，本轮计划已暂停。' if paused else ((decision['reason'] if is_peg else None) if decision['orders'] else '未产生可执行订单：阈值、公司行为、费用或风险限制。')
         await asyncio.to_thread(self.store.finish,owner,key,cfg['revision'],'paused' if paused else 'completed',results,reason,outcome)

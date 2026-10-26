@@ -36,6 +36,7 @@ export interface StrategySubmissionSchema { schema_version: string; json_schema:
 export interface QuantDecision {
   key: string; date: string; as_of: string; status: string; model_version: string; reason?: string;
   target_weights: Record<string, number>;
+  skipped_targets?: Record<string, string>;
   peg_snapshot?: { snapshot_id: string; method_version: string; market_date: string; published_at: string };
   peg_selection?: { code: string; name: string; group: string; peg: number }[];
   allocation_outcome?: { positions: Record<string, { quantity: number; weight: number }>; differences: Record<string, { target_weight: number; actual_weight: number }>; note: string };

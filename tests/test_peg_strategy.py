@@ -45,15 +45,15 @@ class PegStrategyTests(unittest.TestCase):
         adapter=self.prepare(s);meta=adapter.metadata()
         self.assertEqual(meta['universe'],CODES[:5])
         result=adapter.decide({c:[{'date':'2026-10-08'}] for c in CODES[:5]},'2026-10-08')
-        self.assertEqual(result['target_weights'],dict.fromkeys(CODES[:5],.16))
+        self.assertEqual(result['target_weights'],dict.fromkeys(CODES[:5],.2))
         self.assertEqual(result['peg_snapshot']['snapshot_id'],'snapshot-one')
         self.assertEqual(result['strategy_config'],{'top_n':5,'group':'all'})
 
-    def test_group_and_smaller_count_respect_twenty_percent_cap(self):
+    def test_group_and_smaller_count_use_full_capital(self):
         adapter=self.prepare(config={'top_n':2,'group':'非金融'})
         self.assertEqual(adapter.metadata()['universe'],CODES[3:5])
         result=adapter.decide({c:[{'date':'2026-10-08'}] for c in CODES[3:5]},'2026-10-08')
-        self.assertEqual(list(result['target_weights'].values()),[.2,.2])
+        self.assertEqual(list(result['target_weights'].values()),[.5,.5])
 
     def test_intraday_republication_uses_latest_compatible_pre_day_history(self):
         newer=snapshot(ident='intraday');newer['published_at']='2026-10-09T09:00:00+08:00'
@@ -91,6 +91,28 @@ class PegStrategyTests(unittest.TestCase):
     def test_unsupported_selected_security_stops_with_an_explicit_message(self):
         s=snapshot();s['rows'][-1].update(code='302132',name='中航成飞',status='合格',peg=.01)
         with self.assertRaisesRegex(ValueError,'302132.*模拟盘'):self.prepare(s)
+
+    def test_minimum_lots_override_equal_weight_without_dropping_expensive_top_five(self):
+        adapter=self.prepare();prices=dict(zip(CODES[:5],[26000,11000,3000,800,61000]))
+        quantities=adapter.allocate(prices,20_000_000,20_000)
+        self.assertEqual(set(quantities),set(CODES[:5]))
+        self.assertEqual(quantities[CODES[4]],100)
+        self.assertTrue(all(q>=100 and q%100==0 for q in quantities.values()))
+        invested=sum(prices[c]*q for c,q in quantities.items())
+        self.assertLessEqual(invested,19_980_000)
+        self.assertGreater(invested,19_800_000)
+
+    def test_star_board_uses_two_hundred_minimum_then_one_share_steps(self):
+        s=snapshot();s['rows'][0]['code']='688472';adapter=self.prepare(s)
+        prices={r['code']:800 for r in adapter.selected}
+        quantities=adapter.allocate(prices,20_000_000,20_000)
+        self.assertGreaterEqual(quantities['688472'],200)
+        self.assertLess(19_980_000-sum(prices[c]*q for c,q in quantities.items()),800)
+
+    def test_insufficient_capital_reports_minimum_lot_conflict_before_any_liquidation(self):
+        adapter=self.prepare()
+        with self.assertRaisesRegex(ValueError,'资金.*整手'):
+            adapter.allocate(dict.fromkeys(CODES[:5],100000),20_000_000,20_000)
 
     def test_registry_keeps_peg_when_neural_model_is_unavailable(self):
         with patch('backend.quant.strategy.QuantStrategy',side_effect=OSError('missing model')):registry=StrategyRegistry()
@@ -131,7 +153,7 @@ class PegExecutionTests(unittest.TestCase):
         self.assertEqual(bad.status_code,422)
         self.register('peg_other');self.assertEqual(self.client.get('/api/paper/automation').json()['mode'],'manual')
 
-    def test_first_day_spreads_thirty_percent_budget_across_five_and_pins_provenance(self):
+    def test_first_day_invests_full_capital_across_five_and_pins_provenance(self):
         self.ready();self.assertEqual(self.enable().status_code,200)
         asyncio.run(self.service.tick());decisions=self.service.store.decisions(self.owner)['items']
         self.assertEqual(len(decisions),1,self.service.state(self.owner));d=decisions[0]
@@ -139,9 +161,75 @@ class PegExecutionTests(unittest.TestCase):
         self.assertEqual(d['peg_snapshot']['snapshot_id'],'snapshot-one')
         self.assertEqual(self.loaded,[CODES[:5]])
         trades=self.service.paper.trades(self.owner)['items']
-        self.assertEqual(len(trades),5,d);self.assertLessEqual(sum(t['gross_fen'] for t in trades),6_000_000)
+        self.assertEqual(len(trades),5,d);self.assertGreater(sum(t['gross_fen'] for t in trades),19_000_000)
+        self.assertGreater(self.service.paper.account(self.owner)['cash_fen'],0)
         self.assertEqual(len(d['allocation_outcome']['positions']),5)
-        self.assertTrue(d['allocation_outcome']['differences'])
+        self.assertEqual(d['allocation_outcome']['differences'],{})
+
+    def test_expensive_minimum_lot_can_exceed_old_per_stock_and_daily_caps(self):
+        self.ready();prices=dict(zip(CODES,[260,110,30,8,610,10]))
+        original=self.service.history_loader
+        async def load(codes,signal):
+            dataset=await original(codes,signal)
+            for code,item in dataset.items():
+                bars=copy.deepcopy(item['raw'])
+                for bar in bars:bar.update(open=prices[code],close=prices[code],high=prices[code],low=prices[code])
+                dataset[code]={'raw':bars,'adjusted':bars}
+            return dataset
+        self.service.history_loader=load
+        for code,price in prices.items():self.records.put('minute_market',code+':1',cache(self.now,price))
+        self.enable();asyncio.run(self.service.tick())
+        account=self.service.paper.account(self.owner);decision=self.service.store.decisions(self.owner)['items'][0]
+        self.assertEqual(len(account['positions']),5,decision)
+        high=next(p for p in account['positions'] if p['code']==CODES[4])
+        self.assertEqual(high['quantity'],100);self.assertGreater(high['market_value_fen']/account['equity_fen'],.3)
+        self.assertLess(account['cash_fen'],200_000)
+        self.assertTrue(all(r['status']=='filled' for r in decision['results']),decision)
+        self.assertEqual(decision['target_quantities'][CODES[4]],100)
+
+    def test_peg_quote_guard_uses_board_boundaries_instead_of_four_point_five_percent(self):
+        self.ready()
+        self.records.put('minute_market',CODES[0]+':1',cache(self.now,9.2))
+        self.records.put('minute_market',CODES[4]+':1',cache(self.now,8.5))
+        self.enable();asyncio.run(self.service.tick())
+        self.assertEqual(len(self.service.paper.account(self.owner)['positions']),5,self.service.state(self.owner))
+
+    def test_missing_names_are_bought_before_topping_up_three_existing_holdings(self):
+        import uuid
+        self.ready()
+        for code in CODES[:3]:
+            asyncio.run(self.service.paper.submit(self.owner,str(uuid.uuid4()),code,'buy',100))
+        self.enable();asyncio.run(self.service.tick())
+        decision=self.service.store.decisions(self.owner)['items'][0]
+        self.assertEqual([o['code'] for o in decision['orders'][:2]],CODES[3:5])
+        self.assertEqual(len(self.service.paper.account(self.owner)['positions']),5,decision)
+
+    def test_old_corporate_action_does_not_exclude_a_new_peg_position(self):
+        self.ready();original=self.service.history_loader
+        async def load(codes,signal):
+            dataset=await original(codes,signal);raw=copy.deepcopy(dataset[CODES[4]]['raw']);adjusted=copy.deepcopy(raw)
+            for bar in adjusted[:-20]:
+                for k in ['open','close','high','low']:bar[k]*=.5
+            dataset[CODES[4]]={'raw':raw,'adjusted':adjusted}
+            return dataset
+        self.service.history_loader=load;self.enable();asyncio.run(self.service.tick())
+        self.assertEqual(len(self.service.paper.account(self.owner)['positions']),5,self.service.state(self.owner))
+
+    def test_recent_corporate_action_and_near_limit_quote_still_block_orders(self):
+        self.ready();original=self.service.history_loader
+        async def load(codes,signal):
+            dataset=await original(codes,signal);raw=copy.deepcopy(dataset[CODES[4]]['raw']);adjusted=copy.deepcopy(raw)
+            for bar in adjusted[:-1]:
+                for k in ['open','close','high','low']:bar[k]*=.5
+            dataset[CODES[4]]={'raw':raw,'adjusted':adjusted}
+            return dataset
+        self.service.history_loader=load
+        self.records.put('minute_market',CODES[0]+':1',cache(self.now,9.04))
+        self.enable();asyncio.run(self.service.tick())
+        held={p['code'] for p in self.service.paper.account(self.owner)['positions']}
+        self.assertNotIn(CODES[0],held);self.assertNotIn(CODES[4],held)
+        skipped=self.service.store.decisions(self.owner)['items'][0]['skipped_targets']
+        self.assertIn('涨跌停',skipped[CODES[0]]);self.assertIn('除权',skipped[CODES[4]])
 
     def test_restart_replays_pinned_orders_without_new_snapshot_or_duplicate_fill(self):
         self.ready();self.enable();asyncio.run(self.service.tick())
@@ -170,6 +258,19 @@ class PegExecutionTests(unittest.TestCase):
         trades=self.service.paper.trades(self.owner)['items']
         self.assertEqual(len([t for t in trades if t['side']=='sell']),4,self.service.state(self.owner))
         self.assertEqual([p['code'] for p in self.service.paper.account(self.owner)['positions']],[CODES[0]])
+
+    def test_dropped_star_residual_below_two_hundred_can_be_sold_in_full(self):
+        from backend.paper_rules import new_account,apply_trade,valid_quote
+        self.ready();code='688981';stock=self.service.paper.catalog.get(code);old=self.now-timedelta(days=1)
+        book,_=apply_trade(new_account(),stock,'buy',300,valid_quote(cache(old,10),old),old)
+        book,_=apply_trade(book,stock,'sell',200,valid_quote(cache(self.now,10),self.now),self.now)
+        self.records.put('paper_account','account',book,self.owner)
+        self.records.put('minute_market',code+':1',cache(self.now,10))
+        self.enable();asyncio.run(self.service.tick())
+        held={p['code'] for p in self.service.paper.account(self.owner)['positions']}
+        self.assertEqual(held,set(CODES[:5]),self.service.state(self.owner))
+        sold=[r for r in self.service.paper.trades(self.owner)['items'] if r['side']=='sell']
+        self.assertEqual([(r['code'],r['quantity']) for r in sold],[(code,100)])
 
     def test_non_trading_day_never_creates_a_decision(self):
         self.ready();self.enable();self.now=self.now.replace(day=10)
