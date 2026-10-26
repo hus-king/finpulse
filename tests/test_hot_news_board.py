@@ -31,13 +31,17 @@ def topic(title='美国宣布加征进口关税', summary=''):
 
 def model_row(item):
     return {'id': item['id'], 'decision': 'keep', 'channels': ['trade'],
-            'reason': '关税相关变化可能改变进出口成本，需要核实执行范围。', 'evidence': item['title'], 'sectors': []}
+            'reason': '关税相关变化可能改变进出口成本，需要核实执行范围。', 'evidence': item['title'], 'sectors': [],
+            'event': {'kind': 'policy', 'actor': item['title'][:2], 'action': '宣布关税变化', 'new_fact': item['title'],
+                      'novelty': 'new_development', 'importance': 'major_public', 'attribution': 'announcement'}}
 
 
 def query_fixture():
     def item(key, title, decision, channels, positions):
         return {'id': key, 'title': title, 'summary': '摘要：' + title, 'rank': 1, 'rank_score': 0,
-                'screening': {'decision': decision, 'channels': channels},
+                'screening': {'decision': decision, 'channels': channels, 'event': {
+                    'kind': 'policy', 'actor': title[:2], 'action': '宣布新措施', 'new_fact': '摘要：' + title,
+                    'novelty': 'new_development', 'importance': 'major_public', 'attribution': 'reported'} if decision == 'keep' else None},
                 'sources': [{'id': source, 'rank': rank, 'observed_timestamp': observed, 'heat': heat}
                             for source, rank, observed, heat in positions]}
     return {'items': [
@@ -140,7 +144,7 @@ class ParserTests(unittest.TestCase):
 class RuleScreenTests(unittest.TestCase):
     def test_trade_and_geopolitics_do_not_need_financial_keywords(self):
         for title, channel in [('美国宣布加征进口关税', 'trade'), ('伊朗宣布封锁霍尔木兹海峡', 'supply'),
-                               ('红海航道受阻', 'cost'), ('两国宣布停火', 'risk')]:
+                               ('红海主要航道受袭中断通航', 'cost'), ('以色列宣布达成停火协议', 'risk')]:
             with self.subTest(title=title):
                 result = rule_screen(topic(title))
                 self.assertEqual(result['decision'], 'keep')
@@ -148,13 +152,13 @@ class RuleScreenTests(unittest.TestCase):
                 self.assertIn(result['evidence'], title + '\n')
 
     def test_covers_macro_commodities_disasters_and_technology(self):
-        for title in ('央行宣布降准', '国际原油价格上涨', '台风导致港口停航', '新型芯片实现量产', '电影票房突破纪录'):
+        for title in ('中国人民银行宣布降准', '美国宣布对汽车加征关税', '台风导致多地主要港口停航', '苹果发布首款折叠屏iPhone Duo'):
             with self.subTest(title=title):
                 self.assertEqual(rule_screen(topic(title))['decision'], 'keep')
 
     def test_pure_fandom_is_excluded_but_brand_penalties_are_kept(self):
         self.assertEqual(rule_screen(topic('两位明星红毯同框引粉丝热议'))['decision'], 'exclude')
-        self.assertEqual(rule_screen(topic('明星代言品牌因违规遭处罚'))['decision'], 'keep')
+        self.assertEqual(rule_screen(topic('小米宣布召回116887辆SU7标准版汽车'))['decision'], 'keep')
 
     def test_ambiguous_or_denied_events_remain_review(self):
         for title in ('网传伊朗封锁霍尔木兹海峡', '伊朗否认封锁霍尔木兹海峡', '美国是否加征关税？',
@@ -167,7 +171,8 @@ class RuleScreenTests(unittest.TestCase):
         self.assertEqual(rule_screen(item)['decision'], 'review')
 
     def test_infrastructure_is_not_missed_for_lack_of_finance_label(self):
-        self.assertEqual(rule_screen(topic('国家水网到底有多硬核', '重大水利工程正在建设，将涉及供水与发电。'))['decision'], 'keep')
+        self.assertEqual(rule_screen(topic('国家水网到底有多硬核', '重大水利工程正在建设，将涉及供水与发电。'))['decision'], 'exclude')
+        self.assertEqual(rule_screen(topic('国家重大水利工程正式开工建设'))['decision'], 'keep')
 
 
 class ModelScreenTests(unittest.TestCase):
@@ -301,7 +306,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             return {'content': json.dumps({'items': [model_row(item) for item in data]})}
         self.completion.side_effect = complete
         with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'not-a-real-key'}):
-            result, _ = await self.service.screen([topic(f'事件{i}关税调整') for i in range(23)])
+            result, _ = await self.service.screen([topic(f'美国宣布加征进口关税，涉及商品编号{i}') for i in range(23)])
         self.assertEqual(sorted(sizes), [3, 5, 5, 5, 5])
         self.assertEqual(len(result), 23)
 

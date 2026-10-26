@@ -1,5 +1,8 @@
 import asyncio
 import json
+import asyncio
+import threading
+import time
 import tempfile
 import unittest
 from copy import deepcopy
@@ -296,9 +299,34 @@ class ApiTests(unittest.TestCase):
                     self.assertEqual(self.client.get('/api/hot-news/analysis-batch', params={'ids': ids}).status_code, 422)
             self.assertEqual(read.call_count, 1)
 
+    def test_refresh_accepts_slow_job_and_polling_only_publishes_kept_news(self):
+        from tests.test_hot_news_board import board_row
+        session = self.login(); gate = threading.Event()
+        async def collect(source):
+            while not gate.is_set(): await asyncio.sleep(.01)
+            return [board_row(), board_row('超长预售45天原来是在等退货回来', 2)]
+        headers = {'Origin': 'http://localhost', 'X-CSRF-Token': session['csrf_token']}
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(side_effect=collect)), patch('backend.hot_news_board.read_config', return_value={}):
+            started = time.monotonic()
+            try:
+                response = self.client.post('/api/hot-news/refresh', json={}, headers=headers)
+                self.assertLess(time.monotonic() - started, 2)
+                self.assertEqual(response.status_code, 202)
+                self.assertEqual(response.json()['refresh']['status'], 'running')
+                self.assertEqual(self.client.post('/api/hot-news/refresh', json={}, headers=headers).status_code, 202)
+            finally: gate.set()
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                result = self.client.get('/api/hot-news?decision=exclude').json()
+                if result['refresh']['status'] == 'completed': break
+                time.sleep(.02)
+        self.assertEqual(result['refresh']['status'], 'completed')
+        self.assertEqual([r['title'] for r in result['items']], ['美国宣布加征进口关税'])
+        self.assertEqual(result['counts'], {'keep': 1})
+
     def test_rate_limit_blocks_before_paid_work(self):
         session = self.login()
-        with patch.object(app.state.hot_news, 'refresh', new=AsyncMock(return_value={'items': []})) as refresh:
+        with patch.object(app.state.hot_news, 'request_refresh', new=AsyncMock(return_value={'items': [], 'counts': {}, 'sources': []})) as refresh:
             for index in range(9):
                 response = self.client.post('/api/hot-news/refresh', json={},
                     headers={'Origin': 'http://localhost', 'X-CSRF-Token': session['csrf_token']})

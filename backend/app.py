@@ -80,6 +80,7 @@ async def lifespan(application):
     try:
         yield
     finally:
+        await application.state.hot_news.close()
         await application.state.peg.close()
         await application.state.quant.close()
         await application.state.market_bundle.close()

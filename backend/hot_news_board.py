@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import time
 import unicodedata
@@ -16,9 +17,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .news_cleaning import SHANGHAI, clean_text
 from .prompts import parse_json
 from .providers import ProviderError, read_config
+from .tushare_news import NEWS_SOURCES, configured_sources, fetch_news
+from .hot_news_events import EVENT_PROMPT, NewsEvent, editorial_reason, rule_event, validate_event
 from .hot_sectors import SECTORS, SectorImpact, present_sectors, rule_sectors, validate_sectors
 
-VERSION = 'market-hot-board-v2-sectors'
+VERSION = 'market-hot-board-v3-events'
+REFRESH_KEY = 'refresh-v3-events'
+logger = logging.getLogger(__name__)
 FEED_KEY = 'market-hot-board-v1'
 TTL = 600
 MAX_STALE = 3600
@@ -42,6 +47,7 @@ keep=能指出具体经济入口；review=标题或摘要不足、需要原始�
 channels限trade/supply/cost/demand/regulation/funding/risk，最多3项。keep必须至少1项，并在reason中用180字内说明“话题描述的事件→可能变化的经济变量”，明确是待核实的可能路径。
 evidence必须逐字引用标题或summary（2至160字），reason不能引入材料没有的新事实、公司关系、收入占比或具体价格。
 review/exclude的channels为空。只输出JSON：{"items":[{"id":"输入id","decision":"keep|review|exclude","channels":["trade"],"reason":"筛选理由","evidence":"材料原文","sectors":[]}]}。'''
+SYSTEM += '\n' + EVENT_PROMPT
 SYSTEM += '\n每条话题另需sectors数组，最多3个可能受影响的板块。每项只含id、direction(positive/negative/mixed/unclear)、reason(120字内)、evidence(2至120字逐字引用标题或摘要)。板块方向描述条件性业务影响，不预测价格；区分生产者与使用者，不能因同属行业就推定全部公司受益。没有依据时返回空数组；exclude必须空数组。id只允许以下板块：' + json.dumps(SECTORS, ensure_ascii=False)
 
 
@@ -109,6 +115,8 @@ def parse_weibo(payload):
 
 async def fetch_board(source):
     """Read only public endpoints; redirects to login/challenges are not bypassed."""
+    if source in NEWS_SOURCES:
+        return await fetch_news(source)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15, connect=6), follow_redirects=False,
                                      headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html,application/json'}) as client:
@@ -130,6 +138,7 @@ class Screening(BaseModel):
     reason: str = Field(min_length=1, max_length=180)
     evidence: str = Field(min_length=2, max_length=160)
     sectors: list[SectorImpact] = Field(max_length=3)
+    event: NewsEvent | None = None
 
     @model_validator(mode='after')
     def coherent(self):
@@ -137,6 +146,9 @@ class Screening(BaseModel):
             raise ValueError('Screening decision and channels disagree')
         if not self.reason.strip() or not self.evidence.strip():
             raise ValueError('Missing screening explanation')
+        if self.decision == 'keep' and (not self.event or self.event.novelty != 'new_development'
+                or self.event.importance not in ('major_public', 'major_industry', 'major_brand')):
+            raise ValueError('Kept topic must be an important new event')
         if self.decision == 'exclude' and self.sectors:
             raise ValueError('Excluded topic cannot have sector effects')
         return self
@@ -157,49 +169,44 @@ def validate_screening(content, topics):
         if row['evidence'] not in topic['title'] + '\n' + topic['summary']:
             raise ValueError('Screening evidence does not match')
         validate_sectors(row['sectors'], topic['title'] + '\n' + topic['summary'])
+        if row['decision'] == 'keep':
+            if editorial_reason(topic): raise ValueError('Commentary cannot be kept as an event')
+            validate_event(row['event'], topic['title'] + '\n' + topic['summary'])
     return rows
 
 
-def _rule_screen(topic):
-    """Transparent fallback: economic entry rules, never invented LLM output."""
-    title, summary = topic['title'], topic['summary']
-    material = title + '\n' + summary
-    rules = [
-        (r'关税|贸易制裁|出口管制|进口禁令|出口限制|反倾销', None, ['trade', 'regulation'], '贸易条件变化可能传导至进出口企业的成本、订单和市场准入。'),
-        (r'霍尔木兹|苏伊士|红海|航道|海峡', r'封锁|关闭|中断|停航|受阻|袭击|禁航|通航', ['supply', 'cost'], '航道相关变化可能影响能源或货物流通及运输成本，需核实实际通航状况。'),
-        (r'降息|加息|降准|货币政策|财政刺激|存款利率|贷款利率', None, ['funding', 'demand'], '利率、资金或财政条件变化可能影响融资成本和需求。'),
-        (r'原油|石油|天然气|黄金|金价|铜价|锂价|煤价|粮价', r'涨|跌|价格|供应|减产|停产|禁运|短缺', ['cost', 'supply'], '商品价格或供给相关变化可能影响产业链成本与收入，需区分业务角色。'),
-        (r'战争|开战|停火|空袭|军事冲突|导弹袭击|爆发冲突', None, ['risk', 'supply'], '冲突状态可能改变供应链和市场风险，需要核实事件范围及实际影响。'),
-        (r'地震|台风|洪水|暴雨|疫情', r'停产|停航|停工|封港|供应|工厂|矿区|港口|大范围', ['supply', 'demand'], '灾害或公共卫生事件涉及生产运输时，可能影响供给和需求。'),
-        (r'芯片|半导体|人工智能|机器人|新能源|电池|汽车|手机|AI', r'突破|量产|禁令|管制|销量|发布|涨价|降价|产能|订单', ['supply', 'demand'], '技术或产品变化可能影响产业供给、竞争和需求，仍需核实商业规模。'),
-        (r'水利|电网|基建|铁路|公路|港口|水网', r'工程|投资|建设|开工|投产|扩建', ['supply', 'demand'], '基础设施建设可能改变工程及设备需求和长期供给条件，需核实投资与执行进度。'),
-        (r'上市公司|品牌|企业|公司|车企|银行|保险|行业|票房|电影', r'财报|营收|净利润|订单|回购|重组|破产|退市|召回|处罚|禁售|暴雷|爆雷|停业|票房|销量', ['risk', 'demand'], '材料涉及商业经营或监管变化，可能影响相关产业收入或经营风险。'),
-    ]
-    # Negations, rumors and questions remain visible for review, not treated as facts.
-    ambiguous = re.search(r'辟谣|谣言|不实|网传|传闻|否认|并未|未封锁|未关闭|不加征|尚未|假如|如果|是否|会不会|[？?]', material)
-    for event, qualifier, channels, reason in rules:
-        match = re.search(event, material, re.I)
-        if match and (not qualifier or re.search(qualifier, material)):
-            if re.search(r'抗日|抗战|二战|一战|历史现场|历史回顾', material) and not re.search(r'宣布停火|爆发冲突|发动空袭|导弹袭击', material):
-                return {'id': topic['id'], 'decision': 'review', 'channels': [], 'reason': '材料包含历史回顾，不能将历史事件当作当前供需或风险变化。',
-                        'evidence': title[:100], 'method': 'rules'}
-            if ambiguous:
-                return {'id': topic['id'], 'decision': 'review', 'channels': [], 'reason': '话题含传闻、否认、提问或假设，需核实原始报道后再筛选。',
-                        'evidence': material[:min(100, len(material))].strip(), 'method': 'rules'}
-            start = max(0, match.start() - 40)
-            return {'id': topic['id'], 'decision': 'keep', 'channels': channels, 'reason': reason,
-                    'evidence': material[start:start + 150].strip(), 'method': 'rules'}
-    if re.search(r'饭圈|粉丝|CP|恋情|红毯|穿搭|演唱会|综艺|明星|热舞|同框|塌房', material, re.I):
-        return {'id': topic['id'], 'decision': 'exclude', 'channels': [], 'reason': '现有标题及摘要仅见文娱讨论，没有识别到具体市场影响入口。',
-                'evidence': title[:100], 'method': 'rules'}
-    return {'id': topic['id'], 'decision': 'review', 'channels': [], 'reason': '当前标题与摘要不足以识别具体经济入口，待核实原始报道。',
-            'evidence': title[:100], 'method': 'rules'}
-
-
 def rule_screen(topic):
-    row = _rule_screen(topic)
-    row['sectors'] = rule_sectors(topic) if row['decision'] == 'keep' else []
-    return row
+    reason = editorial_reason(topic)
+    event = rule_event(topic)
+    if reason:
+        decision, channels, event_data = 'exclude', [], None
+    elif event:
+        decision, channels, event_data = 'keep', event['channels'], event['event']
+        reason = '材料描述了具体的重要新事件，可能改变相关产业的经营条件；事实及实际影响仍需核对。'
+    else:
+        decision = 'exclude' if re.search(r'饭圈|粉丝|恋情|红毯|穿搭|明星|同框|热舞', topic['title']) else 'review'
+        channels, event_data = [], None
+        reason = '未取得足以确认重要新事件的主体、具体变化和影响范围；不把泛话题或推测当作新闻。'
+    return {'id': topic['id'], 'decision': decision, 'channels': channels, 'event': event_data,
+            'reason': reason, 'evidence': (topic['title'] + '\n' + topic.get('summary', ''))[:150].strip(),
+            'sectors': rule_sectors(topic) if decision == 'keep' else [], 'method': 'rules'}
+
+
+def public_board(feed, **filters):
+    """Discarded/unclear candidates stay in the audit store, never in public payloads."""
+    accepted = []
+    for topic in feed['items']:
+        row = topic['screening']
+        if row['decision'] != 'keep' or editorial_reason(topic): continue
+        try:
+            validate_event(row.get('event'), topic['title'] + '\n' + topic['summary'])
+        except (ValueError, KeyError, TypeError):
+            continue
+        accepted.append(topic)
+    result = filter_board({**feed, 'items': accepted}, decision='keep', **filters)
+    result['items'] = [{key: value for key, value in row.items() if not key.startswith('_')} for row in result['items']]
+    result['counts'] = {'keep': result['matched_total']}
+    return result
 
 
 def merge_topics(snapshots):
@@ -213,11 +220,14 @@ def merge_topics(snapshots):
             if len(row.get('summary', '')) > len(topic['summary']):
                 topic['summary'] = row['summary']
             if not any(entry['id'] == source for entry in topic['sources']):
-                topic['sources'].append({'id': source, 'name': SOURCES[source]['name'], 'rank': row['rank'],
-                    'heat': row['heat'], 'url': row['url'], 'observed_at': record['collected_at'], 'stale': record.get('stale', False)})
+                topic['sources'].append({'id': source, 'name': SOURCES[source]['name'] if source in SOURCES else NEWS_SOURCES[source]['name'], 'rank': row['rank'],
+                    'heat': row['heat'], 'url': row['url'], 'observed_at': record['collected_at'], 'stale': record.get('stale', False),
+                    **{key: row[key] for key in ('kind', 'publisher', 'link_kind', 'published_at', 'published_timestamp') if key in row}})
+            if row.get('content') and len(row['content']) > len(topic.get('_content', '')):
+                topic['_content'] = row['content']; topic['_content_truncated'] = row.get('content_truncated', False)
     for topic in topics.values():
         # Rank fusion uses source positions; unlike raw heat, positions are comparable.
-        topic['rank_score'] = round(sum(1 / (60 + entry['rank']) for entry in topic['sources']), 8)
+        topic['rank_score'] = round(sum(1 / (60 + entry['rank']) for entry in topic['sources'] if entry['rank'] is not None), 8)
     return sorted(topics.values(), key=lambda topic: (-topic['rank_score'], topic['id']))
 
 
@@ -232,14 +242,14 @@ def filter_board(feed, *, decision='all', source='all', channel='all', q='', sor
         material = unicodedata.normalize('NFKC', topic['title'] + '\n' + topic['summary']).casefold()
         if query and query not in material:
             continue
-        score = round(sum(1 / (60 + entry['rank']) for entry in selected_sources), 8)
-        observed = max(entry['observed_timestamp'] for entry in selected_sources)
+        score = round(sum(1 / (60 + entry['rank']) for entry in selected_sources if entry['rank'] is not None), 8)
+        observed = max(entry.get('published_timestamp') or entry['observed_timestamp'] for entry in selected_sources)
         scoped.append((topic, score, observed))
     counts = {value: sum(topic['screening']['decision'] == value for topic, _, _ in scoped)
               for value in ('keep', 'review', 'exclude')}
     matched = [row for row in scoped if decision == 'all' or row[0]['screening']['decision'] == decision]
     matched.sort(key=lambda row: (-row[2], -row[1], row[0]['id']) if sort == 'latest'
-                 else (-row[1], row[0]['id']))
+                 else (-row[1], -row[2], row[0]['id']))
     items = [{**topic, 'rank': index, 'rank_score': score} for index, (topic, score, _) in enumerate(matched[:limit], 1)]
     return {**feed, 'items': items, 'counts': counts, 'matched_total': len(matched),
             'candidate_total': len(feed['items']),
@@ -251,6 +261,7 @@ class HotNewsBoardService:
     def __init__(self, store, completion, clock=time.time):
         self.store, self.completion, self.clock = store, completion, clock
         self.capacity = asyncio.Semaphore(2)
+        self.task = None
 
     def feed(self):
         record = self.store.get('hot_news_board', FEED_KEY, default={})
@@ -260,13 +271,14 @@ class HotNewsBoardService:
             sources = [{**entry, 'stale': entry.get('stale', False) or now - entry['observed_timestamp'] >= TTL}
                        for entry in topic['sources'] if 0 <= now - entry['observed_timestamp'] < MAX_STALE]
             if sources:
-                score = round(sum(1 / (60 + entry['rank']) for entry in sources), 8)
+                score = round(sum(1 / (60 + entry['rank']) for entry in sources if entry['rank'] is not None), 8)
                 items.append({**topic, 'sources': sources, 'rank_score': score, 'sector_impacts': present_sectors(topic)})
         items.sort(key=lambda topic: (-topic['rank_score'], topic['id']))
         for rank, topic in enumerate(items, 1):
             topic['rank'] = rank
         sources = []
-        for source, meta in SOURCES.items():
+        catalog = {**SOURCES, **configured_sources(), **{key: {'name': row['name'], 'url': row['url'], 'kind': 'news'} for key, row in NEWS_SOURCES.items() if key in record.get('sources', {})}}
+        for source, meta in catalog.items():
             saved = record.get('sources', {}).get(source, {})
             age = now - saved.get('fetched_at', 0)
             status = 'unavailable' if not saved.get('fetched_at') or not 0 <= age < MAX_STALE else 'stale' if age >= TTL or saved.get('error') else 'ok'
@@ -277,10 +289,11 @@ class HotNewsBoardService:
         return {'items': items, 'status': status, 'fetched_at': record.get('collected_at'), 'sources': sources,
                 'screening': record.get('screening', 'rules'), 'warnings': record.get('warnings', []),
                 'counts': {decision: sum(item['screening']['decision'] == decision for item in items) for decision in ('keep', 'review', 'exclude')},
-                'note': '全领域平台热榜的市场相关性初筛；热榜话题未独立核实，排名不代表影响大小。',
-                'ranking_note': '按各平台原始名次融合排序，不直接相加不同平台的热度值；同标题合并，旧来源最多保留一小时。'}
+                'refresh': self.refresh_status(),
+                'note': '只展示有明确主体、新变化和重要性的热点事件；分析依据平台标题与摘要，事实仍需核对。',
+                'ranking_note': '热搜保留平台名次；资讯接口不提供热度或原文URL，按发布时间补充、链接仅为来源入口。重要性筛选不等于全网热搜排名。'}
 
-    async def screen(self, topics):
+    async def screen(self, topics, progress=None):
         if not topics:
             return [], []
         config = read_config()
@@ -290,7 +303,9 @@ class HotNewsBoardService:
         for topic in topics:
             key = digest([VERSION, SYSTEM, model_identity, topic['title'], topic['summary']])
             cached = await asyncio.to_thread(self.store.get, 'hot_news_screen', key)
-            if configured and cached:
+            if editorial_reason(topic):
+                results[topic['id']] = rule_screen(topic)
+            elif configured and cached:
                 results[topic['id']] = {**cached, 'id': topic['id']}
             elif configured:
                 pending.append((topic, key))
@@ -308,52 +323,115 @@ class HotNewsBoardService:
                     warnings.append('部分话题的模型筛选未完成，已标记为规则初筛；待核实项不会当作无关删除。')
                     for topic, _ in batch:
                         results[topic['id']] = rule_screen(topic)
+                    if progress: await progress(len(results), len(topics))
                     return
                 keys = {topic['id']: key for topic, key in batch}
                 for row in parsed:
                     value = {**row, 'method': 'model', 'model': reply.get('model')}
                     results[row['id']] = value
                     await asyncio.to_thread(self.store.put, 'hot_news_screen', keys[row['id']], value)
+                if progress: await progress(len(results), len(topics))
 
         await asyncio.gather(*(group(pending[offset:offset + 5]) for offset in range(0, len(pending), 5)))
         if not configured:
             warnings.append('当前使用规则初筛；不明确的话题放入待核实，筛选结果需进一步核对。')
         return [{**topic, 'screening': results[topic['id']]} for topic in topics], list(dict.fromkeys(warnings))
 
-    async def refresh(self):
+    async def refresh(self, token=None):
         record = await asyncio.to_thread(self.store.get, 'hot_news_board', FEED_KEY, default={})
-        if record and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+        if token is None and record.get('version') == VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
             return await asyncio.to_thread(self.feed)
         lease = digest([VERSION, 'refresh'])
-        token = await asyncio.to_thread(self.store.claim, lease, 1500)
+        token = token or await asyncio.to_thread(self.store.claim, lease, 1500)
         if not token:
             raise HTTPException(409, '热点榜单正在更新，请稍后查看。')
         try:
             record = await asyncio.to_thread(self.store.get, 'hot_news_board', FEED_KEY, default={})
-            if record and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+            if record.get('version') == VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+                await self._progress(token, 'ready', 0, 0, status='completed')
                 return await asyncio.to_thread(self.feed)
             now = self.clock()
+            await self._progress(token, 'collecting', 0, 0)
             snapshots = dict(record.get('sources', {}))
-            fetched = await asyncio.gather(*(fetch_board(source) for source in SOURCES), return_exceptions=True)
-            for source, result in zip(SOURCES, fetched):
+            catalog = {**SOURCES, **configured_sources()}
+            fetched = await asyncio.gather(*(fetch_board(source) for source in catalog), return_exceptions=True)
+            for source, result in zip(catalog, fetched):
                 if isinstance(result, Exception):
                     previous = snapshots.get(source, {})
-                    snapshots[source] = {**previous, 'error': str(result) if isinstance(result, ProviderError) else SOURCES[source]['name'] + '读取失败'}
+                    snapshots[source] = {**previous, 'error': str(result) if isinstance(result, ProviderError) else catalog[source]['name'] + '读取失败'}
                 else:
                     snapshots[source] = {'items': result, 'fetched_at': now,
                                          'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(), 'error': None}
             usable = {source: {**snapshot, 'stale': bool(snapshot.get('error'))} for source, snapshot in snapshots.items()
                       if 0 <= now - snapshot.get('fetched_at', 0) < MAX_STALE}
             topics = merge_topics(usable)
-            screened, warnings = await self.screen(topics)
+            if len(topics) > 100:
+                # Reserve room for real reports when multiple trend boards are full.
+                topics = sorted(topics, key=lambda row: (not any(s.get('kind') == 'news' for s in row['sources']), -row['rank_score'], row['id']))[:100]
+            await self._progress(token, 'screening', 0, len(topics))
+            async def progress(completed, total):
+                await self._progress(token, 'screening', completed, total)
+            screened, warnings = await self.screen(topics, progress)
             for topic in screened:
                 for entry in topic['sources']:
                     entry['observed_timestamp'] = usable[entry['id']]['fetched_at']
             methods = {topic['screening']['method'] for topic in screened}
-            saved = {'topics': screened, 'sources': snapshots, 'refreshed_at': now,
+            saved = {'version': VERSION, 'topics': screened, 'sources': snapshots, 'refreshed_at': now,
                      'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(),
                      'screening': next(iter(methods)) if len(methods) == 1 else 'mixed' if methods else 'rules', 'warnings': warnings}
             await asyncio.to_thread(self.store.put, 'hot_news_board', FEED_KEY, saved)
+            await self._progress(token, 'ready', len(topics), len(topics), status='completed')
             return await asyncio.to_thread(self.feed)
         finally:
             await asyncio.to_thread(self.store.release, lease, token)
+
+
+    def refresh_status(self):
+        record = self.store.get('hot_news_board', REFRESH_KEY, default={})
+        lease = self.store.get('lease', digest([VERSION, 'refresh']), default={})
+        active = lease.get('expires', 0) > self.clock()
+        if active and lease.get('token') != record.get('token'):
+            return {'status': 'running', 'stage': 'collecting', 'message': '正在启动后台更新', 'completed': 0, 'total': 0}
+        if record.get('status') == 'running':
+            if not active:
+                return {'status': 'error', 'stage': 'interrupted', 'message': '上次更新已中断，可重新更新。', 'completed': 0, 'total': 0}
+        return {key: record.get(key) for key in ('status', 'stage', 'message', 'completed', 'total', 'updated_at')} if record else {'status': 'idle'}
+
+    async def _progress(self, token, stage, completed, total, status='running'):
+        messages = {'collecting': '正在采集平台热点', 'screening': '正在筛选具体的重要新事件', 'ready': '热点新闻已更新', 'failed': '更新未完成，请稍后重试', 'interrupted': '服务重启，更新已中断，可重试'}
+        await asyncio.to_thread(self.store.put, 'hot_news_board', REFRESH_KEY,
+            {'token': token, 'status': status, 'stage': stage, 'message': messages[stage],
+             'completed': completed, 'total': total, 'updated_at': self.clock()})
+
+    async def request_refresh(self):
+        record = await asyncio.to_thread(self.store.get, 'hot_news_board', FEED_KEY, default={})
+        if record.get('version') == VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+            return await asyncio.to_thread(self.feed)
+        token = await asyncio.to_thread(self.store.claim, digest([VERSION, 'refresh']), 1500)
+        if not token:
+            # Another instance owns the task; joining it is a normal refresh response.
+            return await asyncio.to_thread(self.feed)
+        try:
+            await self._progress(token, 'collecting', 0, 0)
+        except BaseException:
+            await asyncio.to_thread(self.store.release, digest([VERSION, 'refresh']), token)
+            raise
+        async def run():
+            try:
+                await self.refresh(token)
+            except asyncio.CancelledError:
+                await self._progress(token, 'interrupted', 0, 0, status='error')
+                raise
+            except Exception:
+                logger.exception('Hot news refresh failed')
+                await self._progress(token, 'failed', 0, 0, status='error')
+            finally:
+                await asyncio.to_thread(self.store.release, digest([VERSION, 'refresh']), token)
+        self.task = asyncio.create_task(run())
+        self.task.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        return await asyncio.to_thread(self.feed)
+
+    async def close(self):
+        if self.task and not self.task.done():
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)

@@ -1,4 +1,5 @@
 config.local.json
+news-provider.local.json
 .venv/
 node_modules/
 dist/
