@@ -47,3 +47,14 @@ python -m experiments.news_processing.benchmark --root NEW_DEVELOPMENT_ROOT --ca
 ```
 
 This requires `comparison_freeze.json` pinning inputs, separate references, tools, actor registry, full checkpoint/tokenizer artifacts and token budgets. `comparison.summarize(..., actor_registry=...)` binds candidate/source roles and canonical identities to this frozen registry. Registry identities document recorded generations; they do not prove distinct model backends, particularly for Copilot's `auto` routing. Missing predictions and deliberate abstention have separate counts, with positive support retained in both cases. Report newly collected sources separately from repaired, previously seen sources. Source disagreements remain pending, and agreement with AI sources is never human-reference accuracy. Parser fixes discovered after comparison need a separate declared derivative; do not overwrite original rules, predictions or results.
+
+The [bulk dataset report](../../docs/news-bulk-dataset-2026-10-26.md) records 3,000 real article requests and their source, label and review counts. `bulk_dataset` reuses the bounded journal, records all raw answers, and selects one contiguous event interval per article before judging the supplied company contrasts. It does not infer whole-article irrelevance from a single NONE event.
+
+For a newly frozen bulk input directory containing `articles.jsonl`, `company_catalog.json` and `protocol.json`:
+
+```sh
+python -m experiments.news_processing.bulk_dataset NEW_ROOT --config /protected/provider-config.json --limit-batches 1
+python -m experiments.news_processing.bulk_dataset NEW_ROOT --config /protected/provider-config.json
+```
+
+The second call skips already reserved batches, including invalid results, and preserves the declared request/token caps. Historical runs retain their exact source snapshots; current code rejects a resume with different executable sources. Credentials stay outside run directories. `model_packet` withholds primary semantic labels from a review request; `checked_pairs` records independent target failures, and `export_dataset` writes all eligible weak candidates separately from review-agreed silver. A later revalidation must retain its original raw outputs and declare its own code/input hashes. None of these files is production gold or an independent test set.
