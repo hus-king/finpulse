@@ -193,6 +193,28 @@ def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dic
     return updated, trade
 
 
+def daily_performance(account: dict, trades: list[dict], previous_closes: dict[str, int], equity: int) -> dict:
+    """Reverse today's cash flows and share changes to recover the overnight book."""
+    cash=account['cash_fen'];quantities={code:p['quantity'] for code,p in account['positions'].items()}
+    for trade in trades:
+        code=trade['code'];quantity=trade['quantity'];gross=trade['gross_fen'];cost=trade['fees_fen']
+        if trade['side']=='buy':
+            cash+=gross+cost;quantities[code]=quantities.get(code,0)-quantity
+        else:
+            cash-=gross-cost;quantities[code]=quantities.get(code,0)+quantity
+    missing=sorted(code for code,quantity in quantities.items() if quantity>0 and code not in previous_closes)
+    result={'daily_pnl_fen':None,'daily_return_percent':None,'daily_pnl_base_equity_fen':None,
+            'daily_pnl_status':'unavailable','daily_pnl_missing_codes':missing,'daily_pnl_reason':''}
+    if cash<0 or any(quantity<0 for quantity in quantities.values()):
+        return {**result,'daily_pnl_reason':'当日成交记录与持仓暂未对齐'}
+    if missing:return {**result,'daily_pnl_reason':'暂缺上一交易日收盘价'}
+    baseline=cash+sum(quantity*previous_closes[code] for code,quantity in quantities.items() if quantity)
+    if baseline<=0:return {**result,'daily_pnl_reason':'上一交易日资产基准无效'}
+    pnl=equity-baseline
+    return {**result,'daily_pnl_fen':pnl,'daily_return_percent':round(pnl/baseline*100,4),
+            'daily_pnl_base_equity_fen':baseline,'daily_pnl_status':'available'}
+
+
 def value_account(account: dict, quotes: dict[str, dict], now: datetime) -> dict:
     positions = []
     for code, position in account['positions'].items():

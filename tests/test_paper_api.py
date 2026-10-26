@@ -24,6 +24,7 @@ class PaperAPITests(unittest.TestCase):
         self.now = NOW
         app.state.minute_market.clock = lambda: self.now
         app.state.minute_market.closed = True
+        app.state.research.daily_market.closed = True
         if hasattr(app.state, 'paper_trading'):
             app.state.paper_trading.clock = lambda: self.now
         app.state.research.store.put('minute_market', '000001:1', cache())

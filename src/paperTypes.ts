@@ -10,6 +10,9 @@ export interface PaperPosition {
 }
 export interface PaperAccount {
   valuation_refreshing?: boolean; valuation_errors?: Record<string, string>; next_poll_seconds?: number;
+  daily_pnl_fen?: number | null; daily_return_percent?: number | null;
+  daily_pnl_date?: string | null; daily_reference_date?: string | null;
+  daily_pnl_status?: 'available' | 'pending' | 'unavailable'; daily_pnl_reason?: string;
   initial_cash_fen: number; cash_fen: number; market_value_fen: number; equity_fen: number;
   realized_pnl_fen: number; unrealized_pnl_fen: number; total_pnl_fen: number;
   return_percent: number; total_fees_fen: number; positions: PaperPosition[]; market: PaperMarket;

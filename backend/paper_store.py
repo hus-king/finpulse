@@ -15,6 +15,20 @@ class PaperStore:
     def get_account(self, owner: str) -> dict:
         return self.records.get('paper_account', 'account', owner, default=None) or new_account()
 
+    def day_trades(self, owner: str, day: str, max_sequence: int) -> list[dict]:
+        # Bound fills to the book already read, even if another fill commits now.
+        from datetime import date,timedelta
+        end=(date.fromisoformat(day)+timedelta(days=1)).isoformat()
+        def field(name):
+            return (f"JSON_UNQUOTE(JSON_EXTRACT(payload, '$.{name}'))" if self.db.dialect=='mysql'
+                    else f"json_extract(payload, '$.{name}')")
+        sequence=f"CAST({field('sequence')} AS {'UNSIGNED' if self.db.dialect=='mysql' else 'INTEGER'})"
+        with self.db.connection() as conn:
+            rows=conn.execute("SELECT payload FROM research_records WHERE namespace='paper_trade' AND owner=? "
+                 f"AND {field('executed_at')}>=? AND {field('executed_at')}<? AND {sequence}<=?",
+                 (owner,day,end,max_sequence)).fetchall()
+        return [json.loads(row['payload']) for row in rows]
+
     def list_trades(self, owner: str, limit: int = 20, before_seq: int | None = None) -> dict:
         limit = min(100, max(1, limit))
         sequence = ("CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.sequence')) AS UNSIGNED)"
