@@ -64,6 +64,6 @@ flowchart TD
 
 ## 验证与现状
 
-核心文件：`backend/hot_sectors.py`、`backend/hot_stock_impact.py`、`src/HotTopicImpacts.tsx`、`src/HotStockImpactPanel.tsx`。相关测试86项通过，生产构建通过；浏览器覆盖榜单筛选、板块及自选股直接展示、弹窗、相反业务方向、引文、失败重试、只读复用和手机布局。页面检查使用清楚标记的测试资料，未对真实关联准确率作结论。本轮没有新增真实模型调用，尚未部署。
+核心文件：`backend/hot_sectors.py`、`backend/hot_stock_impact.py`、`src/HotTopicImpacts.tsx`、`src/HotStockImpactPanel.tsx`。相关测试86项通过，生产构建通过；浏览器覆盖榜单筛选、板块及自选股直接展示、弹窗、相反业务方向、引文、失败重试、只读复用和手机布局。页面检查使用清楚标记的测试资料，未对真实关联准确率作结论。后续发布已部署`3d07a4a`，并用服务器现有模型初始化公共热榜；真实个人账号的逐股分析未在此次发布验收中执行，关联准确率仍未得到独立评估。详见[发布记录](superpowers/reports/2026-10-26-hot-news-release.md)。
 
 关联质量应通过独立核对新闻事实、公司业务角色、每条传导关系来评价，不能用之后的股票涨跌反推其正确性。历史价格对比实验已归档于`docs/experiments/2026-10-26-hot-stock-study/`，不再作为当前功能验收目标。
