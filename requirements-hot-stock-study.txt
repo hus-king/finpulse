@@ -1,0 +1,3 @@
+# Optional offline preparation and report plotting; application requirements still apply.
+numpy>=1.26,<3
+matplotlib>=3.8,<4

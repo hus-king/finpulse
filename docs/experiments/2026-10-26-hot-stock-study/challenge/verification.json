@@ -1,0 +1,11 @@
+{
+  "checks_passed": 1196,
+  "packets": 2,
+  "pairs": 46,
+  "response_batches": 48,
+  "valid_batches": 43,
+  "csv_rows": 1104,
+  "independent_raw_price_reconstruction": true,
+  "future_information_checks": true,
+  "csv_counts_independently_recomputed": true
+}
