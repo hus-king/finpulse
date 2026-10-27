@@ -203,9 +203,29 @@ def public_board(feed, **filters):
         except (ValueError, KeyError, TypeError):
             continue
         accepted.append(topic)
-    result = filter_board({**feed, 'items': accepted}, decision='keep', **filters)
+    result = filter_board({**feed, 'items': deduplicate_reports(accepted)}, decision='keep', **filters)
     result['items'] = [{key: value for key, value in row.items() if not key.startswith('_')} for row in result['items']]
     result['counts'] = {'keep': result['matched_total']}
+    return result
+
+
+def deduplicate_reports(topics):
+    """Merge identical substantial reports, without guessing semantic equivalence."""
+    result, bodies = [], {}
+    for topic in topics:
+        material = topic.get('_content') or topic.get('summary', '')
+        body = normalized_title(material) if not topic.get('_content_truncated') and (topic.get('_content') or len(material) < 1000) else ''
+        existing = bodies.get(body) if len(body) >= 80 else None
+        if existing is None:
+            copy = {**topic, 'sources': [dict(source) for source in topic['sources']]}
+            result.append(copy)
+            if len(body) >= 80: bodies[body] = copy
+            continue
+        source_ids = {source['id'] for source in existing['sources']}
+        existing['sources'].extend(dict(source) for source in topic['sources'] if source['id'] not in source_ids)
+        existing['rank_score'] = round(sum(1 / (60 + source['rank']) for source in existing['sources'] if source['rank'] is not None), 8)
+        if len(existing['title']) > 80 and len(topic['title']) <= 80:
+            existing.update({key: value for key, value in topic.items() if key not in ('sources', 'rank_score')})
     return result
 
 
@@ -228,7 +248,7 @@ def merge_topics(snapshots):
     for topic in topics.values():
         # Rank fusion uses source positions; unlike raw heat, positions are comparable.
         topic['rank_score'] = round(sum(1 / (60 + entry['rank']) for entry in topic['sources'] if entry['rank'] is not None), 8)
-    return sorted(topics.values(), key=lambda topic: (-topic['rank_score'], topic['id']))
+    return sorted(deduplicate_reports(topics.values()), key=lambda topic: (-topic['rank_score'], topic['id']))
 
 
 def filter_board(feed, *, decision='all', source='all', channel='all', q='', sort='hot', limit=100):

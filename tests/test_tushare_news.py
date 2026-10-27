@@ -69,6 +69,22 @@ class NewsProviderTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NewsParsingTests(unittest.TestCase):
+    def test_identical_long_reports_merge_sources_and_keep_readable_headline(self):
+        body = '深蓝航天宣布重要火箭关键制造节点完成，相关结构件完成制造下线。' * 5
+        first = parse_news(payload([['2026-10-26 22:30:00', body, body, '']]), 'tushare_cls', NOW)
+        second = parse_news(payload([['2026-10-26 22:30:00', '深蓝航天火箭关键结构件下线', body, '']]), 'tushare_sina', NOW)
+        merged = merge_topics({source: {'items': rows, 'collected_at': NOW.isoformat()}
+                               for source, rows in [('tushare_cls', first), ('tushare_sina', second)]})
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]['title'], second[0]['title'])
+        self.assertEqual({source['id'] for source in merged[0]['sources']}, {'tushare_cls', 'tushare_sina'})
+        self.assertEqual(merged[0]['_content'], first[0]['content'])
+        # Short generic summaries cannot prove two distinct developments are identical.
+        first[0]['summary'] = second[0]['summary'] = '相关消息正在核实。'
+        first[0]['content'] = second[0]['content'] = ''
+        self.assertEqual(len(merge_topics({source: {'items': rows, 'collected_at': NOW.isoformat()}
+                                          for source, rows in [('tushare_cls', first), ('tushare_sina', second)]})), 2)
+
     def test_expired_future_invalid_dates_and_missing_content_are_not_published(self):
         rows = [['2026-10-26 22:30:00', '美国宣布加征进口关税', '美国宣布对进口商品加征关税。', ''],
                 ['2025-10-26 22:30:00', '旧闻', '旧内容', ''], ['2026-10-29 22:30:00', '未来', '未来内容', ''],

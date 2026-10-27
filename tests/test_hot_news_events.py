@@ -45,6 +45,8 @@ class NewsValueTests(unittest.TestCase):
             ('港股早报：某AI公司提交IPO申请', '多事件汇总，不能因内嵌大事保留整篇。'),
             ('中国石油前三季度乙烯产量同比增长创历史同期新高', '周期统计宣传。'),
             ('“顾客是上帝 员工也是人”', '知名连锁品牌谈服务理念。'),
+            ('大和：SK海力士撤回Solidigm上市计划，维持买入评级', '研报解读，不能以其中引用的公司消息保留整篇评级。'),
+            ('数字员工持证上岗 企业AI迈向组织提效', '论坛报道与应用趋势宣传。'),
         ]
         for title, summary in cases:
             with self.subTest(title=title):
