@@ -4,9 +4,11 @@ import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
 
 from .auth import authorize_model_request, current_session, token_hash
-from .hot_news_board import filter_board
+from .hot_news_board import public_board
 
 router = APIRouter(prefix='/api/hot-news', tags=['Hot news'])
 
@@ -19,10 +21,34 @@ def impact_service(request: Request):
     return request.app.state.hot_stock_impact
 
 
+def match_service(request: Request):
+    return request.app.state.hot_news_matches
+
+
+class MatchRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    topic_ids: list[Annotated[str, Field(pattern=r'^[a-zA-Z0-9_-]{1,64}$')]] = Field(min_length=1, max_length=100)
+
+
+@router.get('/matches')
+async def matches(response: Response, session=Depends(current_session), matching=Depends(match_service)):
+    response.headers['Cache-Control'] = 'no-store'
+    return await asyncio.to_thread(matching.snapshot, session['user']['id'])
+
+
+@router.post('/match')
+async def match(payload: MatchRequest, response: Response, user=Depends(authorize_model_request), matching=Depends(match_service)):
+    response.headers['Cache-Control'] = 'no-store'
+    await asyncio.to_thread(matching.store.db.check_rate_limit, [(token_hash('hot-match:' + user['id']), 4)])
+    result = await matching.start(payload.topic_ids, user['id'])
+    response.status_code = 202 if result['job'] and result['job']['status'] in ('queued', 'running') else 200
+    return result
+
+
 @router.get('')
 async def feed(response: Response,
-               decision: Literal['all', 'keep', 'review', 'exclude'] = 'all',
-               source: Literal['all', 'baidu', 'weibo'] = 'all',
+               decision: Literal['all', 'keep', 'review', 'exclude'] = 'keep',
+               source: Literal['all', 'baidu', 'weibo', 'tushare_cls', 'tushare_sina', 'tushare_wallstreetcn', 'tushare_major'] = 'all',
                channel: Literal['all', 'trade', 'supply', 'cost', 'demand', 'regulation', 'funding', 'risk'] = 'all',
                q: str = Query(default='', max_length=80),
                sort: Literal['hot', 'latest'] = 'hot',
@@ -30,7 +56,7 @@ async def feed(response: Response,
                news=Depends(service)):
     response.headers['Cache-Control'] = 'no-store'
     def read():
-        return filter_board(news.feed(), decision=decision, source=source, channel=channel, q=q, sort=sort, limit=limit)
+        return public_board(news.feed(), source=source, channel=channel, q=q, sort=sort, limit=limit)
     return await asyncio.to_thread(read)
 
 
@@ -38,7 +64,9 @@ async def feed(response: Response,
 async def refresh(response: Response, user=Depends(authorize_model_request), news=Depends(service)):
     response.headers['Cache-Control'] = 'no-store'
     await asyncio.to_thread(news.store.db.check_rate_limit, [(token_hash('hot-feed:' + user['id']), 8)])
-    return await news.refresh()
+    data = await news.request_refresh()
+    response.status_code = 202 if data.get('refresh', {}).get('status') == 'running' else 200
+    return public_board(data)
 
 
 @router.get('/analysis-batch')

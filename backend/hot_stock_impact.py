@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from .catalog import DEFAULT_WATCHLIST
 from .hot_news import SYSTEM, validate_evidence
 from .hot_news_board import digest
+from .hot_news_events import validate_event
 from .news_cleaning import SHANGHAI, get_stock_aliases
 from .providers import read_config
 
@@ -43,9 +44,19 @@ class HotStockImpactService:
 
     def topic(self, topic_id):
         topic = next((row for row in self.board.feed()['items'] if row['id'] == topic_id), None)
+        if topic and not self.published(topic): topic = None
         if topic is None:
             raise HTTPException(404, '该热点已不在当前榜单，请更新热点后重试。')
         return topic
+
+    @staticmethod
+    def published(topic):
+        try:
+            if topic['screening']['decision'] != 'keep': return False
+            validate_event(topic['screening'].get('event'), topic['title'] + '\n' + topic.get('summary', ''))
+            return True
+        except (ValueError, KeyError, TypeError):
+            return False
 
     def stocks(self, owner):
         codes = self.store.get('watchlist', 'list', owner, DEFAULT_WATCHLIST)
@@ -64,8 +75,10 @@ class HotStockImpactService:
         return result
 
     def article(self, topic):
-        return {'id': topic['id'], 'title': topic['title'], 'content': topic.get('summary') or '',
-                'text_source': 'topic_summary', 'date_status': 'unverified_topic', 'fragmented': not bool(topic.get('summary'))}
+        return {'id': topic['id'], 'title': topic['title'], 'content': topic.get('_content') or topic.get('summary') or '',
+                'text_source': 'provider_news' if topic.get('_content') else 'topic_summary',
+                'date_status': 'provider_timestamp' if topic.get('_content') else 'unverified_topic',
+                'fragmented': topic.get('_content_truncated', False) if topic.get('_content') else not bool(topic.get('summary'))}
 
     def key(self, topic, stock, config=None):
         config = read_config() if config is None else config
@@ -88,7 +101,7 @@ class HotStockImpactService:
     def snapshots(self, topic_ids, owner):
         """One feed/watchlist read, no upstream collection or model invocation."""
         requested = set(topic_ids)
-        topics = [row for row in self.board.feed()['items'] if row['id'] in requested]
+        topics = [row for row in self.board.feed()['items'] if row['id'] in requested and self.published(row)]
         stocks = self.stocks(owner); config = read_config()
         records = self.store.get_many(NAMESPACE, [self.key(topic, stock, config) for topic in topics for stock in stocks], owner)
         return {'items': [self._assemble(topic, stocks, records, config, preview=True) for topic in topics],
@@ -104,7 +117,7 @@ class HotStockImpactService:
                 'sources': topic['sources'], 'items': items, 'version': VERSION,
                 'counts': {'total': len(items), 'completed': counts['ok'], 'pending': counts['pending'], 'failed': counts['failed'],
                            'related': sum(row['analysis'] is not None and row['analysis']['relation'] in ('direct', 'indirect') for row in items)},
-                'note': '依据热榜标题/摘要与主营业务资料判断可能的业务影响；摘要尚未独立核实。'}
+                'note': '依据新闻资料与主营原文判断可能的业务影响；来源报道与实际敞口仍需核实。'}
 
     def messages(self, topic, stocks):
         payload = {'news': self.article(topic), 'sources': [{'name': s['name'], 'url': s['url']} for s in topic['sources']],
@@ -112,20 +125,26 @@ class HotStockImpactService:
                    'stocks': [{**stock, 'business_cards': retrieve_business_cards(topic['title'], topic.get('summary') or '', stock)} for stock in stocks]}
         return [{'role': 'system', 'content': IMPACT_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
 
-    async def analyze(self, topic_id, owner):
-        topic = await asyncio.to_thread(self.topic, topic_id)
+    async def analyze(self, topic_id, owner, *, _topic=None, _codes=None, _refresh_business=True, _wait=False):
+        topic = _topic if _topic is not None else await asyncio.to_thread(self.topic, topic_id)
         stocks = await asyncio.to_thread(self.stocks, owner)
         if not stocks: raise HTTPException(422, '请先添加自选股，再分析热点关联。')
+        if _codes is not None and sorted(stock['code'] for stock in stocks) != sorted(_codes):
+            raise HTTPException(409, '自选股已变化，请重新开始匹配。')
         try:
-            await asyncio.wait_for(self.requests.acquire(), timeout=.1)
+            if _wait: await self.requests.acquire()
+            else: await asyncio.wait_for(self.requests.acquire(), timeout=.1)
         except TimeoutError:
             raise HTTPException(429, '热点关联分析繁忙，请稍后重试。') from None
         lease = digest([VERSION, owner, topic_id]); token = None
         try:
             token = await asyncio.to_thread(self.store.claim, lease, 600)
             if not token: raise HTTPException(409, '这条热点正在分析，请稍后读取结果。')
-            await asyncio.gather(*(self.research.industry_news.business(stock) for stock in stocks), return_exceptions=True)
+            if _refresh_business:
+                await asyncio.gather(*(self.research.industry_news.business(stock) for stock in stocks), return_exceptions=True)
             stocks = await asyncio.to_thread(self.stocks, owner)
+            if _codes is not None and sorted(stock['code'] for stock in stocks) != sorted(_codes):
+                raise HTTPException(409, '自选股已变化，请重新开始匹配。')
             pending = []
             for stock in stocks:
                 key = self.key(topic, stock)
@@ -148,7 +167,11 @@ class HotStockImpactService:
                             'status': 'ok', 'analysis': analysis, 'model': reply.get('model'),
                             'analyzed_at': datetime.fromtimestamp(self.clock(), SHANGHAI).isoformat()}, owner)
             await asyncio.gather(*(batch(pending[i:i + 5]) for i in range(0, len(pending), 5)))
-            return await asyncio.to_thread(self.snapshot, topic_id, owner)
+            def result():
+                config = read_config()
+                records = self.store.get_many(NAMESPACE, [self.key(topic, stock, config) for stock in stocks], owner)
+                return self._assemble(topic, stocks, records, config)
+            return await asyncio.to_thread(result)
         finally:
             try:
                 if token: await asyncio.to_thread(self.store.release, lease, token)

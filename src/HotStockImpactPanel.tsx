@@ -10,9 +10,10 @@ const directions = { positive: '利好', negative: '利空', mixed: '正反并�
 const confidence = { high: '高', medium: '中', low: '低' };
 type Filter = 'related' | 'all' | 'positive' | 'negative' | 'uncertain';
 
-export default function HotStockImpactPanel({ topic, watchlist, ready, close, returnFocus, onResult }: {
+export default function HotStockImpactPanel({ topic, watchlist, ready, close, returnFocus, onResult, matching }: {
   topic: HotTopic; watchlist: string[]; ready: boolean; close: () => void; returnFocus: HTMLElement | null;
   onResult: (data: HotImpactSnapshot) => void;
+  matching: boolean;
 }) {
   useDialogScroll();
   const [data, setData] = useState<HotImpactSnapshot | null>(null);
@@ -76,7 +77,7 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
       <h3 className="hot-impact-title">{data?.title ?? topic.title}</h3>
       <p className="hot-impact-note">{data?.note ?? '读取当前账号的自选股及已保存关联判断。'}</p>
       <div className="hot-impact-action"><div><strong>{data ? `${data.counts.completed}/${data.counts.total} 只已完成 · ${data.counts.related} 只有关联` : '核对我的自选股业务资料'}</strong><p>热点事件 → 公司业务角色 → 可能的正反影响</p></div>
-        <button className="primary-button" disabled={loading || analyzing || !ready || !rows.length} onClick={() => void analyze()}>{analyzing ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{analyzing ? '分析中…' : data && data.counts.completed === data.counts.total ? '核对并补全' : '分析关联与影响'}</button>
+        <button className="primary-button" disabled={matching || loading || analyzing || !ready || !rows.length} onClick={() => void analyze()}>{analyzing ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{matching ? '一键分析进行中…' : analyzing ? '分析中…' : data && data.counts.completed === data.counts.total ? '核对并补全' : '分析关联与影响'}</button>
       </div>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setReload(previous => previous + 1)}>重新读取</button></div>}
       {loading && <p className="hot-empty" role="status">正在读取自选股关联…</p>}

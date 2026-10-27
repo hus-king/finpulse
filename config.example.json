@@ -35,5 +35,9 @@
   "peg": {
     "enabled": true,
     "workers": 4
+  },
+  "tushare_news": {
+    "base_url": "",
+    "token": ""
   }
 }

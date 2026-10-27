@@ -20,6 +20,9 @@ STOCKS = [
     {'code': '601857', 'name': '中国石油', 'exchange': 'SH', 'business': '原油勘探、生产和销售'},
     {'code': '601111', 'name': '中国国航', 'exchange': 'SH', 'business': '国内及国际航空旅客运输'},
 ]
+TOPIC['screening'] = {'decision': 'keep', 'event': {'kind': 'disruption', 'actor': '国际',
+    'action': '原油价格大幅变化', 'new_fact': TOPIC['title'], 'novelty': 'new_development',
+    'importance': 'major_industry', 'attribution': 'reported'}}
 
 
 def analysis(stock):
@@ -58,6 +61,20 @@ class ImpactTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(material), {'news', 'sources', 'stocks', 'sector_hypotheses'})
         self.assertNotIn('market', material['stocks'][0]); self.assertNotIn('historical_cases', material)
         self.assertTrue(material['stocks'][0]['business_cards'])
+
+    async def test_private_reads_also_reject_unpublished_candidates(self):
+        self.topic['screening']['decision'] = 'review'
+        with self.assertRaises(HTTPException) as error: self.service.snapshot('topic1', 'alice')
+        self.assertEqual(error.exception.status_code, 404)
+        self.assertEqual(self.service.snapshots(['topic1'], 'alice')['missing_ids'], ['topic1'])
+        self.completion.assert_not_awaited()
+
+    async def test_provider_body_is_used_without_claiming_independent_verification(self):
+        self.topic['_content'] = self.topic['summary'] + '新闻服务额外正文。'
+        article = self.service.article(self.topic)
+        self.assertIn('额外正文', article['content'])
+        self.assertEqual(article['text_source'], 'provider_news')
+        self.assertEqual(article['date_status'], 'provider_timestamp')
 
     async def test_same_event_opposite_business_effects_and_low_confidence_for_summary(self):
         result = await self.service.analyze('topic1', 'alice')

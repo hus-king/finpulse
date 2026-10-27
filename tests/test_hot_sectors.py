@@ -53,7 +53,7 @@ class SectorTests(unittest.TestCase):
     def test_model_sectors_validate_ids_quotes_uniqueness_and_exclusion(self):
         item = topic('国际原油价格上涨')
         good = {'id': 'test', 'decision': 'keep', 'channels': ['cost'], 'reason': '可能改变收入与成本',
-                'evidence': item['title'], 'sectors': [{'id': 'oil_gas', 'direction': 'positive',
+                'evidence': item['title'], 'event': {'kind': 'policy', 'actor': '国际', 'action': '价格变化', 'new_fact': item['title'], 'novelty': 'new_development', 'importance': 'major_industry', 'attribution': 'reported'}, 'sectors': [{'id': 'oil_gas', 'direction': 'positive',
                 'reason': '价格上行可能改善生产端收入', 'evidence': item['title']}]}
         self.assertEqual(validate_screening(json.dumps({'items': [good]}), [item])[0]['sectors'][0]['id'], 'oil_gas')
         for change in ({'id': 'unknown'}, {'evidence': '不存在的新闻事实'}, {'direction': '涨停'}):
