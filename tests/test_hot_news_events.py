@@ -151,5 +151,13 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
         self.store.put('hot_news_board', REFRESH_KEY, {'token': 'old', 'status': 'running'})
         self.assertEqual(self.service.refresh_status()['status'], 'error')
 
+    async def test_grouping_protocol_upgrade_refreshes_even_when_screening_is_fresh(self):
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])) as fetch:
+            await self.service.refresh()
+            record = self.store.get('hot_news_board', FEED_KEY); record.pop('grouping_version')
+            self.store.put('hot_news_board', FEED_KEY, record)
+            await self.service.request_refresh(); await self.service.task
+        self.assertEqual(fetch.await_count, 4)
+
 
 if __name__ == '__main__': unittest.main()

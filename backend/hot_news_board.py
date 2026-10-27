@@ -19,7 +19,7 @@ from .prompts import parse_json
 from .providers import ProviderError, read_config
 from .tushare_news import NEWS_SOURCES, configured_sources, fetch_news
 from .hot_news_events import EVENT_PROMPT, NewsEvent, editorial_reason, rule_event, validate_event
-from .hot_news_attention import attach_attention, cluster_events
+from .hot_news_attention import GROUPING_VERSION, attach_attention, cluster_events
 from .hot_sectors import SECTORS, SectorImpact, present_sectors, rule_sectors, validate_sectors
 
 VERSION = 'market-hot-board-v5-attention'
@@ -361,7 +361,7 @@ class HotNewsBoardService:
 
     async def refresh(self, token=None):
         record = await asyncio.to_thread(self.store.get, 'hot_news_board', FEED_KEY, default={})
-        if token is None and record.get('version') == VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+        if token is None and record.get('version') == VERSION and record.get('grouping_version') == GROUPING_VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
             return await asyncio.to_thread(self.feed)
         lease = digest([VERSION, 'refresh'])
         token = token or await asyncio.to_thread(self.store.claim, lease, 1500)
@@ -369,7 +369,7 @@ class HotNewsBoardService:
             raise HTTPException(409, '热点榜单正在更新，请稍后查看。')
         try:
             record = await asyncio.to_thread(self.store.get, 'hot_news_board', FEED_KEY, default={})
-            if record.get('version') == VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+            if record.get('version') == VERSION and record.get('grouping_version') == GROUPING_VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
                 await self._progress(token, 'ready', 0, 0, status='completed')
                 return await asyncio.to_thread(self.feed)
             now = self.clock()
@@ -407,7 +407,7 @@ class HotNewsBoardService:
                 for member in topic.get('members', []):
                     for entry in member['sources']: entry['observed_timestamp'] = usable[entry['id']]['fetched_at']
             methods = {topic['screening']['method'] for topic in screened}
-            saved = {'version': VERSION, 'topics': screened, 'sources': snapshots, 'refreshed_at': now,
+            saved = {'version': VERSION, 'grouping_version': GROUPING_VERSION, 'topics': screened, 'sources': snapshots, 'refreshed_at': now,
                      'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(),
                      'screening': next(iter(methods)) if len(methods) == 1 else 'mixed' if methods else 'rules', 'warnings': warnings}
             await asyncio.to_thread(self.store.put, 'hot_news_board', FEED_KEY, saved)
@@ -436,7 +436,7 @@ class HotNewsBoardService:
 
     async def request_refresh(self):
         record = await asyncio.to_thread(self.store.get, 'hot_news_board', FEED_KEY, default={})
-        if record.get('version') == VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
+        if record.get('version') == VERSION and record.get('grouping_version') == GROUPING_VERSION and 0 <= self.clock() - record.get('refreshed_at', 0) < TTL:
             return await asyncio.to_thread(self.feed)
         token = await asyncio.to_thread(self.store.claim, digest([VERSION, 'refresh']), 1500)
         if not token:

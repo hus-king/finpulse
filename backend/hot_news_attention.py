@@ -5,6 +5,8 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 from .prompts import parse_json
 
+GROUPING_VERSION = 'compact-event-groups-v2'
+
 GROUP_SYSTEM = '''将输入的新闻按同一个具体事件归组，不能按行业、公司或人物的大类合并不同事件。
 同一言论争议、品牌解约、各方回应属于同一核心事件的进展；同一安全争议、厂商回应和监管调查可归为一组。保留独立的新事实，不把同公司另一产品发布或不同时期的事件混入。
 只返回需要合并的多条组，每组至少2个输入id，组间id不能重复、不能添加未知id。无需输出单条：程序会完整保留其余新闻。没有可合并的组就返回groups空数组。
