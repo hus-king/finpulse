@@ -56,7 +56,17 @@ def editorial_reason(topic):
 def rule_event(topic):
     """Conservative fallback. Unknown importance stays unselected, never guessed."""
     text = topic['title'] + '\n' + topic.get('summary', '')
-    if editorial_reason(topic) or re.search(r'网传|传闻|假如|如果|是否|会不会|否认|辟谣|复盘|回顾|抗日|抗战|二战|一战|[？?]', text):
+    if editorial_reason(topic): return None
+    appearances = {(source['id'], member['id']) for member in topic.get('members', []) for source in member['sources'] if source.get('rank') is not None}
+    company = re.search(r'(?:^|[\n，,：:、 ])([\u4e00-\u9fffA-Za-z]{2,6}(?:饮料|乳业|汽车|电子|科技|食品|药业|控股|银行))(?=集团|股份|宣布|发布|终止|[：:，,、\s]|$)', text)
+    termination = re.search(r'终止.{0,28}(?:合作|代言)|解除.{0,20}(?:合作|代言)', text)
+    controversy = re.search(r'争议|不当言论|伤害.{0,10}感情|安全问题|安全质疑|联合调查', text)
+    if len(appearances) >= 3 and company and termination and controversy:
+        start = max(0, min(company.start(1), termination.start()) - 5)
+        return {'event': {'kind': 'company', 'actor': company.group(1), 'action': termination.group(),
+                          'new_fact': text[start:start + 160].strip(), 'novelty': 'new_development',
+                          'importance': 'major_brand', 'attribution': 'reported'}, 'channels': ['risk', 'demand']}
+    if re.search(r'网传|传闻|假如|如果|是否|会不会|否认|辟谣|复盘|回顾|抗日|抗战|二战|一战|[？?]', text):
         return None
     kind = actor = action = None
     channels = []

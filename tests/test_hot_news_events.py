@@ -66,6 +66,17 @@ class NewsValueTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_screening(json.dumps({'items': [model_row(bad)]}), [bad])
 
+    def test_repeated_concrete_brand_controversy_survives_model_failure_without_a_stock_score(self):
+        item = topic('姆巴佩言论争议引发品牌回应', '东鹏饮料集团发布声明，终止与姆巴佩全部合作，坚决反对伤害民族感情的行为。')
+        item['members'] = [{'id': str(i), 'sources': [{'id': 'baidu', 'rank': i + 1}]} for i in range(3)]
+        result = rule_screen(item)
+        self.assertEqual(result['decision'], 'keep')
+        self.assertEqual(result['event']['actor'], '东鹏饮料')
+        validate_event(result['event'], item['title'] + '\n' + item['summary'])
+        self.assertNotIn('score', result)
+        item['members'] = item['members'][:1]
+        self.assertNotEqual(rule_screen(item)['decision'], 'keep')
+
     def test_public_payload_keeps_only_accepted_events_and_hides_legacy_screenings(self):
         fixture = query_fixture()
         result = public_board(fixture)
@@ -150,6 +161,16 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
     async def test_expired_lease_is_not_displayed_as_permanent_progress(self):
         self.store.put('hot_news_board', REFRESH_KEY, {'token': 'old', 'status': 'running'})
         self.assertEqual(self.service.refresh_status()['status'], 'error')
+
+    async def test_cached_rule_review_is_rechecked_without_model_calls(self):
+        item = topic('姆巴佩言论争议引发品牌回应', '东鹏饮料集团发布声明，终止与姆巴佩全部合作，坚决反对伤害民族感情的行为。')
+        item['members'] = [{'id': str(i), 'sources': [{'id': 'baidu', 'rank': i + 1}]} for i in range(3)]
+        item['sources'] = [{'id': 'baidu', 'rank': 1, 'observed_timestamp': NOW}]
+        item['screening'] = {'decision': 'review', 'method': 'rules', 'channels': [], 'sectors': [], 'event': None}
+        self.store.put('hot_news_board', FEED_KEY, {'topics': [item], 'sources': {}, 'refreshed_at': NOW})
+        result = public_board(self.service.feed())
+        self.assertEqual(len(result['items']), 1)
+        self.assertEqual(result['items'][0]['screening']['decision'], 'keep')
 
     async def test_grouping_protocol_upgrade_refreshes_even_when_screening_is_fresh(self):
         with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])) as fetch:

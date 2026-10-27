@@ -290,6 +290,9 @@ class HotNewsBoardService:
         now = self.clock()
         items = []
         for topic in record.get('topics', []):
+            if topic.get('screening', {}).get('method') == 'rules':
+                # Re-evaluate cached fallback decisions after a rule upgrade, without paid calls.
+                topic = {**topic, 'screening': rule_screen(topic)}
             sources = [{**entry, 'stale': entry.get('stale', False) or now - entry['observed_timestamp'] >= TTL}
                        for entry in topic['sources'] if 0 <= now - entry['observed_timestamp'] < MAX_STALE]
             if sources:
