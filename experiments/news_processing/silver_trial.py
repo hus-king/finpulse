@@ -67,10 +67,14 @@ def sampling_indices(rows,questions,mode,seed):
     return indices
 
 
-def adapt(source,questions=None):
+def adapt(source,questions=None,*,for_evaluation=False):
     questions=QUESTIONS if questions is None else questions
     if source.get('sha256')!=digest({k:v for k,v in source.items() if k!='sha256'}):raise ValueError('Silver record changed')
-    if source.get('label_tier')!='source_supported_silver_candidate' or source.get('human_verified') is not False:
+    evaluation_only=source.get('lineage',{}).get('split')=='evaluation_only'
+    if evaluation_only and not for_evaluation:raise ValueError('Evaluation-only reference cannot enter training')
+    tier='evaluation_only_AI_reference' if for_evaluation else 'source_supported_silver_candidate'
+    if for_evaluation and not evaluation_only:raise ValueError('Explicit evaluation role required')
+    if source.get('label_tier')!=tier or source.get('human_verified') is not False:
         raise ValueError('This trial accepts only explicitly nonhuman silver candidates')
     messages=source['messages']
     if [m['role'] for m in messages]!=['system','user','assistant']:raise ValueError('Unexpected message roles')
