@@ -215,6 +215,15 @@
     width: 100%;
     top: 60px;
     bottom: 74px;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  :root[data-theme] .reading-viewport {
+    position: absolute;
+    inset-inline: 0;
+    border-block: 1px solid var(--theme-subtle);
+    background: color-mix(in srgb, var(--theme-muted) 8%, transparent);
+    pointer-events: none;
   }
   :root[data-theme] .reading-tick {
     position: absolute;
@@ -222,12 +231,14 @@
     width: 7px;
     height: 1px;
     background: var(--theme-border);
-    transition: background 160ms ease, width 160ms ease;
+    transition: background 160ms ease;
   }
   :root[data-theme] .reading-tick.major {
     width: 16px;
     background: var(--theme-subtle);
   }
+  :root[data-theme] .reading-scale.expanded .reading-tick { background: var(--theme-subtle); }
+  :root[data-theme] .reading-scale.expanded .reading-tick.major { background: var(--theme-text); }
   :root[data-theme] .reading-tick small {
     position: absolute;
     right: 22px;
@@ -248,7 +259,6 @@
     height: 1px;
     background: linear-gradient(90deg, transparent 0%, var(--theme-accent-text) 100%);
     box-shadow: 0 0 10px color-mix(in srgb, var(--theme-accent) 40%, transparent);
-    transition: top 100ms linear;
     pointer-events: none;
   }
   :root[data-theme] .reading-indicator-badge {
@@ -275,6 +285,23 @@
     font-size: 8px;
     opacity: 0.8;
     margin-left: 1px;
+  }
+  :root[data-theme] .reading-preview {
+    position: absolute;
+    right: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--theme-text);
+    opacity: .65;
+    pointer-events: none;
+  }
+  :root[data-theme] .reading-preview small {
+    position: absolute;
+    right: 8px;
+    top: 7px;
+    color: var(--theme-heading);
+    background: var(--theme-background);
+    font: 10px var(--mono);
   }
   :root[data-theme] .reading-chapters {
     position: fixed;
@@ -312,7 +339,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    transition: color 180ms ease, opacity 180ms ease, font-weight 180ms ease, text-shadow 180ms ease;
+    transition: color 180ms ease, opacity 180ms ease, transform 240ms var(--ease-out), text-shadow 180ms ease;
   }
   :root[data-theme] .reading-chapter.current .reading-glyph {
     color: var(--theme-heading);
@@ -320,10 +347,13 @@
     opacity: 1;
     text-shadow: 0 0 14px color-mix(in srgb, var(--theme-accent-text) 40%, transparent);
   }
-  :root[data-theme] .reading-chapter:hover .reading-glyph {
-    color: var(--theme-accent-text);
+  :root[data-theme] .reading-chapter:is(:hover, :focus-visible) .reading-glyph {
+    color: var(--theme-heading);
     opacity: 1;
+    transform: translateX(-2px) scale(1.12);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--theme-text) 30%, transparent);
   }
+  :root[data-theme] .reading-chapter.pressed .reading-glyph { animation: reading-chapter-press 350ms ease-out both; }
   :root[data-theme] .reading-top {
     position: absolute;
     bottom: 0;
@@ -358,6 +388,10 @@
     color: var(--theme-accent-text);
     opacity: 1;
   }
+}
+@keyframes reading-chapter-press {
+  0%, 25% { color: var(--theme-accent-text); text-shadow: 0 0 16px var(--theme-accent-text); }
+  100% { color: var(--theme-heading); text-shadow: 0 0 4px transparent; }
 }
 
 /* Shared surfaces and controls, including all six workspaces. */
@@ -514,16 +548,16 @@
 :root[data-theme] .returns-table td:first-child { color: var(--theme-text); font-size: 11px; }
 :root[data-theme] .returns-note { font-size: 10px; line-height: 2; color: var(--theme-muted); padding: 17px 28px; }
 
-/* The news score is a thin instrument arc rather than a saturated dial. */
+/* Keep the dial, number and weighting caption on one centerline. */
 :root[data-theme] :is(.research-overview, .community-card) { padding: 28px 24px; }
 :root[data-theme] .research-overview > .eyebrow { color: var(--theme-subtle); font-size: 9px; }
 :root[data-theme] .research-overview h2 { color: var(--theme-heading); font-size: 15px; margin-top: 13px; font-weight: 500; }
 :root[data-theme] .score-gauge { margin-top: 28px; }
-:root[data-theme] .score-gauge svg { max-width: 205px; color: var(--theme-text); }
+:root[data-theme] .score-gauge svg { max-width: 220px; margin-inline: auto; color: var(--theme-text); }
 :root[data-theme] .score-gauge text { fill: var(--theme-subtle); font: 9px var(--mono); }
 :root[data-theme] .score-gauge > strong { color: var(--theme-heading); font: 400 43px var(--mono); letter-spacing: -2px; margin-top: 6px; }
 :root[data-theme] .score-gauge > span { font-size: 10px; color: var(--theme-muted); }
-:root[data-theme] .score-weighting-rule { font-size: 9px; color: var(--theme-subtle); }
+:root[data-theme] .score-weighting-rule { text-align: center; font-size: 9px; color: var(--theme-subtle); }
 :root[data-theme] .research-overview > p { color: var(--theme-muted); font-size: 10px; line-height: 1.9; }
 :root[data-theme] .overview-stats { gap: 10px; padding: 22px 0; border-color: var(--theme-border); }
 :root[data-theme] .overview-stats strong { font: 400 25px var(--mono); color: var(--theme-text); }

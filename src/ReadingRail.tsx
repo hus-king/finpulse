@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent } from 'react';
 import { ArrowUp } from 'lucide-react';
 
 type Chapter = { selector: string; title: string };
 type Glyph = { character: string; x: number; y: number; size: number };
 type PlacedChapter = Chapter & { x: number; y: number; width: number; height: number; glyphs: Glyph[] };
-type RailState = { progress: number; active: number; height: number; width: number; chapters: PlacedChapter[] };
+type RailState = { progress: number; active: number; height: number; width: number; zoom: number; viewportTop: number; viewportSize: number; chapters: PlacedChapter[] };
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 const mix = (from: number, to: number, progress: number) => from + (to - from) * progress;
 const ease = (value: number) => { const t = clamp(value); return t * t * (3 - 2 * t); };
@@ -73,7 +74,11 @@ function arrange(chapters: (Chapter & { glyphs: Glyph[] })[], top: number, botto
 }
 
 export default function ReadingRail({ view }: { view: string }) {
-  const [state, setState] = useState<RailState>({ progress: 0, active: 0, height: 0, width: 0, chapters: [] });
+  const [state, setState] = useState<RailState>({ progress: 0, active: 0, height: 0, width: 0, zoom: 0, viewportTop: 0, viewportSize: 100, chapters: [] });
+  const [preview, setPreview] = useState<number | null>(null);
+  const [pressed, setPressed] = useState<string | null>(null);
+  const interaction = useRef({ zoom: 0, hovering: false, dragging: false });
+  const scheduleRef = useRef(() => {});
   useEffect(() => {
     let frame = 0;
     const definitions = chaptersByView[view] ?? chaptersByView.dashboard;
@@ -84,12 +89,18 @@ export default function ReadingRail({ view }: { view: string }) {
       if (!wide.matches) return;
       const height = window.innerHeight;
       const width = document.documentElement.clientWidth;
-      const range = document.documentElement.scrollHeight - height;
+      const documentHeight = document.documentElement.scrollHeight;
+      const range = documentHeight - height;
       const fraction = range > 0 ? clamp(window.scrollY / range) : 0;
+      const target = interaction.current.hovering || interaction.current.dragging ? 1 : 0;
+      const delta = target - interaction.current.zoom;
+      const zoom = interaction.current.zoom = motion.matches || Math.abs(delta) < .002 ? target : interaction.current.zoom + delta * .18;
       const drift = 60 - fraction * 72;
       const present = definitions.flatMap(chapter => {
         const element = document.querySelector(chapter.selector);
-        return element ? [{ ...chapter, anchor: element.getBoundingClientRect().top + drift }] : [];
+        if (!element) return [];
+        const rect = element.getBoundingClientRect();
+        return [{ ...chapter, anchor: rect.top + drift, documentY: rect.top + window.scrollY }];
       });
       const phases = present.map((chapter, i) => ({ ...chapter,
         detach: i === 0 ? 1 : ease((height - 130 - chapter.anchor) / 200),
@@ -126,11 +137,21 @@ export default function ReadingRail({ view }: { view: string }) {
             size: mix(mix(queueSize, rideSize, detach), stackSize, flip),
           };
         });
-        return { selector: chapter.selector, title: chapter.title, glyphs };
+        const mapSize = compact ? 11 : 12;
+        const mapY = top + clamp(chapter.documentY / documentHeight) * (bottom - top);
+        return { selector: chapter.selector, title: chapter.title, glyphs: glyphs.map((glyph, j) => ({ ...glyph,
+          x: mix(glyph.x, edge - (chars.length - j) * (mapSize + 4), zoom),
+          y: mix(glyph.y, mapY, zoom),
+          size: mix(glyph.size, mapSize, zoom),
+        })) };
       });
-      setState({ progress: Math.round(fraction * 100), active, height, width, chapters: arrange(raw, top, bottom) });
+      setState({ progress: fraction * 100, active, height, width, zoom,
+        viewportTop: window.scrollY / documentHeight * 100, viewportSize: Math.min(100, height / documentHeight * 100),
+        chapters: arrange(raw, top, bottom) });
+      if (zoom !== target) schedule();
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    scheduleRef.current = schedule;
     const resize = new ResizeObserver(schedule);
     resize.observe(document.body);
     const mutations = new MutationObserver(schedule);
@@ -144,22 +165,61 @@ export default function ReadingRail({ view }: { view: string }) {
       cancelAnimationFrame(frame); resize.disconnect(); mutations.disconnect();
       window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule);
       motion.removeEventListener('change', schedule);
+      scheduleRef.current = () => {};
     };
   }, [view]);
   const behavior = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' as const : 'smooth' as const;
+  const hover = (value: boolean) => { interaction.current.hovering = value; scheduleRef.current(); };
+  const point = (event: PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const value = clamp((event.clientY - rect.top) / rect.height);
+    setPreview(value * 100);
+    return value * Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  };
+  const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
+    interaction.current.dragging = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+      setPreview(null); hover(false);
+    }
+    scheduleRef.current();
+  };
   return <aside className="reading-rail" aria-label="页面阅读进度">
-    <div className="reading-scale" role="progressbar" aria-label="阅读进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress}>
+    <div className={`reading-scale ${state.zoom > .01 ? 'expanded' : ''}`} role="scrollbar" tabIndex={0} aria-controls="workspace-content" aria-orientation="vertical" aria-label="阅读进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(state.progress)}
+      onPointerEnter={() => hover(true)} onPointerLeave={() => { if (!interaction.current.dragging) { setPreview(null); hover(false); } }}
+      onFocus={() => hover(true)} onBlur={() => hover(false)}
+      onPointerDown={event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        interaction.current.dragging = true; hover(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        window.scrollTo({ top: point(event), behavior: behavior() });
+      }}
+      onPointerMove={event => {
+        const top = point(event);
+        if (interaction.current.dragging) window.scrollTo({ top, behavior: 'instant' });
+      }} onPointerUp={finishDrag} onPointerCancel={finishDrag}
+      onKeyDown={event => {
+        const range = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        const targets: Record<string, number> = { ArrowUp: window.scrollY - 80, ArrowDown: window.scrollY + 80,
+          PageUp: window.scrollY - window.innerHeight, PageDown: window.scrollY + window.innerHeight, Home: 0, End: range };
+        if (event.key in targets) { event.preventDefault(); window.scrollTo({ top: targets[event.key], behavior: behavior() }); }
+      }}>
+      <span className="reading-viewport" style={{ top: `${state.viewportTop}%`, height: `${state.viewportSize}%`, opacity: state.zoom }} aria-hidden="true" />
       {Array.from({ length: 21 }, (_, i) => {
         const y = 60 + (state.height - 140) * i / 20;
         const occupied = state.chapters.some(chapter => chapter.x + chapter.width > state.width - 70 && y > chapter.y - 12 && y < chapter.y + chapter.height + 12);
-        return <span key={i} className={`reading-tick ${i % 5 === 0 ? 'major' : ''}`} style={{ top: `${i * 5}%` }} aria-hidden="true">{i % 5 === 0 && <small style={{ opacity: occupied ? 0 : 1 }}>{i * 5}</small>}</span>;
+        return <span key={i} className={`reading-tick ${i % 5 === 0 ? 'major' : ''}`} style={{ top: `${i * 5}%`, width: (i % 5 === 0 ? 16 : 7) + state.zoom * (i % 5 === 0 ? 10 : 7) }} aria-hidden="true">{i % 5 === 0 && <small style={{ opacity: occupied ? 0 : 1 }}>{i * 5}</small>}</span>;
       })}
-      <span className="reading-indicator" style={{ top: `${state.progress}%` }} aria-hidden="true"><span className="reading-indicator-badge"><span>{String(state.progress).padStart(3, '0')}</span><small>%</small></span></span>
+      <span className="reading-indicator" style={{ top: `${state.progress}%` }} aria-hidden="true"><span className="reading-indicator-badge"><span>{String(Math.round(state.progress)).padStart(3, '0')}</span><small>%</small></span></span>
+      {preview !== null && <span className="reading-preview" style={{ top: `${preview}%` }} aria-hidden="true"><small>{Math.round(preview)}%</small></span>}
     </div>
-    <nav className="reading-chapters" aria-label="页面章节">{state.chapters.map((chapter, index) => <button key={chapter.selector} type="button" className={`reading-chapter ${index === state.active ? 'current' : ''}`} aria-label={`跳转到${chapter.title}`} aria-current={index === state.active ? 'location' : undefined}
+    <nav className="reading-chapters" aria-label="页面章节">{state.chapters.map((chapter, index) => <button key={chapter.selector} type="button" className={`reading-chapter ${index === state.active ? 'current' : ''} ${pressed === chapter.selector ? 'pressed' : ''}`} aria-label={`跳转到${chapter.title}`} aria-current={index === state.active ? 'location' : undefined}
       style={{ left: chapter.x - 3, top: chapter.y - 3, width: chapter.width + 6, height: chapter.height + 6 }}
-      onClick={() => document.querySelector(chapter.selector)?.scrollIntoView({ behavior: behavior(), block: 'start' })}>
-      {chapter.glyphs.map((glyph, j) => <span key={j} className="reading-glyph" aria-hidden="true" style={{ left: glyph.x - chapter.x + 3, top: glyph.y - chapter.y + 3, width: glyph.size, height: glyph.size, fontSize: glyph.size }}>{glyph.character}</span>)}
+      onClick={() => { setPressed(chapter.selector); document.querySelector(chapter.selector)?.scrollIntoView({ behavior: behavior(), block: 'start' }); }}
+      onAnimationEnd={event => { if (event.target === event.currentTarget.lastElementChild) setPressed(null); }}>
+      {chapter.glyphs.map((glyph, j) => <span key={j} className="reading-glyph" aria-hidden="true" style={{ left: glyph.x - chapter.x + 3, top: glyph.y - chapter.y + 3, width: glyph.size, height: glyph.size, fontSize: glyph.size, animationDelay: `${j * 24}ms` }}>{glyph.character}</span>)}
     </button>)}</nav>
     <button type="button" className="reading-top" aria-label="返回顶部" title="返回顶部" onClick={() => window.scrollTo({ top: 0, behavior: behavior() })}>
       <ArrowUp size={14} strokeWidth={1.8} />
