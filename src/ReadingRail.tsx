@@ -96,16 +96,17 @@ export default function ReadingRail({ view }: { view: string }) {
         flip: i === 0 ? 1 : ease((180 - chapter.anchor) / 200),
       }));
       const active = phases.reduce((current, chapter, index) => chapter.flip > .5 ? index : current, 0);
-      const top = 70, bottom = height - 78, edge = width - 80;
+      const top = 68, bottom = height - 76, edge = width - 84;
       const compact = height < 650;
       let stackY = top;
       const raw = phases.map((chapter, index) => {
         const chars = [...chapter.title];
         const next = phases[index + 1]?.flip ?? 0;
-        const stackSize = mix(compact ? 21 : 25, 12, next);
-        const rideSize = compact ? 15 : 18;
-        const queueSize = 12;
-        const queuedBelow = phases.slice(index + 1).reduce((sum, item) => sum + (1 - item.detach) * 28, 0);
+        const stackSize = mix(compact ? 15 : 17, 11, next);
+        const rideSize = compact ? 12 : 13;
+        const ridePitch = compact ? 18 : 22;
+        const queueSize = compact ? 10 : 11;
+        const queuedBelow = phases.slice(index + 1).reduce((sum, item) => sum + (1 - item.detach) * 24, 0);
         const queueY = bottom - queueSize - queuedBelow;
         const targetY = stackY;
         stackY += chapter.flip * (stackSize + 14);
@@ -113,14 +114,14 @@ export default function ReadingRail({ view }: { view: string }) {
         const phase = (value: number, position: number) => ease((value - position * stagger) / (1 - (chars.length - 1) * stagger));
         const glyphs = chars.map((character, j) => {
           const detach = phase(chapter.detach, j), flip = phase(chapter.flip, j);
-          const qx = edge - (chars.length - j) * queueSize;
-          const rx = width - 33 - rideSize / 2;
-          const ry = chapter.anchor + j * rideSize;
-          const sx = edge - (chars.length - j) * stackSize;
+          const qx = edge - (chars.length - j) * (queueSize + 4);
+          const rx = width - 34 - rideSize / 2;
+          const ry = chapter.anchor + j * ridePitch;
+          const sx = edge - (chars.length - j) * (stackSize + 3);
           const fromX = mix(qx, rx, detach);
           const fromY = mix(queueY, ry, detach);
           return { character,
-            x: mix(fromX, sx, flip) - (motion.matches ? 0 : 18 * Math.sin(Math.PI * flip)),
+            x: mix(fromX, sx, flip) - (motion.matches ? 0 : 16 * Math.sin(Math.PI * flip)),
             y: mix(fromY, targetY, flip),
             size: mix(mix(queueSize, rideSize, detach), stackSize, flip),
           };
@@ -153,13 +154,16 @@ export default function ReadingRail({ view }: { view: string }) {
         const occupied = state.chapters.some(chapter => chapter.x + chapter.width > state.width - 70 && y > chapter.y - 12 && y < chapter.y + chapter.height + 12);
         return <span key={i} className={`reading-tick ${i % 5 === 0 ? 'major' : ''}`} style={{ top: `${i * 5}%` }} aria-hidden="true">{i % 5 === 0 && <small style={{ opacity: occupied ? 0 : 1 }}>{i * 5}</small>}</span>;
       })}
-      <span className="reading-indicator" style={{ top: `${state.progress}%` }} aria-hidden="true"><span>{String(state.progress).padStart(3, '0')}<small>%</small></span></span>
+      <span className="reading-indicator" style={{ top: `${state.progress}%` }} aria-hidden="true"><span className="reading-indicator-badge"><span>{String(state.progress).padStart(3, '0')}</span><small>%</small></span></span>
     </div>
     <nav className="reading-chapters" aria-label="页面章节">{state.chapters.map((chapter, index) => <button key={chapter.selector} type="button" className={`reading-chapter ${index === state.active ? 'current' : ''}`} aria-label={`跳转到${chapter.title}`} aria-current={index === state.active ? 'location' : undefined}
       style={{ left: chapter.x - 3, top: chapter.y - 3, width: chapter.width + 6, height: chapter.height + 6 }}
       onClick={() => document.querySelector(chapter.selector)?.scrollIntoView({ behavior: behavior(), block: 'start' })}>
       {chapter.glyphs.map((glyph, j) => <span key={j} className="reading-glyph" aria-hidden="true" style={{ left: glyph.x - chapter.x + 3, top: glyph.y - chapter.y + 3, width: glyph.size, height: glyph.size, fontSize: glyph.size }}>{glyph.character}</span>)}
     </button>)}</nav>
-    <button type="button" className="reading-top" aria-label="返回顶部" title="返回顶部" onClick={() => window.scrollTo({ top: 0, behavior: behavior() })}><ArrowUp size={17} strokeWidth={1.3} /></button>
+    <button type="button" className="reading-top" aria-label="返回顶部" title="返回顶部" onClick={() => window.scrollTo({ top: 0, behavior: behavior() })}>
+      <ArrowUp size={14} strokeWidth={1.8} />
+      <span className="reading-top-label">TOP</span>
+    </button>
   </aside>;
 }

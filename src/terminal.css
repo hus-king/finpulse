@@ -1,6 +1,16 @@
 /* FinPulse research workspace. Neutral layers, fine rules, jewel accents.
    One palette is shared by the shell, dialogs, tables and chart renderers. */
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/SpaceGrotesk.ttf') format('truetype');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root[data-theme] {
+  --font-display: "Space Grotesk", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-rail-cjk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans CN", "Microsoft YaHei UI", sans-serif;
   font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   --workspace-width: 1840px;
@@ -183,22 +193,171 @@
 /* The reading ruler follows real document progress and never captures scrolling. */
 :root[data-theme] .reading-rail { display: none; }
 @media (min-width: 1200px) {
-  :root[data-theme] .finance-shell { padding-right: 190px; }
-  :root[data-theme] .reading-rail { display: flex; position: fixed; top: 0; right: 0; bottom: 0; width: 64px; z-index: 25; border-left: 1px solid var(--theme-border); background: var(--theme-background); }
-  :root[data-theme] .reading-scale { position: absolute; right: 0; width: 100%; top: 60px; bottom: 80px; }
-  :root[data-theme] .reading-tick { position: absolute; right: 0; width: 10px; height: 1px; background: var(--theme-border); }
-  :root[data-theme] .reading-tick.major { width: 24px; background: var(--theme-subtle); }
-  :root[data-theme] .reading-tick small { position: absolute; right: 30px; top: -5px; color: var(--theme-subtle); font: 9px var(--mono); }
-  :root[data-theme] .reading-indicator { position: absolute; right: 0; width: 100%; height: 1px; background: var(--theme-accent-text); box-shadow: 0 0 10px color-mix(in srgb, var(--theme-accent) 24%, transparent); transition: top 120ms linear; }
-  :root[data-theme] .reading-indicator > span { position: absolute; top: 7px; right: 5px; font: 10px var(--mono); color: var(--theme-accent-text); padding: 1px 0 1px 4px; background: var(--theme-background); letter-spacing: 1px; }
-  :root[data-theme] .reading-indicator small { margin-left: 3px; font-size: 8px; }
-  :root[data-theme] .reading-chapters { position: fixed; inset: 0; pointer-events: none; }
-  :root[data-theme] .reading-chapter { position: absolute; display: block; max-width: none; max-height: none; padding: 0; line-height: 1; color: var(--theme-subtle); background: transparent; border: 0; pointer-events: auto; transition: color 180ms; }
-  :root[data-theme] .reading-chapter.current { color: var(--theme-heading); }
-  :root[data-theme] .reading-chapter:hover { color: var(--theme-accent-text); }
-  :root[data-theme] .reading-glyph { position: absolute; display: grid; place-items: center; line-height: 1; font-weight: 550; background: var(--theme-background); border-radius: 0; pointer-events: none; }
-  :root[data-theme] .reading-top { position: absolute; bottom: 0; left: 0; width: 100%; height: 48px; border-top: 1px solid var(--theme-border); color: var(--theme-muted); display: grid; place-items: center; }
-  :root[data-theme] .reading-top:hover { background: var(--theme-raised); color: var(--theme-heading); }
+  :root[data-theme] .finance-shell { padding-right: 180px; }
+  :root[data-theme] .reading-rail {
+    display: flex;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 68px;
+    z-index: 25;
+    border-left: 1px solid var(--theme-border);
+    background: var(--theme-background);
+    font-family: var(--font-rail-cjk);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+  }
+  :root[data-theme] .reading-scale {
+    position: absolute;
+    right: 0;
+    width: 100%;
+    top: 60px;
+    bottom: 74px;
+  }
+  :root[data-theme] .reading-tick {
+    position: absolute;
+    right: 0;
+    width: 7px;
+    height: 1px;
+    background: var(--theme-border);
+    transition: background 160ms ease, width 160ms ease;
+  }
+  :root[data-theme] .reading-tick.major {
+    width: 16px;
+    background: var(--theme-subtle);
+  }
+  :root[data-theme] .reading-tick small {
+    position: absolute;
+    right: 22px;
+    top: -6px;
+    color: var(--theme-subtle);
+    font-family: var(--font-display), var(--mono);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.8px;
+    font-variant-numeric: tabular-nums lining-nums;
+    opacity: 0.7;
+    transition: opacity 160ms ease, color 160ms ease;
+  }
+  :root[data-theme] .reading-indicator {
+    position: absolute;
+    right: 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--theme-accent-text) 100%);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--theme-accent) 40%, transparent);
+    transition: top 100ms linear;
+    pointer-events: none;
+  }
+  :root[data-theme] .reading-indicator-badge {
+    position: absolute;
+    top: -9px;
+    right: 8px;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 1px;
+    font-family: var(--font-display), var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--theme-accent-text);
+    padding: 3px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--theme-panel) 90%, var(--theme-accent-soft));
+    border: 1px solid var(--theme-accent-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  :root[data-theme] .reading-indicator-badge small {
+    font-size: 8px;
+    opacity: 0.8;
+    margin-left: 1px;
+  }
+  :root[data-theme] .reading-chapters {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+  :root[data-theme] .reading-chapter {
+    position: absolute;
+    display: block;
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    margin: 0;
+    line-height: 1;
+    color: var(--theme-subtle);
+    background: transparent;
+    border: 0;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: color 180ms ease;
+  }
+  :root[data-theme] .reading-glyph {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    line-height: 1;
+    font-family: var(--font-rail-cjk);
+    font-weight: 420;
+    letter-spacing: 0.05em;
+    color: var(--theme-muted);
+    opacity: 0.8;
+    background: transparent;
+    border-radius: 2px;
+    pointer-events: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: color 180ms ease, opacity 180ms ease, font-weight 180ms ease, text-shadow 180ms ease;
+  }
+  :root[data-theme] .reading-chapter.current .reading-glyph {
+    color: var(--theme-heading);
+    font-weight: 550;
+    opacity: 1;
+    text-shadow: 0 0 14px color-mix(in srgb, var(--theme-accent-text) 40%, transparent);
+  }
+  :root[data-theme] .reading-chapter:hover .reading-glyph {
+    color: var(--theme-accent-text);
+    opacity: 1;
+  }
+  :root[data-theme] .reading-top {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 50px;
+    border-top: 1px solid var(--theme-border);
+    color: var(--theme-muted);
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
+  }
+  :root[data-theme] .reading-top-label {
+    font-family: var(--font-display), var(--mono);
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    line-height: 1;
+    opacity: 0.75;
+  }
+  :root[data-theme] .reading-top:hover {
+    background: var(--theme-raised);
+    color: var(--theme-heading);
+    border-top-color: var(--theme-accent-border);
+  }
+  :root[data-theme] .reading-top:hover .reading-top-label {
+    color: var(--theme-accent-text);
+    opacity: 1;
+  }
 }
 
 /* Shared surfaces and controls, including all six workspaces. */
