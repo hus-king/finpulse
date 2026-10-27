@@ -109,6 +109,16 @@ class BulkDatasetTests(unittest.TestCase):
         self.assertEqual(source_problem(a,{**self.answer,'news_ids':['N1-1','N1-2']}),'navigation_dominated_saved_text')
         self.assertIsNone(source_problem(self.article,self.answer))
 
+    def test_stock_quote_page_is_pending_but_article_on_same_site_is_not(self):
+        article={**self.article,'url':'https://xueqiu.com/S/SZ300124'}
+        self.assertEqual(source_problem(article,self.answer),'stock_quote_page_not_article')
+        article['url']='https://xueqiu.com/S/SH601919?from=search'
+        self.assertEqual(source_problem(article,self.answer),'stock_quote_page_not_article')
+        article['url']='https://xueqiu.com/1234567890/123456789'
+        self.assertIsNone(source_problem(article,self.answer))
+        article['url']='https://example.com/S/SZ300124'
+        self.assertIsNone(source_problem(article,self.answer))
+
     def test_label_run_rejects_different_executable_before_network(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'code_snapshot').mkdir()

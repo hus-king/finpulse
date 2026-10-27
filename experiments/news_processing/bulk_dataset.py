@@ -159,6 +159,9 @@ def example(article, profiles, event, pair=None, *, reviewed=False):
 
 def source_problem(article,event):
     """Observed saved-page failures need new source text, not invented labels."""
+    if re.fullmatch(r'https?://(?:www\.)?xueqiu\.com/S/(?:SH|SZ|BJ)\d{6}/?(?:[?#].*)?',
+                    str(article.get('url') or ''),flags=re.I):
+        return 'stock_quote_page_not_article'
     lines=[s for s in article['text'].splitlines() if s.strip()]
     navigation=sum(bool(re.match(r'\s*-\s*(?:[^:：\n]{1,24}[:：]|\d{2}-\d{2}\s+\S+\s+\d{6})',s)) for s in lines)
     if navigation>=3 and navigation/max(1,len(lines))>=0.35:return 'navigation_dominated_saved_text'
