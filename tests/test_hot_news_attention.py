@@ -60,3 +60,10 @@ class AttentionTests(unittest.TestCase):
                        {'anchor': '公司'}, {'anchor': '另一事件'}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_groups(json.dumps({'groups': [{**self.groups[0], **change}]}), self.topics)
+
+    def test_unmentioned_and_empty_groups_retain_every_singleton(self):
+        group = {**self.groups[0], 'topic_ids': [row['id'] for row in self.topics[:2]]}
+        result = validate_groups(json.dumps({'groups': [group]}), self.topics)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[1]['topic_ids'], [self.topics[2]['id']])
+        self.assertEqual(len(validate_groups('{"groups":[]}', self.topics)), 3)
