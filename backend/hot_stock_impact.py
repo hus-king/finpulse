@@ -14,6 +14,7 @@ from .hot_news_board import digest
 from .hot_news_events import validate_event
 from .news_cleaning import SHANGHAI, get_stock_aliases
 from .providers import read_config
+from .company_knowledge import curated_relationships
 
 VERSION = 'hot-stock-price-impact-v2-score'
 NAMESPACE = 'hot_stock_impact'
@@ -69,8 +70,10 @@ class HotStockImpactService:
             status = record.get('status', 'unavailable')
             if data and self.clock() - record.get('fetched_at', 0) >= 7 * 86400: status = 'stale'
             relationships = self.store.get('company_relationships', code, default={})
+            cards = curated_relationships(stock) + (relationships.get('data') or {}).get('cards', [])
+            cards = list({card['id']: card for card in cards}.values())[:3]
             result.append({'code': code, 'name': stock['name'], 'exchange': stock['exchange'],
-                           'relationships': (relationships.get('data') or {}).get('cards', [])[:3],
+                           'relationships': cards,
                            'aliases': get_stock_aliases(stock['name'], {'code': code}),
                            'business': {'main_business': (data.get('main_business') or '')[:2400], 'source': data.get('source'),
                                         'url': data.get('url'), 'fetched_at': record.get('fetched_at'), 'status': status}})
@@ -156,8 +159,16 @@ class HotStockImpactService:
             async def batch(group):
                 async with self.capacity:
                     try:
-                        reply = await self.research.completion(self.messages(topic, group), max_tokens=6000)
-                        analyses = validate_scores(reply['content'], self.article(topic), group)
+                        messages = self.messages(topic, group)
+                        reply = await self.research.completion(messages, max_tokens=6000)
+                        try:
+                            analyses = validate_scores(reply['content'], self.article(topic), group)
+                        except (ValueError, TypeError) as error:
+                            # One repair of the output contract, never retries to obtain a desired score.
+                            repair = messages + [{'role': 'assistant', 'content': reply['content']}, {'role': 'user', 'content':
+                                '输出未通过校验：' + str(error)[:250] + '。请仅修复JSON字段、股票覆盖或逐字引文；逐条从输入中复制，不修改标点，不补充原文没有的词。分数仍由你独立判断，不以目标分数重试。'}]
+                            reply = await self.research.completion(repair, max_tokens=6000)
+                            analyses = validate_scores(reply['content'], self.article(topic), group)
                     except (HTTPException, ValueError, TypeError):
                         for stock in group:
                             await asyncio.to_thread(self.store.put, NAMESPACE, self.key(topic, stock), {

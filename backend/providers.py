@@ -125,6 +125,9 @@ async def search_industry_news(query, start, end):
 
 
 async def company_relationships(stock):
+    from .company_knowledge import curated_relationships
+    reviewed = curated_relationships(stock)
+    if reviewed: return {'cards': reviewed}
     from .news_cleaning import clean_text
     import hashlib
     response = await tavily('search', {'query': f"{stock['name']} {stock['code']} 年报 核心品牌 产品 合作品牌 制造商",
