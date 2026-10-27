@@ -29,6 +29,8 @@ class NewsValueTests(unittest.TestCase):
     def test_discussion_is_not_promoted_by_possible_economic_connections(self):
         self.assertIsNone(editorial_reason(topic('穆迪宣布下调美国主权信用评级')))
         cases = [
+            ('正能量的伟大征程', '全国人民齐心协力，共创辉煌，没有具体政策或企业事件。'),
+            ('奋进新征程 谱写发展新篇章', '泛宣传素材，没有新增事实。'),
             ('“看不见的外贸”畅跑全球', 'AI企业通过API提供服务，可能改变算力、电力与跨境贸易。'),
             ('超长预售45天原来是在等退货回来', '女装店依靠退货库存周转，消费者讨论物流和平台。'),
             ('冷冻烘焙卖3块精品面包卖30块', '成本结构不同，可能影响食品饮料行业。'),
@@ -130,6 +132,20 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             self.store.put('hot_news_board', FEED_KEY, record)
             await self.service.request_refresh(); await self.service.task
         self.assertEqual(fetch.await_count, 4)
+
+    async def test_configured_refresh_groups_raw_context_before_screening_and_publishes_progress(self):
+        stages = []
+        async def group(rows, *args):
+            self.assertTrue(all('screening' not in row for row in rows)); stages.append('grouping')
+            self.assertEqual(self.service.refresh_status()['stage'], 'grouping')
+            return rows, None
+        async def screen(rows, progress):
+            self.assertEqual(stages, ['grouping']); stages.append('screening')
+            return [{**row, 'screening': rule_screen(row)} for row in rows], []
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}), patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])), patch('backend.hot_news_board.cluster_events', new=AsyncMock(side_effect=group)), patch.object(self.service, 'screen', side_effect=screen):
+            await self.service.request_refresh(); await self.service.task
+        self.assertEqual(stages, ['grouping', 'screening'])
+        self.assertEqual(self.service.refresh_status()['status'], 'completed')
 
     async def test_expired_lease_is_not_displayed_as_permanent_progress(self):
         self.store.put('hot_news_board', REFRESH_KEY, {'token': 'old', 'status': 'running'})

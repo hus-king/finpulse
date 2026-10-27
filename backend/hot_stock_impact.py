@@ -9,15 +9,15 @@ import time
 from fastapi import HTTPException
 
 from .catalog import DEFAULT_WATCHLIST
-from .hot_news import SYSTEM, validate_evidence
+from .hot_stock_scoring import SCORING_SYSTEM, validate_scores
 from .hot_news_board import digest
 from .hot_news_events import validate_event
 from .news_cleaning import SHANGHAI, get_stock_aliases
 from .providers import read_config
 
-VERSION = 'hot-stock-business-impact-v1'
+VERSION = 'hot-stock-price-impact-v2-score'
 NAMESPACE = 'hot_stock_impact'
-IMPACT_SYSTEM = SYSTEM + '\n当前输入是热榜标题/摘要，不是已核实新闻正文；source链接为平台话题入口。检索卡片是主营原文，matched_terms只用于定位，不代表关联成立。只能用提供的业务资料判断角色，不能从相似词猜测合同、客户或实际敞口。不能仅凭股价涨跌或媒体语气判断业务利好利空；没有新的业务影响依据时给影响不明或待核实。只判断业务利好利空及依据。sector_hypotheses是板块层面的候选路径，需要逐股独立核对主营原文，不能照搬板块方向，也不能漏掉板块候选之外实际有关的股票。'
+IMPACT_SYSTEM = SCORING_SYSTEM
 
 
 def retrieve_business_cards(title, summary, stock):
@@ -68,7 +68,9 @@ class HotStockImpactService:
             record = self.store.get('company_business', code, default={}); data = record.get('data') or {}
             status = record.get('status', 'unavailable')
             if data and self.clock() - record.get('fetched_at', 0) >= 7 * 86400: status = 'stale'
+            relationships = self.store.get('company_relationships', code, default={})
             result.append({'code': code, 'name': stock['name'], 'exchange': stock['exchange'],
+                           'relationships': (relationships.get('data') or {}).get('cards', [])[:3],
                            'aliases': get_stock_aliases(stock['name'], {'code': code}),
                            'business': {'main_business': (data.get('main_business') or '')[:2400], 'source': data.get('source'),
                                         'url': data.get('url'), 'fetched_at': record.get('fetched_at'), 'status': status}})
@@ -117,11 +119,11 @@ class HotStockImpactService:
                 'sources': topic['sources'], 'items': items, 'version': VERSION,
                 'counts': {'total': len(items), 'completed': counts['ok'], 'pending': counts['pending'], 'failed': counts['failed'],
                            'related': sum(row['analysis'] is not None and row['analysis']['relation'] in ('direct', 'indirect') for row in items)},
-                'note': '依据新闻资料与主营原文判断可能的业务影响；来源报道与实际敞口仍需核实。'}
+                'note': '确认关联后给出−10至+10非零股价影响评分；为模型净影响判断，不代表涨跌幅或概率。'}
 
     def messages(self, topic, stocks):
         payload = {'news': self.article(topic), 'sources': [{'name': s['name'], 'url': s['url']} for s in topic['sources']],
-                   'sector_hypotheses': self.sectors(topic),
+                   'sector_hypotheses': self.sectors(topic), 'attention': topic.get('attention', {}),
                    'stocks': [{**stock, 'business_cards': retrieve_business_cards(topic['title'], topic.get('summary') or '', stock)} for stock in stocks]}
         return [{'role': 'system', 'content': IMPACT_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
 
@@ -141,7 +143,7 @@ class HotStockImpactService:
             token = await asyncio.to_thread(self.store.claim, lease, 600)
             if not token: raise HTTPException(409, '这条热点正在分析，请稍后读取结果。')
             if _refresh_business:
-                await asyncio.gather(*(self.research.industry_news.business(stock) for stock in stocks), return_exceptions=True)
+                await asyncio.gather(*(self.prepare_stock(stock) for stock in stocks), return_exceptions=True)
             stocks = await asyncio.to_thread(self.stocks, owner)
             if _codes is not None and sorted(stock['code'] for stock in stocks) != sorted(_codes):
                 raise HTTPException(409, '自选股已变化，请重新开始匹配。')
@@ -155,7 +157,7 @@ class HotStockImpactService:
                 async with self.capacity:
                     try:
                         reply = await self.research.completion(self.messages(topic, group), max_tokens=6000)
-                        analyses = validate_evidence(reply['content'], self.article(topic), group)
+                        analyses = validate_scores(reply['content'], self.article(topic), group)
                     except (HTTPException, ValueError, TypeError):
                         for stock in group:
                             await asyncio.to_thread(self.store.put, NAMESPACE, self.key(topic, stock), {
@@ -177,3 +179,7 @@ class HotStockImpactService:
                 if token: await asyncio.to_thread(self.store.release, lease, token)
             finally:
                 self.requests.release()
+
+    async def prepare_stock(self, stock):
+        await asyncio.gather(self.research.industry_news.business(stock),
+                             self.research.industry_news.relationships(stock), return_exceptions=True)

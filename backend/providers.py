@@ -124,6 +124,33 @@ async def search_industry_news(query, start, end):
         'start_date': start, 'end_date': end, 'include_raw_content': True, 'include_answer': False, 'include_usage': True})
 
 
+async def company_relationships(stock):
+    from .news_cleaning import clean_text
+    import hashlib
+    response = await tavily('search', {'query': f"{stock['name']} {stock['code']} 年报 核心品牌 产品 合作品牌 制造商",
+        'search_depth': 'advanced', 'max_results': 5, 'include_raw_content': True, 'include_answer': False,
+        'include_domains': ['cninfo.com.cn', 'sse.com.cn', 'szse.cn']})
+    cards = []
+    for row in response.get('results', []):
+        url = str(row.get('url') or ''); host = (urlsplit(url).hostname or '').lower()
+        if urlsplit(url).scheme != 'https' or not any(host == domain or host.endswith('.' + domain) for domain in ('cninfo.com.cn', 'sse.com.cn', 'szse.cn')): continue
+        raw = row.get('raw_content') or row.get('content') or ''
+        if not isinstance(raw, str): continue
+        text, _ = clean_text(raw)
+        # Only retain company-identified material; never infer ownership from a name match alone.
+        if stock['name'] not in text and stock['code'] not in text: continue
+        lines = [line.strip() for line in re.split(r'[\n。]', text) if len(line.strip()) >= 8]
+        selected = [(index, line) for index, line in enumerate(lines) if re.search(r'品牌|旗下|生产|制造|合作|产品', line)]
+        selected = sorted(selected, key=lambda pair: (-sum(pair[1].count(word) * weight for word, weight in [('品牌', 3), ('旗下', 3), ('合作', 2), ('制造', 1)]), pair[0]))[:12]
+        text = '\n'.join(line[:600] for _, line in sorted(selected))[:2600] if selected else '\n'.join(lines)[:2600]
+        if not text: continue
+        cards.append({'id': hashlib.sha256((url + text).encode()).hexdigest(), 'text': text,
+                      'url': url, 'source': (row.get('title') or host)[:160]})
+        if len(cards) == 3: break
+    if not cards: raise ProviderError('公司品牌及产品关系资料暂未取得')
+    return {'cards': cards}
+
+
 async def stock_profile(stock):
     from .industry import valid_industry
     try:

@@ -27,6 +27,7 @@ TOPIC['screening'] = {'decision': 'keep', 'event': {'kind': 'disruption', 'actor
 
 def analysis(stock):
     return {'code': stock['code'], 'relation': 'indirect', 'direction': 'positive' if stock['code'] == '601857' else 'negative',
+            'score': 6 if stock['code'] == '601857' else -6, 'relationship_evidence': [],
             'confidence': 'high', 'news_evidence': ['国际原油价格大幅上涨'], 'business_evidence': stock['business']['main_business'],
             'mechanism': '生产者收入与使用者成本的可能影响方向不同。', 'uncertainty': '仍需核对净敞口和价格传导。'}
 
@@ -42,6 +43,7 @@ class ImpactTests(unittest.IsolatedAsyncioTestCase):
         self.completion = AsyncMock(side_effect=complete)
         self.research = ResearchService(self.store, self.completion)
         self.research.industry_news.business = AsyncMock(return_value={})
+        self.research.industry_news.relationships = AsyncMock(return_value={})
         self.topic = deepcopy(TOPIC)
         self.board = SimpleNamespace(feed=lambda: {'items': [self.topic]})
         self.service = HotStockImpactService(self.research, self.board, clock=lambda: 1000)
@@ -58,7 +60,7 @@ class ImpactTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['counts']['pending'], 2)
         self.completion.assert_not_awaited(); self.research.industry_news.business.assert_not_awaited()
         material = json.loads(self.service.messages(self.topic, self.service.stocks('alice'))[1]['content'])
-        self.assertEqual(set(material), {'news', 'sources', 'stocks', 'sector_hypotheses'})
+        self.assertEqual(set(material), {'news', 'sources', 'stocks', 'sector_hypotheses', 'attention'})
         self.assertNotIn('market', material['stocks'][0]); self.assertNotIn('historical_cases', material)
         self.assertTrue(material['stocks'][0]['business_cards'])
 

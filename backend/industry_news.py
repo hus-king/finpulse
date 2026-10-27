@@ -95,6 +95,9 @@ class IndustryNewsService:
                 'version':'business-v1', 'error':record.get('error'),
                 'fetched_at':datetime.fromtimestamp(record['fetched_at'],SHANGHAI).isoformat() if record.get('fetched_at') else None}
 
+    async def relationships(self, stock):
+        return await self._shared('company_relationships', stock['code'], lambda: providers.company_relationships(stock), 7 * 86400)
+
     async def search(self, topic, start, end):
         key = hashlib.sha256('\n'.join([PROFILE_VERSION, topic['industry'], topic['query'], start, end]).encode()).hexdigest()
         async def fetch():

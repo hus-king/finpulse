@@ -3,7 +3,7 @@ import { ExternalLink, LoaderCircle, Sparkles } from 'lucide-react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
 import { dateTime } from './format';
-import { impactDirections } from './hotNewsTypes';
+import ImpactScore from './ImpactScore';
 import type { HotImpactPreview, HotMatchJob, HotTopic } from './hotNewsTypes';
 
 export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, onResults, onBusy }: {
@@ -16,6 +16,7 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  const [needsRescore, setNeedsRescore] = useState(false);
   const read = useRef<AbortController | null>(null), work = useRef<AbortController | null>(null);
   const resultsRef = useRef(onResults); resultsRef.current = onResults;
   const running = job?.status === 'queued' || job?.status === 'running';
@@ -25,8 +26,8 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
     if (!user || !ready) return;
     const controller = new AbortController(); read.current = controller;
     setLoading(true);
-    api<{ job: HotMatchJob | null }>('/api/hot-news/matches', undefined, controller.signal).then(result => {
-      if (!controller.signal.aborted) { setJob(result.job); setError(''); if (result.job) resultsRef.current(result.job.results); }
+    api<{ job: HotMatchJob | null; requires_reanalysis?: boolean }>('/api/hot-news/matches', undefined, controller.signal).then(result => {
+      if (!controller.signal.aborted) { setJob(result.job); setNeedsRescore(!!result.requires_reanalysis); setError(''); if (result.job) resultsRef.current(result.job.results); }
     }).catch(e => { if (!controller.signal.aborted) setError(e.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -46,7 +47,7 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
     setSubmitting(true); setLoading(false); setError('');
     try {
       const result = await api<{ job: HotMatchJob }>('/api/hot-news/match', { topic_ids: topics.map(topic => topic.id) }, controller.signal);
-      if (!controller.signal.aborted) { setJob(result.job); resultsRef.current(result.job.results); }
+      if (!controller.signal.aborted) { setJob(result.job); setNeedsRescore(false); resultsRef.current(result.job.results); }
     } catch (e) { if (!controller.signal.aborted) setError((e as Error).message); }
     finally { if (!controller.signal.aborted) setSubmitting(false); }
   }
@@ -54,7 +55,7 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
   const processed = (job?.counts.completed ?? 0) + (job?.counts.failed ?? 0);
   const progress = job?.counts.total ? Math.min(100, processed / job.counts.total * 100) : 0;
   return <section className="panel hot-match-panel" aria-label="一键匹配新闻与自选股" aria-busy={running || submitting}>
-    <header><div><h2>热点新闻 × 我的自选股</h2><p>一键匹配当前列表的 {topics.length} 条新闻与 {watchlist.length} 只自选股，汇总可能有影响的股票及对应消息。</p></div>
+    <header><div><h2>热点新闻 × 我的自选股</h2><p>匹配 {topics.length} 条新闻与 {watchlist.length} 只自选股；确认关联后评估股价影响，−10至+10分，不取0。</p></div>
       <button className="primary-button hot-match-start" disabled={disabled || running || submitting || !!user && (!ready || loading || !watchlist.length) || !topics.length} onClick={() => void start()}>
         {running || submitting ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}{running || submitting ? '一键分析进行中…' : job ? '重新一键分析' : '一键分析'}
       </button>
@@ -62,6 +63,7 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
     {error && <div className="error-box" role="alert">{error}<button onClick={() => setReload(value => value + 1)}>重新读取任务</button></div>}
     {!user && <p className="hot-inline-note">登录后匹配自己的股票；已有判断自动复用，未完成部分按需分析。</p>}
     {user && ready && !watchlist.length && <p className="hot-inline-note">请先添加自选股。</p>}
+    {needsRescore && <p className="hot-inline-note">判断口径已更新，请重新一键分析生成股价影响评分。</p>}
     {job && <>
       <div className="hot-match-progress"><div><strong>{job.message}</strong><span>本次范围：{job.topic_total} 条新闻 × {job.stock_total} 只股票</span></div>
         <progress aria-label="一键分析进度" max={100} value={progress} /><p>已处理 {processed}/{job.counts.total} 对 · {job.counts.related} 对有关联 · 涉及 {groups.length} 只自选股</p>
@@ -73,10 +75,11 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
       {groups.length > 0 && <div className="hot-match-results">{groups.map(stock => <article className="hot-match-stock" key={stock.code}>
         <header><div><strong>{stock.name}</strong><small>{stock.code}</small></div><span>{stock.news.length} 条相关消息</span></header>
         {stock.news.map(news => <section className="hot-match-news" key={news.topic_id}>
-          <div><h3>{news.title}</h3><span className={`hot-business-direction ${news.analysis.direction}`}>{impactDirections[news.analysis.direction]}</span></div>
+          <div><h3>{news.title}</h3><ImpactScore analysis={news.analysis} /></div>
           <p>{news.analysis.mechanism}</p><small>{news.analysis.relation === 'direct' ? '直接关联' : '间接关联'} · 证据可信度低，实际敞口待核实</small>
           <details><summary>查看判断依据与成立条件</summary>{news.analysis.news_evidence.map((quote, index) => <blockquote key={index}>{quote}</blockquote>)}
             {news.analysis.business_evidence && <><small>主营原文依据</small><blockquote>{news.analysis.business_evidence}</blockquote></>}
+            {news.analysis.relationship_evidence?.map(quote => <div key={quote.id}><small>品牌 / 产品 / 公司关系依据</small><blockquote>{quote.quote}</blockquote><a href={quote.url} target="_blank" rel="noopener noreferrer">{quote.source}<ExternalLink size={11} /></a></div>)}
             <p>{news.analysis.uncertainty}</p>{news.sources.map(source => <a href={source.url} target="_blank" rel="noopener noreferrer" key={source.id}>{source.publisher || source.name} · {source.link_kind === 'provider_doc' ? '接口说明' : '来源入口'}<ExternalLink size={11} /></a>)}
           </details>
         </section>)}

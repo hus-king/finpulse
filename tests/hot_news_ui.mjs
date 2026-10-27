@@ -21,6 +21,8 @@ const topics = [makeTopic('1', '测试情景：美国加征进口关税', 'keep'
   makeTopic('2', '测试情景：霍尔木兹海峡通航受阻', 'keep', 'supply'),
   makeTopic('3', '测试情景：明星红毯同框', 'exclude'), makeTopic('4', '测试情景：有待核实的国际新闻', 'review')];
 topics[1].sources.push(source('weibo', 5, true));
+topics[1].attention = { mentions: 3, platforms: 1, snapshots: 2, best_rank: 2, priority: true, related_reports: 3, score: .05 };
+topics[1].members = [topics[1], { id: '2-followup', title: '测试情景：同一航道事件的后续报道', sources: [source('baidu', 3)] }].map(({ id, title, sources }) => ({ id, title, sources }));
 topics[0].sources.push({ ...source('tushare_cls', null), name: '财联社快讯', kind: 'news', publisher: '财联社', published_at: '2026-10-26T11:59:00+08:00', heat: null });
 topics[0].sector_impacts = [{ id: 'export_manufacturing', name: '出口制造', direction: 'mixed',
   reason: '测试：关税可能增加成本或改变订单流向，需核实覆盖地区及产品。', evidence: topics[0].title, method: 'rules' }];
@@ -39,6 +41,7 @@ const impactStocks = [['601857', '中国石油'], ['601111', '中国国航'], ['
 const impactRows = impactStocks.map((stock, i) => ({ code: stock.code, name: stock.name, status: 'ok', model: 'ui-fixture', analyzed_at: '2026-10-26T12:00:00+08:00',
   business: { main_business: '界面测试主营资料', source: '测试主营来源', url: 'https://example.com/business', status: 'ok', fetched_at: 1792987200 },
   analysis: { code: stock.code, relation: i === 2 ? 'none' : 'indirect', direction: ['positive', 'negative', 'unclear'][i], confidence: 'low',
+    score: [6, -7, null][i], relationship_evidence: [],
     news_evidence: i === 2 ? [] : ['霍尔木兹海峡通航受阻'], business_evidence: i === 2 ? '' : '界面测试主营资料',
     mechanism: '界面测试：不同业务角色可能承受相反的收入与成本影响。', uncertainty: '测试情景，实际业务敞口需核对。' } }));
 function impactSnapshot(id, rows) { return { topic_id: id, title: topics.find(t => t.id === id)?.title, summary: topics.find(t => t.id === id)?.summary, sources: [], version: 'fixture', items: rows,
@@ -47,7 +50,7 @@ function impactSnapshot(id, rows) { return { topic_id: id, title: topics.find(t 
   note: '根据热点与主营资料判断业务影响，界面测试内容。' }; }
 const storedSnapshot = id => impactSnapshot(id, savedImpacts.get(id) ?? impactRows.map(r => ({ ...r, status: 'pending', analysis: null })));
 function finishMatch() {
-  const plain = impactRows.map(r => ({ ...r, analysis: { ...r.analysis, relation: 'none', direction: 'unclear', news_evidence: [], business_evidence: '' } }));
+  const plain = impactRows.map(r => ({ ...r, analysis: { ...r.analysis, relation: 'none', direction: 'unclear', score: null, news_evidence: [], business_evidence: '' } }));
   const related = failMatch ? [impactRows[0], { ...impactRows[1], status: 'failed', analysis: null, error: '测试：资料核对未完成' }, impactRows[2]] : impactRows;
   matchJob.results = [impactSnapshot('1', plain), impactSnapshot('2', related)];
   savedImpacts.set('1', plain); savedImpacts.set('2', related);
@@ -183,6 +186,10 @@ try {
   assert.equal(await affectedCard.locator('.hot-inline-stock').count(), 2);
   assert.match(await affectedCard.locator('.hot-inline-stock').first().innerText(), /中国石油.*利好/s);
   assert.match(await affectedCard.locator('.hot-inline-stock').nth(1).innerText(), /中国国航.*利空/s);
+  assert.match(await affectedCard.locator('.hot-inline-stock').first().innerText(), /\+6分/);
+  assert.match(await affectedCard.locator('.hot-inline-stock').nth(1).innerText(), /-7分/);
+  assert.match(await affectedCard.locator('.hot-attention').innerText(), /重点关注.*3 条热搜/s);
+  assert.doesNotMatch(await affectedCard.locator('.hot-watch-section').innerText(), /(?<!\d)0分/);
   assert.doesNotMatch((await affectedCard.locator('.hot-inline-stock').allTextContents()).join(' '), /贵州茅台/);
   assert.match(await affectedCard.locator('.hot-watch-section').innerText(), /另有 1 只自选股暂未发现/);
   assert.equal(inferenceCount, 1);
@@ -191,7 +198,7 @@ try {
   await page.screenshot({ path: output + '/board-inline.png', fullPage: true });
   await affectedCard.screenshot({ path: output + '/news-sectors-watchlist.png' });
   await page.locator('.hot-open-impact').nth(1).click();
-  const impactDialog = page.getByRole('dialog', { name: '关联与利好利空' });
+  const impactDialog = page.getByRole('dialog', { name: '关联与股价影响评分' });
   await impactDialog.getByRole('button', { name: '有关联 2', exact: true }).waitFor();
   assert.equal(await impactDialog.locator('.hot-stock-card').count(), 2);
   await impactDialog.getByRole('button', { name: '利空', exact: true }).click();
