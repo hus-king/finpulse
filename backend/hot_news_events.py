@@ -30,7 +30,7 @@ keep只允许new_development与三种major重要性；不要用后来可能发�
 def editorial_reason(topic):
     title = topic['title']
     material = title + '\n' + topic.get('summary', '')
-    if re.search(r'评级|目标价|投资策略|研报解读|组织提效|转型观察', title):
+    if re.search(r'(?:维持|给予|重申|予以|予).{0,15}(?:买入|增持|减持|中性|卖出|跑赢|优于).{0,5}评级|目标价|投资策略|研报解读|组织提效|转型观察', title):
         return '投资观点、评级或应用趋势宣传，不作为独立的重要新事件。'
     if re.search(r'早报|晨报|收评|午评|盘前必读|盘面综述|隔夜.{0,6}要闻|全球要闻|(?:期货|黄金|金价).{0,15}点评|概念.{0,8}(?:反弹|涨停|拉升)|板块.{0,8}(?:异动|拉升|涨停)', title):
         return '行情播报、投资点评或多事件汇总，不是单一重要新事件。'

@@ -27,6 +27,7 @@ class NewsValueTests(unittest.TestCase):
         self.assertEqual(rule_event(topic(titles[6]))['event']['attribution'], 'reported_claim')
 
     def test_discussion_is_not_promoted_by_possible_economic_connections(self):
+        self.assertIsNone(editorial_reason(topic('穆迪宣布下调美国主权信用评级')))
         cases = [
             ('“看不见的外贸”畅跑全球', 'AI企业通过API提供服务，可能改变算力、电力与跨境贸易。'),
             ('超长预售45天原来是在等退货回来', '女装店依靠退货库存周转，消费者讨论物流和平台。'),
