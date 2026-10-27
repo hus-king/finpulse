@@ -5,7 +5,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 from .prompts import parse_json
 
-GROUPING_VERSION = 'compact-event-groups-v2'
+GROUPING_VERSION = 'compact-event-groups-v3'
 
 GROUP_SYSTEM = '''将输入的新闻按同一个具体事件归组，不能按行业、公司或人物的大类合并不同事件。
 同一言论争议、品牌解约、各方回应属于同一核心事件的进展；同一安全争议、厂商回应和监管调查可归为一组。保留独立的新事实，不把同公司另一产品发布或不同时期的事件混入。
@@ -106,7 +106,7 @@ async def cluster_events(topics, completion, store, model_identity):
     selected = [topic for topic in topics if topic.get('screening', {}).get('decision', 'keep') == 'keep']
     remaining = [topic for topic in topics if topic.get('screening', {}).get('decision', 'keep') != 'keep']
     if len(selected) < 2: return topics, None
-    material = [{'id': topic['id'], 'title': topic['title'], 'summary': topic.get('summary', '')[:400]} for topic in selected]
+    material = [{'id': topic['id'], 'title': topic['title'][:160], 'summary': topic.get('summary', '')[:120]} for topic in selected]
     key = hashlib.sha256(json.dumps([GROUP_SYSTEM, model_identity, material], ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     try:
         import asyncio
@@ -116,10 +116,15 @@ async def cluster_events(topics, completion, store, model_identity):
         else:
             short_to_full = {'t' + str(index): topic['id'] for index, topic in enumerate(material)}
             compact = [{**topic, 'id': short_id} for short_id, topic in zip(short_to_full, material)]
-            reply = await completion([{'role': 'system', 'content': GROUP_SYSTEM}, {'role': 'user', 'content': json.dumps({'topics': compact}, ensure_ascii=False)}], max_tokens=4000)
+            reply = await completion([{'role': 'system', 'content': GROUP_SYSTEM}, {'role': 'user', 'content': json.dumps({'topics': compact}, ensure_ascii=False)}], max_tokens=8000)
             groups = validate_groups(reply['content'], compact)
             for group in groups: group['topic_ids'] = [short_to_full[topic_id] for topic_id in group['topic_ids']]
             await asyncio.to_thread(store.put, 'hot_event_groups', key, {'groups': [group for group in groups if len(group['topic_ids']) > 1]})
         return group_reports(selected, groups) + remaining, None
-    except Exception:
+    except Exception as error:
+        try:
+            await asyncio.to_thread(store.put, 'hot_event_group_errors', key,
+                                    {'reason': str(error)[:400], 'error_type': type(error).__name__, 'topics': len(selected)})
+        except Exception:
+            pass
         return topics, '事件归组暂未完成，保留各条报道，不臆造重复热搜次数。'

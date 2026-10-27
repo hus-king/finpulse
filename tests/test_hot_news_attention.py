@@ -1,7 +1,9 @@
 from copy import deepcopy
 import json
 import unittest
-from backend.hot_news_attention import attach_attention, group_reports, validate_groups
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+from backend.hot_news_attention import attach_attention, cluster_events, group_reports, validate_groups
 from tests.test_hot_news_board import topic, model_row
 
 
@@ -67,3 +69,21 @@ class AttentionTests(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[1]['topic_ids'], [self.topics[2]['id']])
         self.assertEqual(len(validate_groups('{"groups":[]}', self.topics)), 3)
+
+
+class GroupProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_compact_ids_are_resolved_and_reasoning_has_a_bounded_budget(self):
+        fixture = AttentionTests(); fixture.setUp()
+        rows = fixture.topics
+        for row in rows: row.pop('screening')
+        async def complete(messages, **kwargs):
+            self.assertEqual(kwargs['max_tokens'], 8000)
+            sent = json.loads(messages[1]['content'])['topics']
+            self.assertEqual(sent[0]['id'], 't0')
+            self.assertTrue(all(len(row['summary']) <= 120 for row in sent))
+            return {'content': json.dumps({'groups': [{'label': '姆巴佩争议', 'anchor': '姆巴佩', 'topic_ids': ['t0', 't1']} ]})}
+        store = SimpleNamespace(get=Mock(return_value=None), put=Mock())
+        result, warning = await cluster_events(rows, AsyncMock(side_effect=complete), store, ['fixture'])
+        self.assertIsNone(warning)
+        ids = [member['id'] for row in result for member in row['members']]
+        self.assertEqual(set(ids), {row['id'] for row in rows})
