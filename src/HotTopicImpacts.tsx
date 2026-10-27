@@ -3,6 +3,7 @@ import { LoaderCircle, Sparkles } from 'lucide-react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
 import { impactDirections } from './hotNewsTypes';
+import ImpactScore from './ImpactScore';
 import type { HotImpactPreview, HotImpactSnapshot, HotTopic } from './hotNewsTypes';
 
 export default function HotTopicImpacts({ topic, data, loading, readError, ready, matching, onResult, openDetails }: {
@@ -48,7 +49,7 @@ export default function HotTopicImpacts({ topic, data, loading, readError, ready
         : data && !rows.length ? <p className="hot-inline-note">请先添加自选股，再分析与新闻的关联。</p>
         : <>
           {related.map(row => <div className="hot-inline-stock" key={row.code}>
-            <div><strong>{row.name}</strong><small>{row.code}</small><span className={`hot-business-direction ${row.analysis!.direction}`}>{impactDirections[row.analysis!.direction]}</span><small>{row.analysis!.relation === 'direct' ? '直接关联' : '间接关联'}</small></div>
+            <div><strong>{row.name}</strong><small>{row.code}</small><ImpactScore analysis={row.analysis!} /><small>{row.analysis!.relation === 'direct' ? '直接关联' : '间接关联'}</small></div>
             <p>{row.analysis!.mechanism}</p>
           </div>)}
           {!!uncertain.length && <p className="hot-inline-note">关联待核实：{uncertain.map(row => row.name).join('、')}（暂不判定利好利空）</p>}

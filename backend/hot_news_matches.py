@@ -9,7 +9,7 @@ from .hot_news_board import digest, public_board
 from .news_cleaning import SHANGHAI
 
 NAMESPACE = 'hot_news_matches'
-VERSION = 'news-watchlist-match-v1'
+VERSION = 'news-watchlist-match-v2-score'
 LEASE_TTL = 180
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class HotNewsMatchService:
     def snapshot(self, owner):
         record = self.store.get(NAMESPACE, 'latest', owner)
         if not record: return {'job': None}
+        if record.get('analysis_version') != VERSION: return {'job': None, 'requires_reanalysis': True}
         result = {key: value for key, value in record.items() if not key.startswith('_')}
         if result['status'] in ('queued', 'running'):
             lease = self.store.get('lease', self.lease_key(owner), default={})
@@ -86,7 +87,7 @@ class HotNewsMatchService:
                 'topic_total': len(ids), 'stock_total': len(stocks), 'topics_completed': 0, 'watchlist_changed': False,
                 'counts': {'total': len(ids) * len(stocks), 'completed': 0, 'failed': 0, 'uncertain': 0, 'related': 0, 'related_stocks': 0},
                 'results': [], 'stocks': [], 'errors': []}}
-        record = {'id': uuid.uuid4().hex, 'status': 'queued', 'stage': 'queued',
+        record = {'id': uuid.uuid4().hex, 'analysis_version': VERSION, 'status': 'queued', 'stage': 'queued',
                   'message': '匹配任务已提交，正在排队。', 'started_at': datetime.fromtimestamp(self.clock(), SHANGHAI).isoformat(),
                   'topic_ids': ids, 'topic_total': len(ids), 'stock_total': len(stocks), 'topics_completed': 0,
                   'counts': {'total': len(ids) * len(stocks), 'completed': 0, 'failed': 0, 'uncertain': 0, 'related': 0, 'related_stocks': 0},
@@ -121,7 +122,7 @@ class HotNewsMatchService:
             async with self.capacity:
                 record.update(status='running', stage='profiles', message='正在准备我的自选股主营资料。')
                 await self.save(owner, record)
-                await asyncio.gather(*(self.impacts.research.industry_news.business(stock) for stock in stocks), return_exceptions=True)
+                await asyncio.gather(*(self.impacts.prepare_stock(stock) for stock in stocks), return_exceptions=True)
                 record.update(stage='matching', message='正在逐条匹配新闻与自选股。')
                 await self.save(owner, record)
                 for topic in topics:

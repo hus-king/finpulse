@@ -116,6 +116,12 @@ class MatchTests(unittest.IsolatedAsyncioTestCase):
         self.store.put(NAMESPACE, 'latest', record, 'alice')
         self.assertEqual(other.snapshot('alice')['job']['status'], 'interrupted')
 
+    async def test_previous_unscored_jobs_are_not_presented_as_new_scoring_results(self):
+        await self.matching.start(['topic1'], 'alice'); await self.finish()
+        record = self.store.get(NAMESPACE, 'latest', 'alice'); record.pop('analysis_version')
+        self.store.put(NAMESPACE, 'latest', record, 'alice')
+        self.assertIsNone(self.matching.snapshot('alice')['job'])
+
     async def test_shutdown_cancels_job_and_releases_both_leases(self):
         gate = asyncio.Event()
         async def complete(*args, **kwargs): await gate.wait()

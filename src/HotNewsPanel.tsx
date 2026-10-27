@@ -138,6 +138,12 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
             {entry.publisher || entry.name}{entry.kind === 'news' ? ` · 报道于 ${dateTime(entry.published_at ?? null)} · ${entry.link_kind === 'provider_doc' ? '接口说明' : '来源入口'}` : ` · 第 ${entry.rank} 名`}{entry.heat ? ` · 热度 ${entry.heat}` : ''}{entry.stale ? ' · 旧快照' : ''}<ExternalLink size={11} />
           </a>)}</div>
           {topic.summary && <p className="hot-summary">{topic.summary}</p>}
+          {topic.attention && <p className={`hot-attention ${topic.attention.priority ? 'priority' : ''}`}>
+            {topic.attention.priority ? '重点关注 · ' : ''}{topic.attention.mentions ? `${topic.attention.mentions} 条热搜 · ${topic.attention.platforms} 个平台 · 近24小时 ${topic.attention.snapshots} 次采集上榜` : '资讯报道 · 未取得热搜名次'}
+          </p>}
+          {topic.members && topic.members.length > 1 && <details className="hot-event-members"><summary>同一事件的 {topic.members.length} 条热搜 / 报道</summary>
+            {topic.members.map(member => <div key={member.id}><strong>{member.title}</strong>{member.sources.map(entry => <a key={entry.id} href={entry.url} target="_blank" rel="noopener noreferrer">{entry.name}{entry.rank ? ` · 第${entry.rank}名` : ' · 资讯'}<ExternalLink size={11} /></a>)}</div>)}
+          </details>}
           <div className="hot-market-path"><strong>{'事件与影响'}</strong><p>{topic.screening.reason}</p>
             {!!topic.screening.channels.length && <div className="hot-channel-tags">{topic.screening.channels.map(channel => <span key={channel}>{channels[channel]}</span>)}</div>}
           </div>

@@ -3,10 +3,10 @@ import { ExternalLink, LoaderCircle, Sparkles, X } from 'lucide-react';
 import { api } from './api';
 import { dateTime } from './format';
 import useDialogScroll from './useDialogScroll';
+import ImpactScore from './ImpactScore';
 import type { HotImpactSnapshot, HotTopic } from './hotNewsTypes';
 
 const relations = { direct: '直接关联', indirect: '间接关联', none: '未发现关联', uncertain: '关联待核实' };
-const directions = { positive: '利好', negative: '利空', mixed: '正反并存', unclear: '影响不明' };
 const confidence = { high: '高', medium: '中', low: '低' };
 type Filter = 'related' | 'all' | 'positive' | 'negative' | 'uncertain';
 
@@ -73,7 +73,7 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
     : filter === 'uncertain' ? !row.analysis || row.analysis.relation === 'uncertain' : row.analysis?.direction === filter));
   return <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <section className="panel hot-impact-dialog" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="hot-impact-heading">
-      <header><div><small>热点与我的自选股</small><h2 id="hot-impact-heading">关联与利好利空</h2></div><button autoFocus className="icon-button" aria-label="关闭关联分析" onClick={close}><X size={22} /></button></header>
+      <header><div><small>热点与我的自选股</small><h2 id="hot-impact-heading">关联与股价影响评分</h2></div><button autoFocus className="icon-button" aria-label="关闭关联分析" onClick={close}><X size={22} /></button></header>
       <h3 className="hot-impact-title">{data?.title ?? topic.title}</h3>
       <p className="hot-impact-note">{data?.note ?? '读取当前账号的自选股及已保存关联判断。'}</p>
       <div className="hot-impact-action"><div><strong>{data ? `${data.counts.completed}/${data.counts.total} 只已完成 · ${data.counts.related} 只有关联` : '核对我的自选股业务资料'}</strong><p>热点事件 → 公司业务角色 → 可能的正反影响</p></div>
@@ -90,11 +90,12 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
           ['uncertain', `待核实 / 未完成 ${uncertain.length}`], ['all', `全部自选 ${rows.length}`],
         ] as [Filter, string][]).map(([value, label]) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</nav>}
         {shown.map(row => <article className="hot-stock-card" key={row.code}>
-          <header><div><strong>{row.name}</strong><small>{row.code}</small></div>{row.analysis && <span className={`hot-business-direction ${row.analysis.direction}`}>{directions[row.analysis.direction]}</span>}</header>
+          <header><div><strong>{row.name}</strong><small>{row.code}</small></div>{row.analysis && <ImpactScore analysis={row.analysis} />}</header>
           {row.analysis ? <>
             <div className="hot-stock-meta"><span>{relations[row.analysis.relation]}</span><span>证据可信度：{confidence[row.analysis.confidence]}</span></div>
             <p className="hot-stock-mechanism">{row.analysis.mechanism}</p>
             <details><summary>查看新闻与主营依据</summary>{row.analysis.news_evidence.map((quote, index) => <blockquote key={index}>{quote}</blockquote>)}
+              {row.analysis.relationship_evidence?.map(quote => <div key={quote.id}><small>品牌 / 产品 / 公司关系依据</small><blockquote>{quote.quote}</blockquote><a href={quote.url} target="_blank" rel="noopener noreferrer">{quote.source}<ExternalLink size={12} /></a></div>)}
               {row.analysis.business_evidence && <div><small>公司主营原文</small><blockquote>{row.analysis.business_evidence}</blockquote>{row.business.url && <a href={row.business.url} target="_blank" rel="noopener noreferrer">{row.business.source || '主营资料来源'}<ExternalLink size={12} /></a>}
                 <p>{row.business.status === 'stale' ? '沿用旧资料 · ' : ''}{row.business.fetched_at ? dateTime(new Date(row.business.fetched_at * 1000).toISOString()) : '资料时间未知'}</p></div>}
             </details>

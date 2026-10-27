@@ -11,6 +11,8 @@ export interface HotSource {
 export interface HotTopic {
   id: string; title: string; summary: string; sources: HotSource[]; rank: number; rank_score: number;
   sector_impacts: SectorImpact[];
+  attention?: { mentions: number; platforms: number; snapshots: number; best_rank: number | null; priority: boolean; related_reports: number; score: number };
+  members?: { id: string; title: string; sources: HotSource[] }[];
   screening: { event?: { kind: string; actor: string; action: string; new_fact: string; novelty: string; importance: string; attribution: string }; id: string; decision: 'keep' | 'review' | 'exclude'; channels: MarketChannel[];
     reason: string; evidence: string; method: 'rules' | 'model'; model?: string };
 }
@@ -28,6 +30,8 @@ export interface HotStockImpact {
   code: string; relation: 'direct' | 'indirect' | 'none' | 'uncertain';
   direction: 'positive' | 'negative' | 'mixed' | 'unclear'; confidence: 'high' | 'medium' | 'low';
   news_evidence: string[]; business_evidence: string; mechanism: string; uncertainty: string;
+  score: number | null;
+  relationship_evidence?: { id: string; quote: string; source: string; url: string }[];
 }
 export interface HotImpactRow {
   code: string; name: string; status: 'ok' | 'pending' | 'failed'; analysis: HotStockImpact | null;
