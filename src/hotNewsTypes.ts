@@ -39,3 +39,12 @@ export interface HotImpactSnapshot {
   counts: { total: number; completed: number; pending: number; failed: number; related: number };
 }
 export type HotImpactPreview = Omit<HotImpactSnapshot, 'items'> & { items: Omit<HotImpactRow, 'business'>[] };
+export interface HotMatchJob {
+  id: string; status: 'queued' | 'running' | 'completed' | 'partial' | 'interrupted' | 'error';
+  stage: string; message: string; started_at: string; updated_at: string;
+  topic_ids: string[]; topic_total: number; stock_total: number; topics_completed: number; watchlist_changed: boolean;
+  counts: { total: number; completed: number; failed: number; uncertain: number; related: number; related_stocks: number };
+  results: HotImpactPreview[];
+  errors: { topic_id: string; title: string; message: string }[];
+  stocks: { code: string; name: string; news: { topic_id: string; title: string; sources: HotSource[]; analysis: HotStockImpact; model?: string; analyzed_at?: string }[] }[];
+}

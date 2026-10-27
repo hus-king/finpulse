@@ -34,6 +34,7 @@ const feed = { items: topics, status: 'partial', fetched_at: '2026-10-26T12:00:0
 let loggedIn = false, refreshCount = 0, inferenceCount = 0, batchCount = 0, failImpact = false;
 let refreshState = 'idle', refreshPolls = 0;
 const savedImpacts = new Map();
+let matchJob = null, matchCount = 0, matchPolls = 0, failMatch = false;
 const impactStocks = [['601857', '中国石油'], ['601111', '中国国航'], ['600519', '贵州茅台']].map(([code, name]) => ({ code, name, exchange: 'SH', initials: code, industry: '界面测试', price: null, change: null }));
 const impactRows = impactStocks.map((stock, i) => ({ code: stock.code, name: stock.name, status: 'ok', model: 'ui-fixture', analyzed_at: '2026-10-26T12:00:00+08:00',
   business: { main_business: '界面测试主营资料', source: '测试主营来源', url: 'https://example.com/business', status: 'ok', fetched_at: 1792987200 },
@@ -45,6 +46,18 @@ function impactSnapshot(id, rows) { return { topic_id: id, title: topics.find(t 
     failed: rows.filter(r => r.status === 'failed').length, related: rows.filter(r => r.analysis && ['direct', 'indirect'].includes(r.analysis.relation)).length },
   note: '根据热点与主营资料判断业务影响，界面测试内容。' }; }
 const storedSnapshot = id => impactSnapshot(id, savedImpacts.get(id) ?? impactRows.map(r => ({ ...r, status: 'pending', analysis: null })));
+function finishMatch() {
+  const plain = impactRows.map(r => ({ ...r, analysis: { ...r.analysis, relation: 'none', direction: 'unclear', news_evidence: [], business_evidence: '' } }));
+  const related = failMatch ? [impactRows[0], { ...impactRows[1], status: 'failed', analysis: null, error: '测试：资料核对未完成' }, impactRows[2]] : impactRows;
+  matchJob.results = [impactSnapshot('1', plain), impactSnapshot('2', related)];
+  savedImpacts.set('1', plain); savedImpacts.set('2', related);
+  matchJob.status = failMatch ? 'partial' : 'completed'; matchJob.stage = 'ready';
+  matchJob.message = failMatch ? '匹配完成；部分判断未完成，可点击重试。' : '匹配完成，已按自选股汇总相关的新闻。';
+  matchJob.counts = { total: 6, completed: failMatch ? 5 : 6, failed: failMatch ? 1 : 0, uncertain: 0, related: failMatch ? 1 : 2, related_stocks: failMatch ? 1 : 2 };
+  matchJob.topics_completed = 2;
+  matchJob.stocks = related.filter(r => r.analysis && ['direct', 'indirect'].includes(r.analysis.relation)).map(r => ({ code: r.code, name: r.name,
+    news: [{ topic_id: '2', title: topics[1].title, sources: topics[1].sources, analysis: r.analysis, model: r.model, analyzed_at: r.analyzed_at }] }));
+}
 const queries = [];
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url()), path = url.pathname;
@@ -56,6 +69,20 @@ await page.route('**/api/**', async route => {
   else if (path === '/api/health') data = { configured: false };
   else if (path === '/api/watchlist') data = { codes: impactStocks.map(s => s.code), items: impactStocks, jobs: [] };
   else if (path.startsWith('/api/dashboard/')) data = { stock: { code: path.split('/').at(-1), name: '测试', price: null, change: null }, candles: [], news: [], as_of: null, quote: { status: 'unavailable' }, backtest: { items: [], note: '' } };
+  else if (path === '/api/hot-news/matches') {
+    assert.equal(loggedIn, true);
+    if (matchJob?.status === 'running' && ++matchPolls >= 2) finishMatch();
+    data = { job: matchJob };
+  } else if (path === '/api/hot-news/match') {
+    assert.equal(route.request().headers()['x-csrf-token'], 'a'.repeat(64));
+    assert.deepEqual(route.request().postDataJSON(), { topic_ids: ['1', '2'] });
+    matchCount++; matchPolls = 0;
+    matchJob = { id: `job${matchCount}`, status: 'running', stage: 'profiles', message: '正在准备我的自选股主营资料。',
+      started_at: '2026-10-27T12:00:00+08:00', updated_at: '2026-10-27T12:00:00+08:00', topic_ids: ['1', '2'],
+      topic_total: 2, stock_total: 3, topics_completed: 0, watchlist_changed: false,
+      counts: { total: 6, completed: 0, failed: 0, uncertain: 0, related: 0, related_stocks: 0 }, results: [], errors: [], stocks: [] };
+    return route.fulfill({ status: 202, json: { job: matchJob } });
+  }
   else if (path === '/api/hot-news') {
     const params = url.searchParams; queries.push(Object.fromEntries(params));
     const selectedSource = params.get('source') || 'all', channel = params.get('channel') || 'all';
@@ -192,6 +219,32 @@ try {
   await page.screenshot({ path: output + '/business-impact-mobile.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
   await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const matchPanel = page.getByRole('region', { name: '一键匹配新闻与自选股' });
+  assert.equal(matchCount, 0, 'visiting does not start a bulk match');
+  await page.locator('.hot-match-start').click();
+  await matchPanel.getByRole('button', { name: '一键分析进行中…', exact: true }).waitFor();
+  assert.equal(await page.locator('.hot-analyze-inline').first().isDisabled(), true);
+  await page.reload();
+  await matchPanel.getByText('匹配完成，已按自选股汇总相关的新闻。', { exact: true }).waitFor();
+  assert.equal(matchCount, 1, 'reloading a running job must not submit another one');
+  assert.equal(await matchPanel.locator('.hot-match-stock').count(), 2);
+  assert.match(await matchPanel.innerText(), /中国国航/);
+  assert.match(await matchPanel.innerText(), /霍尔木兹海峡/);
+  assert.match(await matchPanel.innerText(), /利空/);
+  await matchPanel.locator('summary').first().click();
+  assert.match(await matchPanel.innerText(), /界面测试主营资料/);
+  await page.screenshot({ path: output + '/one-click-matches.png', fullPage: true });
+  failMatch = true;
+  await page.locator('.hot-match-start').click();
+  await matchPanel.getByText('匹配完成；部分判断未完成，可点击重试。', { exact: true }).waitFor();
+  assert.match(await matchPanel.innerText(), /1 对尚未完成/);
+  assert.equal(await matchPanel.locator('.hot-match-stock').count(), 1);
+  failMatch = false;
+  await page.locator('.hot-match-start').click();
+  await matchPanel.getByText('匹配完成，已按自选股汇总相关的新闻。', { exact: true }).waitFor();
+  assert.equal(await matchPanel.locator('.hot-match-stock').count(), 2);
+  assert.equal(matchCount, 3);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: output + '/board-mobile.png', fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
@@ -203,5 +256,5 @@ try {
   assert.equal(inferenceCount, 3, 'reloading cached inline results must not invoke analysis');
   assert.ok(batchCount > 0);
   assert.deepEqual(errors, []);
-  console.log('Hot board UI passed: kept news only, asynchronous refresh and polling, sector directions, inline watchlist analysis, per-topic cache, filters, source failures, business-impact dialog, opposite directions, private batch read/retry, citations, no price outputs, themes, mobile.');
+  console.log('Hot board UI passed: kept news only, asynchronous refresh and polling, one-click private matching with progress/reload/retry, sector directions, inline watchlist analysis, per-topic cache, filters, source failures, business-impact dialog, opposite directions, private batch read/retry, citations, no price outputs, themes, mobile.');
 } finally { await browser.close(); }

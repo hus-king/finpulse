@@ -260,7 +260,7 @@ class ApiTests(unittest.TestCase):
         return resp.json()
 
     def test_refresh_and_future_analysis_require_login(self):
-        for method, path in [('post', '/refresh'), ('get', '/x/analysis'), ('post', '/x/analyze'), ('get', '/analysis-batch?ids=x')]:
+        for method, path in [('post', '/refresh'), ('get', '/x/analysis'), ('post', '/x/analyze'), ('get', '/analysis-batch?ids=x'), ('get', '/matches')]:
             self.assertEqual(getattr(self.client, method)('/api/hot-news' + path).status_code, 401)
 
     def test_mutations_require_csrf_and_same_origin(self):
@@ -298,6 +298,23 @@ class ApiTests(unittest.TestCase):
                 with self.subTest(ids=ids):
                     self.assertEqual(self.client.get('/api/hot-news/analysis-batch', params={'ids': ids}).status_code, 422)
             self.assertEqual(read.call_count, 1)
+
+    def test_bulk_match_is_authenticated_and_owner_is_taken_from_session(self):
+        self.assertEqual(self.client.post('/api/hot-news/match', json={'topic_ids': ['example']}).status_code, 401)
+        session = self.login()
+        headers = {'Origin': 'http://localhost', 'X-CSRF-Token': session['csrf_token']}
+        self.assertEqual(self.client.post('/api/hot-news/match', json={'topic_ids': ['example']}).status_code, 403)
+        self.assertEqual(self.client.post('/api/hot-news/match', json={'topic_ids': ['example']}, headers={**headers, 'Origin': 'https://untrusted.example'}).status_code, 403)
+        with patch.object(app.state.hot_news_matches, 'start', new=AsyncMock(return_value={'job': {'status': 'queued'}})) as start:
+            response = self.client.post('/api/hot-news/match', json={'topic_ids': ['example']}, headers=headers)
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            start.assert_awaited_once_with(['example'], session['user']['id'])
+            for payload in ({'topic_ids': [], 'owner': 'someone'}, {'topic_ids': ['../bad']}, {'topic_ids': ['a'] * 101}, {'topic_ids': ['a'], 'owner': 'other'}):
+                self.assertEqual(self.client.post('/api/hot-news/match', json=payload, headers=headers).status_code, 422)
+        with patch.object(app.state.hot_news_matches, 'snapshot', return_value={'job': None}) as read:
+            self.assertEqual(self.client.get('/api/hot-news/matches').status_code, 200)
+            read.assert_called_once_with(session['user']['id'])
 
     def test_refresh_accepts_slow_job_and_polling_only_publishes_kept_news(self):
         from tests.test_hot_news_board import board_row

@@ -5,9 +5,9 @@ import { useAuth } from './AuthContext';
 import { impactDirections } from './hotNewsTypes';
 import type { HotImpactPreview, HotImpactSnapshot, HotTopic } from './hotNewsTypes';
 
-export default function HotTopicImpacts({ topic, data, loading, readError, ready, onResult, openDetails }: {
+export default function HotTopicImpacts({ topic, data, loading, readError, ready, matching, onResult, openDetails }: {
   topic: HotTopic; data?: HotImpactPreview; loading: boolean; readError: string; ready: boolean;
-  onResult: (result: HotImpactSnapshot) => void; openDetails: (button: HTMLButtonElement) => void;
+  matching: boolean; onResult: (result: HotImpactSnapshot) => void; openDetails: (button: HTMLButtonElement) => void;
 }) {
   const { user, requireAuth } = useAuth();
   const [analyzing, setAnalyzing] = useState(false);
@@ -60,7 +60,7 @@ export default function HotTopicImpacts({ topic, data, loading, readError, ready
       {(error || readError) && <p className="error-box" role="alert">{error || readError}</p>}
       {analyzing && <p className="hot-inline-note" role="status">正在逐股核对主营资料与新闻依据…</p>}
       <div className="hot-inline-actions">
-        {!complete && <button className="hot-analyze-inline" disabled={analyzing || !!user && (!ready || loading || !!data && !rows.length)} onClick={() => void analyze()}>
+        {!complete && <button className="hot-analyze-inline" disabled={matching || analyzing || !!user && (!ready || loading || !!data && !rows.length)} onClick={() => void analyze()}>
           {analyzing ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />}{analyzing ? '分析中…' : data?.counts.failed ? '重试未完成判断' : data?.counts.completed ? '补全自选股判断' : '分析我的自选股'}
         </button>}
         <button className="hot-open-impact" onClick={event => { if (requireAuth('登录后查看自己的自选股关联与原文依据。')) openDetails(event.currentTarget); }}>全部自选与证据</button>

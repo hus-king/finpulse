@@ -21,8 +21,8 @@ from .tushare_news import NEWS_SOURCES, configured_sources, fetch_news
 from .hot_news_events import EVENT_PROMPT, NewsEvent, editorial_reason, rule_event, validate_event
 from .hot_sectors import SECTORS, SectorImpact, present_sectors, rule_sectors, validate_sectors
 
-VERSION = 'market-hot-board-v3-events'
-REFRESH_KEY = 'refresh-v3-events'
+VERSION = 'market-hot-board-v4-events'
+REFRESH_KEY = 'refresh-v4-events'
 logger = logging.getLogger(__name__)
 FEED_KEY = 'market-hot-board-v1'
 TTL = 600

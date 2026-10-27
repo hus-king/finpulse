@@ -125,20 +125,26 @@ class HotStockImpactService:
                    'stocks': [{**stock, 'business_cards': retrieve_business_cards(topic['title'], topic.get('summary') or '', stock)} for stock in stocks]}
         return [{'role': 'system', 'content': IMPACT_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
 
-    async def analyze(self, topic_id, owner):
-        topic = await asyncio.to_thread(self.topic, topic_id)
+    async def analyze(self, topic_id, owner, *, _topic=None, _codes=None, _refresh_business=True, _wait=False):
+        topic = _topic if _topic is not None else await asyncio.to_thread(self.topic, topic_id)
         stocks = await asyncio.to_thread(self.stocks, owner)
         if not stocks: raise HTTPException(422, '请先添加自选股，再分析热点关联。')
+        if _codes is not None and sorted(stock['code'] for stock in stocks) != sorted(_codes):
+            raise HTTPException(409, '自选股已变化，请重新开始匹配。')
         try:
-            await asyncio.wait_for(self.requests.acquire(), timeout=.1)
+            if _wait: await self.requests.acquire()
+            else: await asyncio.wait_for(self.requests.acquire(), timeout=.1)
         except TimeoutError:
             raise HTTPException(429, '热点关联分析繁忙，请稍后重试。') from None
         lease = digest([VERSION, owner, topic_id]); token = None
         try:
             token = await asyncio.to_thread(self.store.claim, lease, 600)
             if not token: raise HTTPException(409, '这条热点正在分析，请稍后读取结果。')
-            await asyncio.gather(*(self.research.industry_news.business(stock) for stock in stocks), return_exceptions=True)
+            if _refresh_business:
+                await asyncio.gather(*(self.research.industry_news.business(stock) for stock in stocks), return_exceptions=True)
             stocks = await asyncio.to_thread(self.stocks, owner)
+            if _codes is not None and sorted(stock['code'] for stock in stocks) != sorted(_codes):
+                raise HTTPException(409, '自选股已变化，请重新开始匹配。')
             pending = []
             for stock in stocks:
                 key = self.key(topic, stock)
@@ -161,7 +167,11 @@ class HotStockImpactService:
                             'status': 'ok', 'analysis': analysis, 'model': reply.get('model'),
                             'analyzed_at': datetime.fromtimestamp(self.clock(), SHANGHAI).isoformat()}, owner)
             await asyncio.gather(*(batch(pending[i:i + 5]) for i in range(0, len(pending), 5)))
-            return await asyncio.to_thread(self.snapshot, topic_id, owner)
+            def result():
+                config = read_config()
+                records = self.store.get_many(NAMESPACE, [self.key(topic, stock, config) for stock in stocks], owner)
+                return self._assemble(topic, stocks, records, config)
+            return await asyncio.to_thread(result)
         finally:
             try:
                 if token: await asyncio.to_thread(self.store.release, lease, token)

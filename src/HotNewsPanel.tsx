@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import { dateTime } from './format';
 import HotStockImpactPanel from './HotStockImpactPanel';
 import HotTopicImpacts from './HotTopicImpacts';
+import HotNewsMatchPanel from './HotNewsMatchPanel';
 import type { HotFeed, HotImpactPreview, HotTopic, MarketChannel } from './hotNewsTypes';
 import './hot-news.css';
 
@@ -26,6 +27,7 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
   const [selected, setSelected] = useState<HotTopic | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [matching, setMatching] = useState(false);
   const [error, setError] = useState('');
   const [impactRead, setImpactRead] = useState<{ scope: string; items: Record<string, HotImpactPreview>; loading: boolean; error: string } | null>(null);
   const work = useRef<AbortController | null>(null);
@@ -113,6 +115,8 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
     {refreshState?.status === 'error' && <div className="error-box" role="alert">{refreshState.message || '上次更新未完成，请重试。'}</div>}
     {!!feed?.warnings.length && <div className="pipeline-warning" role="status">{feed.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>}
     {feed?.status === 'stale' && <p className="pipeline-warning" role="status">热榜快照已过期，请更新后核对。各来源保留自己的采集时间。</p>}
+    <HotNewsMatchPanel topics={topics} watchlist={watchlist} ready={watchReady} disabled={loading || refreshing}
+      onBusy={setMatching} onResults={rows => rows.forEach(rememberImpact)} />
     <section className="panel hot-board" aria-busy={loading || refreshing}>
       <header className="hot-board-heading"><div><h2>重要热点新闻</h2><p>{feed?.note ?? '读取已保存的热榜快照，不自动发起外部采集。'}</p></div>
         {filtering && <button className="hot-reset" onClick={resetFilters} disabled={refreshing}>重置筛选</button>}
@@ -144,13 +148,13 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
           <HotTopicImpacts key={`${watchKey}:${JSON.stringify(topic)}`} topic={topic}
             data={impacts?.items[topic.id]?.title === topic.title && impacts.items[topic.id].summary === topic.summary ? impacts.items[topic.id] : undefined}
             loading={!!user && (!watchReady || !impacts || impacts.loading)} readError={impacts?.error ?? ''} ready={watchReady}
-            onResult={rememberImpact} openDetails={button => { impactOpener.current = button; setSelected(topic); }} />
+            matching={matching} onResult={rememberImpact} openDetails={button => { impactOpener.current = button; setSelected(topic); }} />
         </article>
       </li>)}</ol>
       {current && !loading && !topics.length && <div className="hot-empty"><p>{current.candidate_total ? '没有符合当前条件的新闻，可调整关键词或影响类型。' : '暂时没有符合标准的重要新事件。可以更新热点；不会用泛话题或消费小事填满榜单。'}</p>{filtering && <button className="hot-reset" onClick={resetFilters}>重置筛选</button>}</div>}
       {current && current.matched_total > topics.length && <button className="hot-show-all" onClick={() => setLimit(100)}>显示全部匹配热点（{current.matched_total} 条）</button>}
       <footer className="hot-note"><p>{feed?.ranking_note ?? '榜单保留原平台名次、热度和采集时间。'}</p><p>选择热点可核对其与自选股的业务关联、利好利空及原文依据。</p></footer>
     </section>
-    {selected && <HotStockImpactPanel key={`${selected.id}:${watchKey}`} topic={selected} watchlist={watchlist} ready={watchReady} close={() => setSelected(null)} returnFocus={impactOpener.current} onResult={rememberImpact} />}
+    {selected && <HotStockImpactPanel key={`${selected.id}:${watchKey}`} topic={selected} watchlist={watchlist} ready={watchReady} close={() => setSelected(null)} returnFocus={impactOpener.current} onResult={rememberImpact} matching={matching} />}
   </section>;
 }
