@@ -41,7 +41,8 @@ export default function SentimentTrend({ history, error }: { history: SentimentH
       xAxis: { type: 'category', boundaryGap: false, data: dates, axisTick: { show: false }, axisLine: { lineStyle: { color: color('border') } }, axisLabel: { color: color('text'), fontSize: 9, hideOverlap: true, formatter: (date: string) => date.slice(5) } },
       yAxis: { type: 'value', min: 0, max: 100, interval: 50, axisLabel: { color: color('text'), fontSize: 9 }, splitLine: { lineStyle: { color: color('grid'), type: 'dashed' } } },
       series: [{ type: 'line', data: dates.map(date => byDay.get(date)?.score ?? null), connectNulls: false, smooth: false, showSymbol: points.length < 3, symbolSize: 5,
-        lineStyle: { width: 2, color: '#e26d80' }, itemStyle: { color: '#e26d80' }, areaStyle: { color: '#e26d80', opacity: .08 },
+        lineStyle: { width: 1.3, color: color('marker-neutral') }, itemStyle: { color: color('marker-neutral') },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color('marker-neutral') + '40' }, { offset: 1, color: color('marker-neutral') + '00' }]) },
         markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: color('text'), opacity: .5, type: 'dashed' }, data: [{ yAxis: 50 }] } }],
     }, { notMerge: true });
   }, [history, theme]);

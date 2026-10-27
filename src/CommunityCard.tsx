@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ExternalLink, Lightbulb, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, ExternalLink, Lightbulb, LoaderCircle, RefreshCw } from 'lucide-react';
 import { dateTime } from './format';
 import type { Dashboard } from './types';
 
@@ -116,7 +116,7 @@ export default function CommunityCard({ data, running, refresh }: { data?: Dashb
 
       {!!data?.warnings?.length && <p className="community-limitations">{data.warnings.join('；')}</p>}
       <div className="community-schedule-hint">
-        <span>⏰ 自动巡检：每日 08:45 · 12:00 · 15:15 · 20:30 定时抓取自选股讨论</span>
+        <span><Clock3 size={11} aria-hidden="true" />自动巡检：每日 08:45 · 12:00 · 15:15 · 20:30 定时抓取自选股讨论</span>
       </div>
       <p className="source-note">
         {data?.note ?? '直接采集东方财富股吧，来源不可用或样本不足时尝试 Tavily。结合阅读量与回复数对数加权统计，有限样本不代表全部股民。'}

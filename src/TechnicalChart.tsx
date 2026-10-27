@@ -64,8 +64,8 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
   const shown = !session && chartStyle === 'heikin' ? plotted[active] : latest;
   const activeDate = active >= 0 ? plot.dates[active] : session?.day ?? '暂无数据';
   const palette = theme === 'dark'
-    ? ['#e8c681', '#7b9cf3', '#b488dd', '#48b8ad', '#e29d68', '#d7dce5']
-    : ['#926718', '#416ab8', '#8b4fac', '#168c7d', '#ae5c28', '#526276'];
+    ? ['#c8a864', '#4d86d4', '#a780cc', '#388d73', '#b57c55', '#d1d8e3']
+    : ['#806a42', '#3c587e', '#746083', '#4d7461', '#8b6250', '#52606e'];
   const eventData = useRef({ dates: plot.dates, onEvent });
   eventData.current = { dates: plot.dates, onEvent };
 
@@ -114,8 +114,8 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
     const main: Series = isLine ? {
       id: `main-${intraday ? 'intraday' : chartStyle}`, type: 'line', name: intraday ? '分钟价格' : '收盘价',
       data: display.map(row => row?.close ?? null), connectNulls: false, showSymbol: false,
-      lineStyle: { color: color('marker-neutral'), width: 1.6 }, itemStyle: { color: color('marker-neutral') },
-      ...(intraday || chartStyle === 'area' ? { areaStyle: { color: color('marker-neutral'), opacity: 0.09 } } : {}),
+      lineStyle: { color: color('marker-neutral'), width: 1.8, opacity: 1 }, itemStyle: { color: color('marker-neutral') },
+      ...(intraday || chartStyle === 'area' ? { areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color('marker-neutral') + '30' }, { offset: 1, color: color('marker-neutral') + '00' }]) } } : {}),
       ...(intraday && session.previousClose ? { markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: color('text'), type: 'dashed', opacity: 0.6 }, data: [{ yAxis: session.previousClose }] } } : {}),
       markPoint: { symbol: 'circle', symbolSize: 18, label: { formatter: 'N', color: '#fff', fontSize: 8 }, data: markers },
     } : {
@@ -134,7 +134,7 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
       series.push(line.kind === 'bar' ? {
         id: `${indicator.id}-${line.key}`, name: line.label, type: 'bar', xAxisIndex: index, yAxisIndex: index,
         barMaxWidth: intraday ? 5 : 10,
-        data: line.values.map((value, i) => ({ value, itemStyle: { color: (indicator.id === 'MACD' ? (value ?? 0) >= 0 : (display[i]?.close ?? 0) >= (display[i]?.open ?? 0)) ? color('volume-up') : color('volume-down'), opacity: 0.75 } })),
+        data: line.values.map((value, i) => ({ value, itemStyle: { color: (indicator.id === 'MACD' ? (value ?? 0) >= 0 : (display[i]?.close ?? 0) >= (display[i]?.open ?? 0)) ? color('volume-up') : color('volume-down') } })),
       } : {
         id: `${indicator.id}-${line.key}`, name: line.label, type: 'line', xAxisIndex: index, yAxisIndex: index,
         data: line.values, showSymbol: false, connectNulls: false, lineStyle: { width: 1.25, color: shade }, itemStyle: { color: shade },

@@ -80,11 +80,11 @@ export default function MarketSentimentCard() {
   const levelColor = (lvl: string) => {
     switch (lvl) {
       case 'extreme_greed': return 'var(--up)';
-      case 'greed': return '#e26d80';
-      case 'neutral': return '#8ea2b4';
-      case 'fear': return '#3aa992';
+      case 'greed': return 'var(--up)';
+      case 'neutral': return 'var(--theme-muted)';
+      case 'fear': return 'var(--down)';
       case 'extreme_fear': return 'var(--down)';
-      default: return '#8ea2b4';
+      default: return 'var(--theme-muted)';
     }
   };
 
@@ -167,7 +167,7 @@ export default function MarketSentimentCard() {
               <small>下跌家数</small>
               <strong>{sentiment.declining.toLocaleString()}</strong>
             </div>
-            <div className="breadth-item neutral">
+            <div className="breadth-item breadth-flat">
               <small>平盘</small>
               <strong>{sentiment.flat.toLocaleString()}</strong>
             </div>

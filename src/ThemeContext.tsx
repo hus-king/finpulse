@@ -11,7 +11,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#101419' : '#f8fafc');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#090c12' : '#f4f3ef');
     try { localStorage.setItem('finpulse-theme', theme); } catch { /* The switch still works when browser storage is unavailable. */ }
   }, [theme]);
 

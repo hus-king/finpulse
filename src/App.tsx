@@ -17,8 +17,20 @@ import useDialogScroll from './useDialogScroll';
 import StockSearch from './StockSearch';
 import type { BatchAnalyzeResponse, BatchQuotesResponse, Dashboard, Health, Job, ModelReply, Stock } from './types';
 import { number, percent, tone } from './format';
+import ReadingRail from './ReadingRail';
+import BrandWordmark from './BrandWordmark';
+import WorkspaceView from './WorkspaceView';
 
 const defaults = ['600519', '300750', '688981'];
+const navigation = [
+  { id: 'dashboard', label: '行情与新闻', english: 'MARKET INTELLIGENCE' },
+  { id: 'hot-news', label: '热点榜单', english: 'GLOBAL SIGNALS' },
+  { id: 'screener', label: 'PEG榜单', english: 'EQUITY SCREENER' },
+  { id: 'paper', label: '模拟盘', english: 'PAPER TRADING' },
+  { id: 'briefing', label: '自选股早报', english: 'DAILY BRIEFING' },
+  { id: 'lab', label: '连接状态', english: 'CONNECTIONS' },
+  { id: 'admin', label: '管理中心', english: 'ADMINISTRATION' },
+];
 
 const normalizeTime = (s?: string | null) => {
   if (!s) return 0;
@@ -82,6 +94,7 @@ export default function App() {
     if (view === 'screener' || view === 'hot-news') url.searchParams.set('view', view);
     else if (['screener', 'hot-news'].includes(url.searchParams.get('view') ?? '')) url.searchParams.delete('view');
     if (url.href !== window.location.href) window.history.replaceState(null, '', url);
+    window.scrollTo({ top: 0, behavior: 'instant' });
   }, [view]);
   const [accountOpen, setAccountOpen] = useState(false);
   const [catalog, setCatalog] = useState<Stock[]>([]);
@@ -378,12 +391,15 @@ export default function App() {
   const job = jobs[code] ?? null;
   const running = collecting === code || !!job && ['queued', 'running'].includes(job.status);
   const openAssistant = useCallback((news?: Dashboard['news'][number]) => { if (data) setDrawer({ stock: data.stock, news }); }, [data]);
+  const currentPage = navigation.find(item => item.id === view) ?? navigation[0];
   return <div className="finance-shell">
-    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/"><Activity size={25} /><span>Fin<strong>Pulse</strong><small>财经研究</small></span></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票、指数名称或代码</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
-    <nav className="finance-nav" aria-label="主导航"><div>{[{ id: 'dashboard', label: '行情与新闻' }, { id: 'hot-news', label: '热点榜单' }, { id: 'screener', label: 'PEG榜单' }, { id: 'paper', label: '模拟盘' }, { id: 'briefing', label: '自选股早报' }, { id: 'lab', label: '连接状态' }, ...(user?.role === 'admin' ? [{ id: 'admin', label: '管理中心' }] : [])].map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>{item.label}</button>)}<span>沪深 A 股与主要指数</span></div></nav>
-    <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>主要指数 · 行情快照</span></div>{headlineIndices.flatMap(code => catalog.find(stock => stock.code === code) ?? []).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span><strong className="mono">{number(cached?.stock.price ?? stock.price)}</strong><span className={tone(cached?.stock.change ?? stock.change)}>{percent(cached?.stock.change ?? stock.change)}</span></button>; })}</div></div>
-    <main className="finance-main"><div className="finance-heading"><div><p className="eyebrow">{view === 'paper' ? 'PRACTICE YOUR NEXT MOVE' : 'YOUR SIGNAL, IN CONTEXT'}</p><h1>{view === 'hot-news' ? '看见热点，识别市场影响。' : view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'hot-news' ? '汇集全领域平台热榜，筛选可能影响股市与产业的事件。' : view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><span className="workspace-tag">LOCAL WORKSPACE <span>v0.3</span></span></div>
+    <a className="skip-link" href="#workspace-content">跳至主要内容</a>
+    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /><small className="brand-caption">财经研究</small></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票、指数名称或代码</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
+    <nav className="finance-nav" aria-label="主导航"><div>{navigation.filter(item => item.id !== 'admin' || user?.role === 'admin').map((item, index) => <button key={item.id} className={view === item.id ? 'active' : ''} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><small aria-hidden="true">{String(index + 1).padStart(2, '0')}</small>{item.label}</button>)}<span>沪深 A 股 / RESEARCH</span></div></nav>
+    <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>主要指数 · 行情快照</span></div>{headlineIndices.flatMap(code => catalog.find(stock => stock.code === code) ?? []).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span><strong key={cached?.stock.price ?? stock.price} className="mono quote-update">{number(cached?.stock.price ?? stock.price)}</strong><span className={tone(cached?.stock.change ?? stock.change)}>{percent(cached?.stock.change ?? stock.change)}</span></button>; })}</div></div>
+    <main className="finance-main" id="workspace-content" tabIndex={-1}><div className="finance-heading"><div><p className="eyebrow"><span className="heading-mark" />{currentPage.english}</p><h1>{view === 'hot-news' ? '看见热点，识别市场影响。' : view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'hot-news' ? '汇集全领域平台热榜，筛选可能影响股市与产业的事件。' : view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><div className="workspace-meta" aria-hidden="true"><span>{String(navigation.indexOf(currentPage) + 1).padStart(2, '0')}</span><div><strong>{currentPage.label}</strong><small>FINPULSE / RESEARCH</small></div></div></div>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
+      <WorkspaceView key={view}>
       {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
       {view === 'briefing' && <BriefingPanel key={user?.id ?? 'guest'} />}
       {view === 'hot-news' && <HotNewsPanel key={user?.id ?? 'guest'} watchlist={watchlist} watchReady={watchReady} />}
@@ -397,8 +413,10 @@ export default function App() {
       {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯日线 / 新浪分钟行情</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
       {view === 'dashboard' && <MarketSentimentCard />}
       {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} jobs={jobs} batchAnalyze={batchAnalyzeWatchlist} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
+      </WorkspaceView>
       <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>分钟行情按需更新 · AI 研判需要结合原文核验</span></footer>
     </main>
+    <ReadingRail view={view} />
     {drawer && <AiDrawer key={`${user?.id}-${drawer.stock.code}-${drawer.news?.id ?? 'chat'}`} stock={drawer.stock} news={drawer.news} onClose={() => setDrawer(null)} onResult={reply => { setLastReply(reply); void loadSnapshot(code).catch(e => setError(e.message)); }} />}
     {adding && <Dialog title="查找与管理自选股" close={() => setAdding(false)}><StockSearch watchlist={watchlist} disabled={!watchReady || savingWatch} add={addStock} remove={target => updateWatchlist(watchlist.filter(row => row !== target))} select={stock => { mergeCatalog([stock]); setCode(stock.code); setView('dashboard'); setAdding(false); }} /></Dialog>}
     {audit && <Dialog title="新闻清洗与去重记录" close={() => setAudit(null)}><p className="supported-caption">保留 {audit.summary.retained ?? 0} · 过滤 {audit.summary.filtered ?? 0} · 合并 {audit.summary.merged ?? 0}</p><div className="audit-records">{audit.audit?.map(row => <article key={row.id}><span className={`audit-status ${row.status}`}>{row.status === 'retained' ? '保留' : row.status === 'merged' ? '合并' : '过滤'}</span><h3>{row.title}</h3><p>{row.reasons.join('；') || '通过主体、日期、内容与来源检查'}</p>{row.url && <a href={row.url} target="_blank" rel="noopener noreferrer">查看原文<ExternalLink size={12} /></a>}</article>)}</div></Dialog>}
