@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chapterGeometry, rulerGeometry } from '../src/readingRailGeometry.ts';
+import { chapterGeometry, RULER, rulerGeometry } from '../src/readingRailGeometry.ts';
 
 test('ruler scrolls at document scale and compresses all 101 ticks on hover', () => {
   const normal = rulerGeometry(1000, 5000, 1000, 0);
@@ -37,7 +37,7 @@ test('hover maps every chapter horizontally and keeps close labels distinct', ()
   const layout = chapterGeometry(chapters, 1000, 1600, 20000, 1500, 1);
   layout.forEach(chapter => {
     assert.ok(chapter.width > 0 && chapter.height > 0);
-    chapter.letters.forEach(letter => { assert.equal(letter.rotation, 0); assert.ok(Math.abs(letter.scale - 16 / 34) < 1e-9); });
+    chapter.letters.forEach(letter => { assert.equal(letter.rotation, 0); assert.ok(Math.abs(letter.scale * RULER.heading - 16) < 1e-9); });
   });
   for (let index = 1; index < layout.length; index++) assert.ok(layout[index].top - layout[index - 1].top >= 19.99);
 });

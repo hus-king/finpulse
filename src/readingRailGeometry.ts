@@ -3,7 +3,7 @@ export const clamp = (value: number) => Math.max(0, Math.min(1, value));
 export const mix = (from: number, to: number, progress: number) => from + (to - from) * progress;
 export const easeCubic = (value: number) => value < .5 ? 4 * value ** 3 : 1 - (-2 * value + 2) ** 3 / 2;
 export const easeExpo = (value: number) => value >= 1 ? 1 : 1 - 2 ** (-10 * value);
-export const RULER = { width: 60, nav: 48, edge: 12, heading: 34, riding: 20, queue: 16,
+export const RULER = { width: 60, nav: 48, edge: 12, heading: 30, riding: 20, queue: 16,
   top: 28, currentGap: 26, slot: 20, bottom: 36, flip: 200, detach: 240, stagger: .16, arc: 28 };
 export type Chapter = { selector: string; title: string; anchor: number; bottom: number; advances: number[] };
 type Position = { x: number; y: number; rotation: number; scale: number; alpha: number };

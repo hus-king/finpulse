@@ -3,8 +3,7 @@ import { chapterGeometry, clamp, easeExpo, RULER, rulerGeometry } from './readin
 import type { Chapter } from './readingRailGeometry';
 const chaptersByView: Record<string, { selector: string; title: string }[]> = {
   dashboard: [
-    { selector: '.finance-heading', title: '市场研究' },
-    { selector: '.market-overview', title: '大盘概览' },
+    { selector: '.finance-heading', title: '市场概览' },
     { selector: '.live-quote', title: '行情走势' },
     { selector: '.live-news', title: '新闻研判' },
     { selector: '.returns-panel', title: '历史观察' },

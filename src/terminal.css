@@ -8,9 +8,17 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'FinPulse Navigation';
+  src: url('/fonts/FinPulseNavigation.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root[data-theme] {
   --font-display: "Space Grotesk", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-rail-cjk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans CN", "Microsoft YaHei UI", sans-serif;
+  --font-rail-cjk: "FinPulse Navigation", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   --workspace-width: 1840px;
@@ -194,7 +202,7 @@
 :root[data-theme] .reading-rail { display: none; }
 :root[data-theme][data-reading-ruler] { scrollbar-width: none; }
 :root[data-theme][data-reading-ruler]::-webkit-scrollbar { display: none; }
-:root[data-theme][data-reading-ruler] .finance-shell { padding-right: 220px; }
+:root[data-theme][data-reading-ruler] .finance-shell { padding-right: 100px; }
 :root[data-theme][data-reading-ruler] .reading-rail { display: block; position: fixed; inset: 0 0 0 auto; width: 60px; z-index: 40; pointer-events: none; user-select: none; }
 :root[data-theme] .reading-scale { position: absolute; z-index: 1; inset: 0; overflow: hidden; pointer-events: auto; cursor: crosshair; touch-action: none; }
 :root[data-theme] .reading-frost { position: absolute; inset: 0; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb, var(--theme-background) 55%, transparent); mask-image: linear-gradient(to left,black 40%,rgba(0,0,0,.745) 47.5%,rgba(0,0,0,.531) 55%,rgba(0,0,0,.356) 62.5%,rgba(0,0,0,.218) 70%,rgba(0,0,0,.116) 77.5%,rgba(0,0,0,.047) 85%,rgba(0,0,0,.01) 92.5%,transparent); pointer-events: none; }
@@ -211,13 +219,13 @@
 :root[data-theme] .reading-digit-column { display: flex; flex-direction: column; transition: transform .28s cubic-bezier(.2,.9,.2,1); }
 :root[data-theme] .reading-digit-column > span { display: block; height: 1em; flex-shrink: 0; }
 :root[data-theme] .reading-preview { position: fixed; z-index: 2; top: 0; right: 0; width: 60px; height: 3px; margin-top: -1.5px; background: var(--theme-text); opacity: 0; pointer-events: none; }
-:root[data-theme] .reading-contrast { position: fixed; z-index: 0; right: 0; width: 384px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb,var(--theme-background) 80%,transparent); opacity: 0; pointer-events: none; }
-:root[data-theme] .reading-contrast-top { top: 0; height: 280px; mask-image: radial-gradient(100% 100% at 100% 0%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
-:root[data-theme] .reading-contrast-bottom { bottom: 0; height: 200px; mask-image: radial-gradient(100% 100% at 100% 100%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
+:root[data-theme] .reading-contrast { position: fixed; z-index: 0; right: 0; width: 320px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb,var(--theme-background) 65%,transparent); opacity: 0; pointer-events: none; }
+:root[data-theme] .reading-contrast-top { top: 0; height: 260px; mask-image: radial-gradient(100% 100% at 100% 0%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
+:root[data-theme] .reading-contrast-bottom { bottom: 0; height: 180px; mask-image: radial-gradient(100% 100% at 100% 100%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
 :root[data-theme] .reading-chapters { position: fixed; z-index: 2; inset: 0; pointer-events: none; }
 :root[data-theme] .reading-chapter { position: absolute; display: block; max-width: none; max-height: none; padding: 0; margin: 0; border: 0; background: none; pointer-events: auto; cursor: pointer; }
-:root[data-theme] .reading-glyph, :root[data-theme] .reading-font-probe { font-family: var(--font-rail-cjk); font-weight: 620; font-stretch: 118%; line-height: 1; letter-spacing: normal; white-space: pre; -webkit-font-smoothing: antialiased; }
-:root[data-theme] .reading-glyph { position: absolute; top: 0; left: 0; font-size: 34px; pointer-events: none; will-change: transform; text-shadow: 0 0 4px var(--theme-background),0 0 10px var(--theme-background); }
+:root[data-theme] .reading-glyph, :root[data-theme] .reading-font-probe { font-family: var(--font-rail-cjk); font-weight: 600; font-stretch: normal; line-height: 1; letter-spacing: normal; white-space: pre; -webkit-font-smoothing: antialiased; }
+:root[data-theme] .reading-glyph { position: absolute; top: 0; left: 0; font-size: 30px; pointer-events: none; will-change: transform; text-shadow: 0 0 4px var(--theme-background),0 0 10px var(--theme-background); }
 :root[data-theme] .reading-font-probe { position: fixed; top: 0; left: -10000px; font-size: 100px; visibility: hidden; }
 :root[data-theme] .reading-static-label { display: none; }
 :root[data-theme][data-reading-ruler="static"] .reading-glyph { display: none; }
