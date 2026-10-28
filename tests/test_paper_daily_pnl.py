@@ -18,9 +18,45 @@ from backend.stock_catalog import StockCatalog
 from test_paper_rules import cache
 
 class DailyPerformanceTests(unittest.TestCase):
-    def result(self,cash,positions,equity,trades=(),closes=None):
+    def result(self,cash,positions,equity,trades=(),closes=None,values=None):
         from backend.paper_rules import daily_performance
-        return daily_performance({'cash_fen':cash,'positions':{c:{'quantity':q} for c,q in positions.items()}},trades,closes or {},equity)
+        valuation={'equity_fen':equity,'positions':[{'code':code,'market_value_fen':value} for code,value in (values or {}).items()]}
+        return daily_performance({'cash_fen':cash,'positions':{c:{'quantity':q} for c,q in positions.items()}},trades,closes or {},valuation)
+
+    def test_position_overnight_return_uses_prior_close_not_cost(self):
+        r=self.result(19_900_000,{'000001':100},20_020_000,closes={'000001':1100},values={'000001':120000})
+        position=r['positions'][0]
+        self.assertEqual(position['daily_pnl_fen'],10000)
+        self.assertEqual(position['daily_return_percent'],9.0909)
+
+    def test_position_bought_today_uses_all_in_cost_without_prior_close(self):
+        r=self.result(19_879_499,{'000001':100},19_999_499,
+                      [{'code':'000001','side':'buy','quantity':100,'gross_fen':120000,'fees_fen':501}],values={'000001':120000})
+        position=r['positions'][0]
+        self.assertEqual(position['daily_pnl_fen'],-501)
+        self.assertEqual(position['daily_return_percent'],round(-501/120501*100,4))
+
+    def test_position_partial_sale_and_buy_include_realized_change_and_all_fees(self):
+        r=self.result(19_808_900,{'000001':200},20_058_900,[
+            {'code':'000001','side':'buy','quantity':100,'gross_fen':120000,'fees_fen':500},
+            {'code':'000001','side':'sell','quantity':100,'gross_fen':130000,'fees_fen':600}],
+            {'000001':1000},values={'000001':250000})
+        self.assertEqual(r['positions'][0]['daily_pnl_fen'],58900)
+        self.assertEqual(r['positions'][0]['daily_return_percent'],round(58900/320500*100,4))
+        self.assertEqual(r['daily_pnl_fen'],58900)
+
+    def test_missing_close_only_hides_affected_position_and_keeps_valid_zero(self):
+        r=self.result(1_000_000,{'000001':100,'600000':100},1_220_000,
+                      closes={'600000':1000},values={'000001':120000,'600000':100000})
+        missing,valid=r['positions']
+        self.assertIsNone(missing['daily_pnl_fen']);self.assertIsNone(missing['daily_return_percent'])
+        self.assertEqual(valid['daily_pnl_fen'],0);self.assertEqual(valid['daily_return_percent'],0)
+        self.assertIsNone(r['daily_pnl_fen'])
+
+    def test_fully_exited_symbol_remains_in_account_total_but_not_current_positions(self):
+        r=self.result(20_019_400,{},20_019_400,
+                      [{'code':'000001','side':'sell','quantity':100,'gross_fen':120000,'fees_fen':600}],{'000001':1100})
+        self.assertEqual(r['daily_pnl_fen'],9400);self.assertEqual(r['positions'],[])
 
     def test_empty_new_account_and_cash_only_profit_have_zero_daily_pnl(self):
         for cash in [20_000_000,20_050_000]:
@@ -83,6 +119,8 @@ class DailyPnlServiceTests(unittest.IsolatedAsyncioTestCase):
         r=await self.paper.snapshot(self.owner)
         self.assertEqual(r['daily_pnl_fen'],10000);self.assertEqual(r['daily_reference_date'],'2026-10-23')
         self.assertEqual(r['daily_pnl_date'],'2026-10-26');self.fetch.assert_not_awaited()
+        self.assertEqual(r['positions'][0]['daily_pnl_fen'],10000)
+        self.assertEqual(r['positions'][0]['daily_return_percent'],9.0909)
         self.assertEqual(self.paper.store.get_account(self.owner),self.book)
 
     async def test_missing_close_returns_immediately_then_backfills_shared_daily_cache(self):
@@ -92,10 +130,12 @@ class DailyPnlServiceTests(unittest.IsolatedAsyncioTestCase):
         self.fetch.side_effect=source
         first=await self.paper.snapshot(self.owner)
         self.assertIsNone(first['daily_pnl_fen']);self.assertEqual(first['daily_pnl_status'],'pending')
+        self.assertIsNone(first['positions'][0]['daily_pnl_fen'])
         self.assertEqual(first['next_poll_seconds'],2)
         gate.set();await asyncio.gather(*list(self.daily.tasks.values()))
         final=await self.paper.snapshot(self.owner)
         self.assertEqual(final['daily_pnl_fen'],10000);self.assertEqual(self.fetch.await_count,1)
+        self.assertEqual(final['positions'][0]['daily_pnl_fen'],10000)
 
     async def test_minute_fallback_requires_actual_prior_session_close(self):
         old=self.now.replace(day=23,hour=15,minute=0)

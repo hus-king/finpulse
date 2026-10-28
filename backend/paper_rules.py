@@ -193,24 +193,38 @@ def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dic
     return updated, trade
 
 
-def daily_performance(account: dict, trades: list[dict], previous_closes: dict[str, int], equity: int) -> dict:
+def daily_performance(account: dict, trades: list[dict], previous_closes: dict[str, int], valuation: dict) -> dict:
     """Reverse today's cash flows and share changes to recover the overnight book."""
     cash=account['cash_fen'];quantities={code:p['quantity'] for code,p in account['positions'].items()}
+    buys={};sells={}
     for trade in trades:
         code=trade['code'];quantity=trade['quantity'];gross=trade['gross_fen'];cost=trade['fees_fen']
         if trade['side']=='buy':
             cash+=gross+cost;quantities[code]=quantities.get(code,0)-quantity
+            buys[code]=buys.get(code,0)+gross+cost
         else:
             cash-=gross-cost;quantities[code]=quantities.get(code,0)+quantity
+            sells[code]=sells.get(code,0)+gross-cost
     missing=sorted(code for code,quantity in quantities.items() if quantity>0 and code not in previous_closes)
+    invalid=cash<0 or any(quantity<0 for quantity in quantities.values())
+    positions=[]
+    for position in valuation['positions']:
+        code=position['code'];overnight=quantities[code]*previous_closes.get(code,0)
+        base=overnight+buys.get(code,0)
+        reason=('当日成交记录与持仓暂未对齐' if invalid else '暂缺上一交易日收盘价' if code in missing
+                else '当日投入基准无效' if base<=0 else '')
+        pnl=None if reason else position['market_value_fen']+sells.get(code,0)-buys.get(code,0)-overnight
+        positions.append({**position,'daily_pnl_fen':pnl,
+                          'daily_return_percent':round(pnl/base*100,4) if pnl is not None else None,
+                          'daily_pnl_reason':reason})
     result={'daily_pnl_fen':None,'daily_return_percent':None,'daily_pnl_base_equity_fen':None,
-            'daily_pnl_status':'unavailable','daily_pnl_missing_codes':missing,'daily_pnl_reason':''}
-    if cash<0 or any(quantity<0 for quantity in quantities.values()):
+            'daily_pnl_status':'unavailable','daily_pnl_missing_codes':missing,'daily_pnl_reason':'','positions':positions}
+    if invalid:
         return {**result,'daily_pnl_reason':'当日成交记录与持仓暂未对齐'}
     if missing:return {**result,'daily_pnl_reason':'暂缺上一交易日收盘价'}
     baseline=cash+sum(quantity*previous_closes[code] for code,quantity in quantities.items() if quantity)
     if baseline<=0:return {**result,'daily_pnl_reason':'上一交易日资产基准无效'}
-    pnl=equity-baseline
+    pnl=valuation['equity_fen']-baseline
     return {**result,'daily_pnl_fen':pnl,'daily_return_percent':round(pnl/baseline*100,4),
             'daily_pnl_base_equity_fen':baseline,'daily_pnl_status':'available'}
 

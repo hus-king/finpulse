@@ -7,6 +7,7 @@ export interface PaperPosition {
   code: string; name: string; quantity: number; sellable: number; locked: number;
   cost_fen: number; average_cost_fen: number; price_fen: number; price_as_of: string;
   valuation_status: 'fresh' | 'stale' | 'estimated'; market_value_fen: number; unrealized_pnl_fen: number;
+  daily_pnl_fen?: number | null; daily_return_percent?: number | null; daily_pnl_reason?: string;
 }
 export interface PaperAccount {
   valuation_refreshing?: boolean; valuation_errors?: Record<string, string>; next_poll_seconds?: number;

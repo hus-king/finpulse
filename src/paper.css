@@ -383,6 +383,9 @@
   color:var(--theme-muted);
   font-size:9px;
 }
+.paper-workspace td small.paper-daily-return {
+  color:inherit;
+}
 .paper-workspace td button {
   text-align:left;
 }

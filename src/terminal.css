@@ -401,6 +401,8 @@
 :root[data-theme] .score-gauge svg { max-width: 220px; margin-inline: auto; color: var(--theme-text); }
 :root[data-theme] .score-gauge text { fill: var(--theme-subtle); font: 9px var(--mono); }
 :root[data-theme] .score-gauge > strong { color: var(--theme-heading); font: 400 43px var(--mono); letter-spacing: -2px; margin-top: 6px; }
+:root[data-theme] .score-gauge > strong.up { color: var(--up); }
+:root[data-theme] .score-gauge > strong.down { color: var(--down); }
 :root[data-theme] .score-gauge > span { font-size: 10px; color: var(--theme-muted); }
 :root[data-theme] .score-weighting-rule { text-align: center; font-size: 9px; color: var(--theme-subtle); }
 :root[data-theme] .research-overview > p { color: var(--theme-muted); font-size: 10px; line-height: 1.9; }

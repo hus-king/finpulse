@@ -72,6 +72,8 @@ class PaperAPITests(unittest.TestCase):
             self.assertEqual(same_day.json()['code'], 'T_PLUS_ONE')
             account = self.client.get('/api/paper/account').json()
             self.assertEqual(account['positions'][0]['locked'], 100)
+            self.assertEqual(account['positions'][0]['daily_pnl_fen'], -501)
+            self.assertEqual(account['positions'][0]['daily_return_percent'], round(-501/100501*100,4))
             self.now += timedelta(days=1)
             app.state.research.store.put('minute_market','000001:1',cache(self.now,10.5))
             self.assertEqual(self.client.get('/api/paper/account').json()['positions'][0]['sellable'], 100)

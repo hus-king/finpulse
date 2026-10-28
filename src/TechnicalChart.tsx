@@ -113,7 +113,7 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
     });
     const main: Series = isLine ? {
       id: `main-${intraday ? 'intraday' : chartStyle}`, type: 'line', name: intraday ? '分钟价格' : '收盘价',
-      data: display.map(row => row?.close ?? null), connectNulls: false, showSymbol: false,
+      data: display.map(row => row?.close ?? null), connectNulls: intraday, showSymbol: false,
       lineStyle: { color: color('marker-neutral'), width: 1.8, opacity: 1 }, itemStyle: { color: color('marker-neutral') },
       ...(intraday || chartStyle === 'area' ? { areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color('marker-neutral') + '30' }, { offset: 1, color: color('marker-neutral') + '00' }]) } } : {}),
       ...(intraday && session.previousClose ? { markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: color('text'), type: 'dashed', opacity: 0.6 }, data: [{ yAxis: session.previousClose }] } } : {}),
@@ -137,7 +137,7 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
         data: line.values.map((value, i) => ({ value, itemStyle: { color: (indicator.id === 'MACD' ? (value ?? 0) >= 0 : (display[i]?.close ?? 0) >= (display[i]?.open ?? 0)) ? color('volume-up') : color('volume-down') } })),
       } : {
         id: `${indicator.id}-${line.key}`, name: line.label, type: 'line', xAxisIndex: index, yAxisIndex: index,
-        data: line.values, showSymbol: false, connectNulls: false, lineStyle: { width: 1.25, color: shade }, itemStyle: { color: shade },
+        data: line.values, showSymbol: false, connectNulls: intraday, lineStyle: { width: 1.25, color: shade }, itemStyle: { color: shade },
       });
     }));
     const grids = [{ id: 'plot-0', left: 58, right: intraday ? 56 : 22, top: layout.priceTop, height: layout.priceHeight }, ...layout.panes.map((pane, index) => ({ id: `plot-${index + 1}`, left: 58, right: intraday ? 56 : 22, top: pane.gridTop, height: pane.height }))];
@@ -195,7 +195,7 @@ export default function TechnicalChart({ candles, news = noNews, mode, period, c
   }
   const empty = !latest;
   return <div className="technical-chart" style={{ height: layout.height }}>
-    <div ref={canvas} className="technical-chart-canvas" role="img" aria-label={`${period}与${indicators.map(item => item.label).join('、')}，时间轴和光标联动；${session ? '完整交易日横轴，缺失分钟留空' : 'Ctrl 加滚轮缩放'}`} />
+    <div ref={canvas} className="technical-chart-canvas" role="img" aria-label={`${period}与${indicators.map(item => item.label).join('、')}，时间轴和光标联动；${session ? '完整交易日横轴，午休前后连续连线' : 'Ctrl 加滚轮缩放'}`} />
     <div className="chart-readout chart-main-readout" data-testid="chart-main-readout" style={{ top: 0 }}>
       <div className="chart-readout-heading"><strong>{session ? '分时' : chartStyle === 'heikin' ? '平滑 K 线 · 计算价格' : period}</strong><time>{activeDate}{point === null ? ' · 最新' : ''}</time></div>
       <div className="chart-readout-values">
