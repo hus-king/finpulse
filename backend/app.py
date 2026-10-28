@@ -80,6 +80,8 @@ async def lifespan(application):
     if os.environ.get('FINPULSE_MARKET_WARM_ENABLED', str(int(application.state.research.briefing.instance_enabled))) == '1':
         application.state.market_bundle.start_warming()
     try:
+        if application.state.research.briefing.instance_enabled:
+            await application.state.hot_news.resume_interrupted()
         yield
     finally:
         await application.state.hot_news_matches.close()

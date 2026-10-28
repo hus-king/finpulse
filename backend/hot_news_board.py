@@ -26,6 +26,7 @@ VERSION = 'market-hot-board-v5-attention'
 REFRESH_KEY = 'refresh-v5-attention'
 logger = logging.getLogger(__name__)
 FEED_KEY = 'market-hot-board-v1'
+CHECKPOINT_KEY = 'collected-hot-board-v1'
 TTL = 600
 MAX_STALE = 3600
 SOURCES = {
@@ -288,6 +289,13 @@ class HotNewsBoardService:
     def feed(self):
         record = self.store.get('hot_news_board', FEED_KEY, default={})
         now = self.clock()
+        # Source collection must survive an interrupted grouping/model call.
+        # Prefer the completed snapshot while it still has usable sources.
+        if not any(0 <= now - row.get('fetched_at', 0) < MAX_STALE
+                   for row in record.get('sources', {}).values()):
+            checkpoint = self.store.get('hot_news_board', CHECKPOINT_KEY, default={})
+            if checkpoint.get('refreshed_at', 0) > record.get('refreshed_at', 0):
+                record = checkpoint
         items = []
         for topic in record.get('topics', []):
             if topic.get('screening', {}).get('method') == 'rules':
@@ -389,10 +397,27 @@ class HotNewsBoardService:
                                          'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(), 'error': None}
             usable = {source: {**snapshot, 'stale': bool(snapshot.get('error'))} for source, snapshot in snapshots.items()
                       if 0 <= now - snapshot.get('fetched_at', 0) < MAX_STALE}
+            if not usable:
+                # Failed requests are not a successful empty refresh. Preserve
+                # the prior snapshot and allow the next request to retry now.
+                await asyncio.to_thread(self.store.put, 'hot_news_board', FEED_KEY,
+                                        {**record, 'sources': snapshots})
+                await self._progress(token, 'failed', 0, 0, status='error')
+                return await asyncio.to_thread(self.feed)
             topics = merge_topics(usable)
             if len(topics) > 100:
                 # Preserve public trend coverage before supplementing with news reports.
                 topics = sorted(topics, key=lambda row: (not any(s.get('rank') is not None for s in row['sources']), -row['rank_score'], row['id']))[:100]
+            # Persist auditable rule results before any slow model work. Keep
+            # this separate so a failed update cannot overwrite the final feed.
+            provisional = [{**topic, 'screening': rule_screen(topic)} for topic in topics]
+            for topic in provisional:
+                for entry in topic['sources']:
+                    entry['observed_timestamp'] = usable[entry['id']]['fetched_at']
+            await asyncio.to_thread(self.store.put, 'hot_news_board', CHECKPOINT_KEY,
+                {'topics': provisional, 'sources': snapshots, 'refreshed_at': now,
+                 'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(),
+                 'screening': 'rules', 'warnings': ['已保存本轮采集结果，暂展示规则初筛；模型归组与筛选尚未完成。']})
             config = read_config()
             grouping_warning = None
             if config.get('model') and config.get('api_key'):
@@ -418,6 +443,12 @@ class HotNewsBoardService:
             return await asyncio.to_thread(self.feed)
         finally:
             await asyncio.to_thread(self.store.release, lease, token)
+
+    async def resume_interrupted(self):
+        """Resume a previously requested refresh after a service restart."""
+        status = await asyncio.to_thread(self.refresh_status)
+        if status.get('stage') == 'interrupted':
+            await self.request_refresh()
 
 
     def refresh_status(self):

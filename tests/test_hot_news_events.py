@@ -7,8 +7,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from backend.auth import AuthStore
 from backend.research_store import ResearchStore
+from backend.providers import ProviderError
 from backend.hot_news_events import editorial_reason, rule_event, validate_event
-from backend.hot_news_board import HotNewsBoardService, FEED_KEY, REFRESH_KEY, VERSION, digest, public_board, rule_screen
+from backend.hot_news_board import HotNewsBoardService, FEED_KEY, REFRESH_KEY, VERSION, MAX_STALE, digest, public_board, rule_screen
 from tests.test_hot_news_board import topic, board_row, NOW, query_fixture, model_row
 
 
@@ -135,6 +136,65 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             await self.service.request_refresh(); await asyncio.sleep(.03); await self.service.close()
         self.assertEqual(self.service.refresh_status()['status'], 'error')
         self.assertIsNone(self.store.get('lease', digest([VERSION, 'refresh'])))
+
+    async def test_collected_events_remain_readable_during_slow_model_and_after_restart(self):
+        entered, gate = asyncio.Event(), asyncio.Event()
+        async def screen(rows, progress):
+            entered.set()
+            await gate.wait()
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])), patch.object(self.service, 'screen', side_effect=screen):
+            await self.service.request_refresh()
+            await asyncio.wait_for(entered.wait(), 2)
+            result = public_board(self.service.feed())
+            self.assertEqual([row['title'] for row in result['items']], ['美国宣布加征进口关税'])
+            self.assertEqual(result['screening'], 'rules')
+            self.assertEqual(result['refresh']['status'], 'running')
+            await self.service.close()
+        restarted = HotNewsBoardService(self.store, AsyncMock(), clock=lambda: NOW)
+        self.assertEqual(len(public_board(restarted.feed())['items']), 1)
+        self.assertEqual(restarted.refresh_status()['stage'], 'interrupted')
+        restarted.clock = lambda: NOW + MAX_STALE + 1
+        self.assertEqual(restarted.feed()['items'], [])
+
+    async def test_restart_resumes_interrupted_request_but_idle_reads_do_not_collect(self):
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])) as fetch:
+            await self.service.resume_interrupted()
+            fetch.assert_not_awaited()
+            self.store.put('hot_news_board', REFRESH_KEY, {'status': 'error', 'stage': 'interrupted'})
+            await self.service.resume_interrupted()
+            await self.service.task
+        self.assertEqual(fetch.await_count, 2)
+        self.assertEqual(self.service.refresh_status()['status'], 'completed')
+
+    async def test_recovery_joins_existing_owner_without_duplicate_requests(self):
+        self.store.put('hot_news_board', REFRESH_KEY, {'status': 'error', 'stage': 'interrupted'})
+        self.store.claim(digest([VERSION, 'refresh']), 1500)
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock()) as fetch:
+            await self.service.resume_interrupted()
+        fetch.assert_not_awaited()
+        self.assertIsNone(self.service.task)
+
+    async def test_total_source_failure_reports_error_and_immediate_retry_collects_again(self):
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(side_effect=ProviderError('offline'))) as fetch:
+            await self.service.request_refresh(); await self.service.task
+            self.assertEqual(self.service.refresh_status()['status'], 'error')
+            await self.service.request_refresh(); await self.service.task
+        self.assertEqual(fetch.await_count, 4)
+        self.assertEqual(self.service.feed()['status'], 'unavailable')
+
+    async def test_checkpoint_does_not_replace_usable_completed_snapshot(self):
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])):
+            await self.service.refresh()
+        entered, gate = asyncio.Event(), asyncio.Event()
+        async def screen(rows, progress):
+            entered.set(); await gate.wait()
+        self.service.clock = lambda: NOW + 601
+        with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row('中国人民银行宣布降准')])), patch.object(self.service, 'screen', side_effect=screen):
+            await self.service.request_refresh(); await asyncio.wait_for(entered.wait(), 2)
+            self.assertEqual(public_board(self.service.feed())['items'][0]['title'], '美国宣布加征进口关税')
+            self.service.clock = lambda: NOW + MAX_STALE + 1
+            self.assertEqual(public_board(self.service.feed())['items'][0]['title'], '中国人民银行宣布降准')
+            await self.service.close()
 
     async def test_old_selection_version_is_rescreened_even_within_ttl(self):
         with patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])) as fetch:
