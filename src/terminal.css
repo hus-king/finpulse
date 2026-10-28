@@ -190,209 +190,40 @@
 :root[data-theme] .workspace-meta strong { font-size: 12px; font-weight: 500; color: var(--theme-text); }
 :root[data-theme] .workspace-meta small { font: 8px var(--mono); letter-spacing: 1.2px; color: var(--theme-subtle); }
 
-/* The reading ruler follows real document progress and never captures scrolling. */
+/* ArtCraft ruler geometry: document-scale ticks compress into a page map on hover. */
 :root[data-theme] .reading-rail { display: none; }
-@media (min-width: 1200px) {
-  :root[data-theme] .finance-shell { padding-right: 180px; }
-  :root[data-theme] .reading-rail {
-    display: flex;
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 68px;
-    z-index: 25;
-    border-left: 1px solid var(--theme-border);
-    background: var(--theme-background);
-    font-family: var(--font-rail-cjk);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    user-select: none;
-  }
-  :root[data-theme] .reading-scale {
-    position: absolute;
-    right: 0;
-    width: 100%;
-    top: 60px;
-    bottom: 74px;
-    cursor: crosshair;
-    touch-action: none;
-  }
-  :root[data-theme] .reading-viewport {
-    position: absolute;
-    inset-inline: 0;
-    border-block: 1px solid var(--theme-subtle);
-    background: color-mix(in srgb, var(--theme-muted) 8%, transparent);
-    pointer-events: none;
-  }
-  :root[data-theme] .reading-tick {
-    position: absolute;
-    right: 0;
-    width: 7px;
-    height: 1px;
-    background: var(--theme-border);
-    transition: background 160ms ease;
-  }
-  :root[data-theme] .reading-tick.major {
-    width: 16px;
-    background: var(--theme-subtle);
-  }
-  :root[data-theme] .reading-scale.expanded .reading-tick { background: var(--theme-subtle); }
-  :root[data-theme] .reading-scale.expanded .reading-tick.major { background: var(--theme-text); }
-  :root[data-theme] .reading-tick small {
-    position: absolute;
-    right: 22px;
-    top: -6px;
-    color: var(--theme-subtle);
-    font-family: var(--font-display), var(--mono);
-    font-size: 9px;
-    font-weight: 500;
-    letter-spacing: 0.8px;
-    font-variant-numeric: tabular-nums lining-nums;
-    opacity: 0.7;
-    transition: opacity 160ms ease, color 160ms ease;
-  }
-  :root[data-theme] .reading-indicator {
-    position: absolute;
-    right: 0;
-    width: 100%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent 0%, var(--theme-accent-text) 100%);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--theme-accent) 40%, transparent);
-    pointer-events: none;
-  }
-  :root[data-theme] .reading-indicator-badge {
-    position: absolute;
-    top: -9px;
-    right: 8px;
-    display: inline-flex;
-    align-items: baseline;
-    gap: 1px;
-    font-family: var(--font-display), var(--mono);
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 1;
-    color: var(--theme-accent-text);
-    padding: 3px 5px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--theme-panel) 90%, var(--theme-accent-soft));
-    border: 1px solid var(--theme-accent-border);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    letter-spacing: 0.08em;
-    font-variant-numeric: tabular-nums lining-nums;
-  }
-  :root[data-theme] .reading-indicator-badge small {
-    font-size: 8px;
-    opacity: 0.8;
-    margin-left: 1px;
-  }
-  :root[data-theme] .reading-preview {
-    position: absolute;
-    right: 0;
-    width: 100%;
-    height: 2px;
-    background: var(--theme-text);
-    opacity: .65;
-    pointer-events: none;
-  }
-  :root[data-theme] .reading-preview small {
-    position: absolute;
-    right: 8px;
-    top: 7px;
-    color: var(--theme-heading);
-    background: var(--theme-background);
-    font: 10px var(--mono);
-  }
-  :root[data-theme] .reading-chapters {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-  }
-  :root[data-theme] .reading-chapter {
-    position: absolute;
-    display: block;
-    max-width: none;
-    max-height: none;
-    padding: 0;
-    margin: 0;
-    line-height: 1;
-    color: var(--theme-subtle);
-    background: transparent;
-    border: 0;
-    pointer-events: auto;
-    cursor: pointer;
-    transition: color 180ms ease;
-  }
-  :root[data-theme] .reading-glyph {
-    position: absolute;
-    display: grid;
-    place-items: center;
-    line-height: 1;
-    font-family: var(--font-rail-cjk);
-    font-weight: 420;
-    letter-spacing: 0.05em;
-    color: var(--theme-muted);
-    opacity: 0.8;
-    background: transparent;
-    border-radius: 2px;
-    pointer-events: none;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-    transition: color 180ms ease, opacity 180ms ease, transform 240ms var(--ease-out), text-shadow 180ms ease;
-  }
-  :root[data-theme] .reading-chapter.current .reading-glyph {
-    color: var(--theme-heading);
-    font-weight: 550;
-    opacity: 1;
-    text-shadow: 0 0 14px color-mix(in srgb, var(--theme-accent-text) 40%, transparent);
-  }
-  :root[data-theme] .reading-chapter:is(:hover, :focus-visible) .reading-glyph {
-    color: var(--theme-heading);
-    opacity: 1;
-    transform: translateX(-2px) scale(1.12);
-    text-shadow: 0 0 12px color-mix(in srgb, var(--theme-text) 30%, transparent);
-  }
-  :root[data-theme] .reading-chapter.pressed .reading-glyph { animation: reading-chapter-press 350ms ease-out both; }
-  :root[data-theme] .reading-top {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 50px;
-    border-top: 1px solid var(--theme-border);
-    color: var(--theme-muted);
-    background: transparent;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    cursor: pointer;
-    transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
-  }
-  :root[data-theme] .reading-top-label {
-    font-family: var(--font-display), var(--mono);
-    font-size: 8px;
-    font-weight: 600;
-    letter-spacing: 1.2px;
-    line-height: 1;
-    opacity: 0.75;
-  }
-  :root[data-theme] .reading-top:hover {
-    background: var(--theme-raised);
-    color: var(--theme-heading);
-    border-top-color: var(--theme-accent-border);
-  }
-  :root[data-theme] .reading-top:hover .reading-top-label {
-    color: var(--theme-accent-text);
-    opacity: 1;
-  }
-}
-@keyframes reading-chapter-press {
-  0%, 25% { color: var(--theme-accent-text); text-shadow: 0 0 16px var(--theme-accent-text); }
-  100% { color: var(--theme-heading); text-shadow: 0 0 4px transparent; }
-}
+:root[data-theme][data-reading-ruler] { scrollbar-width: none; }
+:root[data-theme][data-reading-ruler]::-webkit-scrollbar { display: none; }
+:root[data-theme][data-reading-ruler] .finance-shell { padding-right: 220px; }
+:root[data-theme][data-reading-ruler] .reading-rail { display: block; position: fixed; inset: 0 0 0 auto; width: 60px; z-index: 40; pointer-events: none; user-select: none; }
+:root[data-theme] .reading-scale { position: absolute; z-index: 1; inset: 0; overflow: hidden; pointer-events: auto; cursor: crosshair; touch-action: none; }
+:root[data-theme] .reading-frost { position: absolute; inset: 0; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb, var(--theme-background) 55%, transparent); mask-image: linear-gradient(to left,black 40%,rgba(0,0,0,.745) 47.5%,rgba(0,0,0,.531) 55%,rgba(0,0,0,.356) 62.5%,rgba(0,0,0,.218) 70%,rgba(0,0,0,.116) 77.5%,rgba(0,0,0,.047) 85%,rgba(0,0,0,.01) 92.5%,transparent); pointer-events: none; }
+:root[data-theme] .reading-tick { position: absolute; top: 0; inset-inline: 0; height: 0; pointer-events: none; }
+:root[data-theme] .reading-mark { position: absolute; top: 0; right: 0; width: 10px; height: 1px; background: var(--theme-text); transform-origin: right center; opacity: .4; animation: reading-tick-enter 1s var(--ease-out) backwards; }
+@keyframes reading-tick-enter { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); } }
+:root[data-theme] .reading-tick.major .reading-mark { width: 20px; opacity: .8; }
+:root[data-theme] .reading-tick-label { position: absolute; top: 0; right: 24px; transform: translateY(-50%); font: 9px/1 var(--mono); letter-spacing: .08em; color: var(--theme-text); opacity: .5; }
+:root[data-theme] .reading-viewport { position: absolute; top: 0; inset-inline: 0; opacity: 0; border-block: 1px solid color-mix(in srgb, var(--theme-text) 50%, transparent); background: color-mix(in srgb, var(--theme-text) 10%, transparent); pointer-events: none; }
+:root[data-theme] .reading-indicator { position: absolute; top: 0; inset-inline: 0; height: 0; opacity: 0; pointer-events: none; }
+:root[data-theme] .reading-needle { position: absolute; top: 0; inset-inline: 0; height: 1px; background: #2d81ff; box-shadow: 0 0 6px #2d81ff; }
+:root[data-theme] .reading-readout { position: absolute; right: 2px; top: 4px; display: flex; align-items: baseline; gap: 2px; white-space: nowrap; color: var(--theme-accent-text); font: 9px/1 var(--mono); letter-spacing: .08em; }
+:root[data-theme] .reading-digits { display: inline-flex; height: 1em; line-height: 1; overflow: hidden; }
+:root[data-theme] .reading-digit-column { display: flex; flex-direction: column; transition: transform .28s cubic-bezier(.2,.9,.2,1); }
+:root[data-theme] .reading-digit-column > span { display: block; height: 1em; flex-shrink: 0; }
+:root[data-theme] .reading-preview { position: fixed; z-index: 2; top: 0; right: 0; width: 60px; height: 3px; margin-top: -1.5px; background: var(--theme-text); opacity: 0; pointer-events: none; }
+:root[data-theme] .reading-contrast { position: fixed; z-index: 0; right: 0; width: 384px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb,var(--theme-background) 80%,transparent); opacity: 0; pointer-events: none; }
+:root[data-theme] .reading-contrast-top { top: 0; height: 280px; mask-image: radial-gradient(100% 100% at 100% 0%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
+:root[data-theme] .reading-contrast-bottom { bottom: 0; height: 200px; mask-image: radial-gradient(100% 100% at 100% 100%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
+:root[data-theme] .reading-chapters { position: fixed; z-index: 2; inset: 0; pointer-events: none; }
+:root[data-theme] .reading-chapter { position: absolute; display: block; max-width: none; max-height: none; padding: 0; margin: 0; border: 0; background: none; pointer-events: auto; cursor: pointer; }
+:root[data-theme] .reading-glyph, :root[data-theme] .reading-font-probe { font-family: var(--font-rail-cjk); font-weight: 620; font-stretch: 118%; line-height: 1; letter-spacing: normal; white-space: pre; -webkit-font-smoothing: antialiased; }
+:root[data-theme] .reading-glyph { position: absolute; top: 0; left: 0; font-size: 34px; pointer-events: none; will-change: transform; text-shadow: 0 0 4px var(--theme-background),0 0 10px var(--theme-background); }
+:root[data-theme] .reading-font-probe { position: fixed; top: 0; left: -10000px; font-size: 100px; visibility: hidden; }
+:root[data-theme] .reading-static-label { display: none; }
+:root[data-theme][data-reading-ruler="static"] .reading-glyph { display: none; }
+:root[data-theme][data-reading-ruler="static"] .reading-chapters { inset: auto 60px 36px auto; display: flex; flex-direction: column; gap: 6px; }
+:root[data-theme][data-reading-ruler="static"] .reading-chapter { position: static; width: auto !important; height: auto !important; color: var(--theme-text); font: 18px var(--font-rail-cjk); }
+:root[data-theme][data-reading-ruler="static"] .reading-static-label { display: block; }
 
 /* Shared surfaces and controls, including all six workspaces. */
 :root[data-theme] :is(.panel, .peg-page, .research-assistant-card, .paper-stat, .paper-ticket, .paper-holdings, .paper-history, .paper-automation) { background: var(--theme-panel); border: 1px solid var(--theme-border); border-radius: 2px; box-shadow: none; color: var(--theme-text); }
@@ -687,9 +518,6 @@
 :root[data-theme] .finance-shell summary::-webkit-details-marker { display: none; }
 :root[data-theme] .finance-shell summary:not(.research-details summary)::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 10px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: translateY(-2px) rotate(45deg); }
 :root[data-theme] .finance-shell details[open] > summary:not(.research-details summary)::after { transform: translateY(1px) rotate(225deg); }
-@media (min-width: 1200px) and (max-width: 1400px) {
-  :root[data-theme] .finance-shell { padding-right: 160px; }
-}
 @media (max-width: 1199px) {
   :root[data-theme] .research-right-rail { border-left: 0; padding-left: 0; }
 }
@@ -712,8 +540,13 @@
   :root[data-theme] .portfolio-row > button:first-child { padding-left: 22px; padding-right: 22px; }
   :root[data-theme] .rail-caption { padding-left: 22px; }
 }
-@media (min-width: 1200px) {
-  :root[data-theme] .portfolio-rail { position: sticky; top: 28px; }
+:root[data-theme] .portfolio-list { min-height: 0; max-height: 60dvh; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--theme-border) transparent; }
+@media (min-width: 1024px) {
+  :root[data-theme] .portfolio-rail { position: sticky; top: 28px; height: calc(100dvh - 56px); }
+  :root[data-theme] .portfolio-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  :root[data-theme] .portfolio-panel > :is(header, .rail-caption, .add-watch) { flex-shrink: 0; }
+  :root[data-theme] .portfolio-list { flex: 1; max-height: none; }
+  :root[data-theme] .portfolio-rail > .rail-note { flex-shrink: 0; }
 }
 @media (max-width: 1450px) {
   :root[data-theme] .header-inner { gap: 16px; }
