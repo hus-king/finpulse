@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from ..auth import AuthError
 from ..paper_rules import PaperError, new_account, valid_quote, value_account
 from .peg_strategy import PEG_STRATEGY_ID, price_change_limit
+from .buffered_peg import BUFFERED_PEG_ID, seed_state
 
 
 def default_config():
@@ -28,6 +29,31 @@ class QuantStore:
 
     def config(self,owner):
         return self.records.get('quant_config','config',owner,default=None) or default_config()
+
+    def initialize_buffered(self,conn,owner):
+        account=self.paper._get(conn,'paper_account','account',owner,new_account())
+        state=self.paper._get(conn,'peg_b_state','state',owner,None)
+        if state is None:
+            rows=conn.execute("SELECT payload FROM research_records WHERE namespace='paper_trade' AND owner=?",(owner,)).fetchall()
+            trades=sorted((json.loads(r['payload']) for r in rows),key=lambda r:r['sequence'])
+            try:state=seed_state(trades,account)
+            except ValueError as exc:raise PaperError('PEG_STATE_INVALID',str(exc),422) from None
+            self.paper._put(conn,'peg_b_state','state',owner,state)
+        if state['sequence']!=account['sequence'] or set(state['entries'])!=set(account['positions']):
+            raise PaperError('PEG_STATE_INVALID','PEG B锚点与成交账本不一致，请检查账户。')
+        return state
+
+    def latch_buffered_exits(self,owner,revision,exits,entries):
+        # A known close-based stop must survive later quote/planning failures.
+        with self.locked(owner) as conn:
+            cfg=self.paper._get(conn,'quant_config','config',owner,default_config())
+            state=self.initialize_buffered(conn,owner)
+            if (cfg['mode']!='algorithm' or cfg['revision']!=revision or cfg['strategy_id']!=BUFFERED_PEG_ID or
+                    any(state['entries'].get(c)!=entries[c] for c in exits)):
+                raise PaperError('AUTOMATION_CHANGED','PEG B配置或建仓锚点已改变。')
+            state['pending'].update(exits)
+            self.paper._put(conn,'peg_b_state','state',owner,state)
+        return state
 
     def configure(self,owner,mode,strategy_id,expected_revision,reason=None,validator=None,strategy_config=None):
         with self.locked(owner) as conn:
@@ -70,8 +96,21 @@ class QuantStore:
                 raise PaperError('AUTOMATION_CHANGED','托管配置已改变，本轮决策停止。')
             existing=self.paper._get(conn,'quant_decision',decision['key'],owner,None)
             if existing: return existing
+            if decision.get('strategy_id')==BUFFERED_PEG_ID:
+                self.initialize_buffered(conn,owner)
             self.paper._put(conn,'quant_decision',decision['key'],owner,decision)
         return decision
+
+    def buffered_progress(self,owner,key,revision,**changes):
+        # Merge with the latest book: never overwrite spent_fen committed by a fill.
+        with self.locked(owner) as conn:
+            cfg=self.paper._get(conn,'quant_config','config',owner,default_config())
+            current=self.paper._get(conn,'quant_decision',key,owner,None)
+            if cfg['mode']!='algorithm' or cfg['revision']!=revision or cfg['strategy_id']!=BUFFERED_PEG_ID or not current or current['status']!='running':
+                raise PaperError('AUTOMATION_CHANGED','PEG B配置或决策已改变。')
+            current.update(changes)
+            self.paper._put(conn,'quant_decision',key,owner,current)
+        return current
 
     def finish(self,owner,key,revision,status,results,reason=None,allocation_outcome=None):
         with self.locked(owner) as conn:
@@ -98,7 +137,7 @@ class QuantStore:
             rows=conn.execute("SELECT record_key,payload FROM research_records WHERE namespace='quant_decision' AND owner=? AND record_key<?",(owner,date)).fetchall()
             for row in rows:
                 decision=json.loads(row['payload'])
-                if decision.get('strategy_id')=='official-low-peg-v1' and decision.get('status')=='running':
+                if decision.get('strategy_id') in (PEG_STRATEGY_ID,BUFFERED_PEG_ID) and decision.get('status')=='running':
                     decision.update(status='expired',reason='上一交易日未完成的计划已过期；已成交记录保留，新一日根据实际持仓重新决策。')
                     self.paper._put(conn,'quant_decision',row['record_key'],owner,decision)
 
@@ -119,7 +158,8 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,req
     decision=paper._get(conn,'quant_decision',execution['decision_key'],owner,None)
     if not decision or decision['revision']!=cfg['revision'] or decision['model_version']!=execution['model_version'] or decision['date']!=now.date().isoformat() or decision['status']!='running':
         raise PaperError('AUTOMATION_CHANGED','决策已过期或结束。')
-    is_peg=cfg['strategy_id']==PEG_STRATEGY_ID
+    is_buffered=cfg['strategy_id']==BUFFERED_PEG_ID
+    is_peg=cfg['strategy_id'] in (PEG_STRATEGY_ID,BUFFERED_PEG_ID)
     if is_peg:
         planned=next((o for o in decision.get('orders',[]) if o['request_id']==request_id),None)
         if (decision.get('strategy_id')!=cfg['strategy_id'] or
@@ -127,6 +167,11 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,req
                 cfg.get('strategy_config',{})!=decision.get('strategy_config',{}) or not planned or
                 any(planned[k]!=intent[k] for k in ('code','side','quantity'))):
             raise PaperError('AUTOMATION_CHANGED','PEG配置、快照或订单与保存的决策不符。')
+        if is_buffered:
+            minute=now.hour*60+now.minute
+            start,end=(602,606) if intent['side']=='sell' else (607,611)
+            if not start<=minute<end:
+                raise PaperError('PEG_WINDOW_CLOSED','已错过PEG B本轮执行窗口，等待下一交易日。')
     if intent['code'] not in decision['eligible']:
         raise PaperError('QUANT_RISK_LIMIT','股票未通过本轮行情和公司行为校验。')
     quote=valid_quote(cached,now)
@@ -136,13 +181,22 @@ def authorize_execution(paper,conn,owner,account,intent,cached,execution,now,req
     quotes={c:paper._get(conn,'minute_market',c+':1','',{}) for c in account['positions']}
     for raw in quotes.values(): valid_quote(raw,now)
     valued=value_account(account,quotes,now);equity=valued['equity_fen'];gross=quote['price_fen']*intent['quantity']
-    if equity<cfg['peak_equity_fen']*.85:
+    if not is_buffered and equity<cfg['peak_equity_fen']*.85:
         raise PaperError('QUANT_DRAWDOWN','回撤达到15%，暂停本轮自动交易。')
     day=paper._get(conn,'quant_day',decision['date'],owner,{'spent_fen':0,'budget_fen':int(equity*.3)})
     if not is_peg and (day['spent_fen']+gross>min(day['budget_fen'],int(equity*.3)) or decision['spent_fen']+gross>decision['budget_fen']):
         raise PaperError('QUANT_RISK_LIMIT','已达到每日30%调仓上限。')
     if intent['side']=='buy':
         position=account['positions'].get(intent['code'],{'quantity':0})
+        if is_buffered:
+            sectors=decision['sectors'];sector=sectors.get(intent['code'])
+            peers=[c for c in account['positions'] if sectors.get(c)==sector]
+            sector_value=sum(p['market_value_fen'] for p in valued['positions'] if sectors.get(p['code'])==sector)
+            from ..paper_rules import fees
+            if (not sector or any(c!=intent['code'] for c in peers) or
+                    intent['code'] not in account['positions'] and len(account['positions'])>=3 or
+                    sector_value+gross>(equity-fees(gross,'buy')['fees_fen'])*.6):
+                raise PaperError('QUANT_RISK_LIMIT','PEG B要求最多3只、每一级行业1只且行业资金不超过60%。')
         if (not is_peg and (valued['market_value_fen']+gross>int(equity*.8) or position['quantity']*quote['price_fen']+gross>int(equity*.2))
                 or intent['code'] not in account['positions'] and len(account['positions'])>=5):
             raise PaperError('QUANT_RISK_LIMIT','订单将超过5只持仓上限。' if is_peg else '订单将超过单票20%、总仓80%或5只持仓上限。')

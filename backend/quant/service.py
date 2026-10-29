@@ -15,6 +15,7 @@ from .features import corporate_action, features
 from .store import QuantStore
 from .strategy import StrategyRegistry
 from .peg_strategy import PEG_STRATEGY_ID, price_change_limit
+from .buffered_peg import BUFFERED_PEG_ID
 from .user_store import UserStrategyStore
 
 log=logging.getLogger(__name__)
@@ -55,7 +56,8 @@ class QuantService:
         opening=self.opening_pending(owner,config,self.clock())
         if latest and latest[0].get('revision')==config['revision'] and latest[0].get('date')==self.clock().date().isoformat() and latest[0]['status']!='running':opening=False
         return {**config,'scheduler_enabled':self.enabled,'runtime':runtime,'last_decision':latest[0] if latest else None,
-                'next_check':'重置后首次PEG建仓：今日09:30后每分钟检查，有效报价就绪后执行；之后恢复10:00' if opening else '交易日北京时间10:00后，每分钟检查；每日一次决策'}
+                'next_check':('交易日10:00决策；10:02–10:06卖出、10:07–10:11买入；错过窗口次日重新评估' if config.get('strategy_id')==BUFFERED_PEG_ID else
+                    '重置后首次PEG建仓：今日09:30后每分钟检查，有效报价就绪后执行；之后恢复10:00' if opening else '交易日北京时间10:00后，每分钟检查；每日一次决策')}
 
     def strategy(self,owner,strategy_id):
         if isinstance(strategy_id,str) and strategy_id.startswith('user-'):
@@ -80,6 +82,8 @@ class QuantService:
                     if record['revision']!=strategy_revision:
                         raise PaperError('STRATEGY_REVISION_CONFLICT','策略已更新，请刷新后重新选择。')
                     self.users.from_record(record)
+            elif strategy_id==BUFFERED_PEG_ID:
+                validator=lambda conn:self.store.initialize_buffered(conn,owner)
         return self.store.configure(owner,mode,strategy_id,expected_revision,validator=validator,strategy_config=normalized)
 
     async def load_histories(self,codes,signal):
@@ -122,7 +126,7 @@ class QuantService:
             if runtime.get('retry_at',0)>time.time(): continue
             key=now.date().isoformat()+':'+str(cfg['revision']).zfill(10)
             previous=await asyncio.to_thread(self.store.records.get,'quant_decision',key,owner,default=None)
-            if not previous and cfg['strategy_id']==PEG_STRATEGY_ID:
+            if not previous and cfg['strategy_id'] in (PEG_STRATEGY_ID,BUFFERED_PEG_ID):
                 await asyncio.to_thread(self.store.expire_peg_plans,owner,now.date().isoformat())
             if previous and previous['status']!='running': continue
             lease=await asyncio.to_thread(self.store.records.claim,'quant:'+owner,300)
@@ -142,6 +146,9 @@ class QuantService:
             finally: await asyncio.to_thread(self.store.records.release,'quant:'+owner,lease)
 
     async def run_owner(self,owner,cfg,key,token):
+        if cfg['strategy_id']==BUFFERED_PEG_ID:
+            from .buffered_execution import run_buffered
+            return await run_buffered(self,owner,cfg,key,token)
         strategy=self.strategy(owner,cfg['strategy_id'])
         is_peg=cfg['strategy_id']==PEG_STRATEGY_ID
         signal=previous_trade_day(self.clock().date())

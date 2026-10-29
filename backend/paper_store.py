@@ -91,6 +91,11 @@ class PaperStore:
             trade.update(provenance)
             sequence = account['sequence'] + 1
             updated['sequence'] = sequence
+            state=self._get(conn,'peg_b_state','state',owner,None)
+            if state is not None:
+                from .quant.buffered_peg import update_fill_state
+                update_fill_state(state,account,updated,trade)
+                self._put(conn,'peg_b_state','state',owner,state)
             saved = {**trade, 'request_id': request_id, 'sequence': sequence, 'intent': intent}
             self._put(conn, 'paper_account', 'account', owner, updated)
             self._put(conn, 'paper_trade', request_id, owner, saved)
