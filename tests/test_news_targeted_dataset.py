@@ -111,6 +111,25 @@ class TargetedDatasetTests(unittest.TestCase):
         for bad in ['null','{}','{"items":null}']:
             with self.assertRaises(ValueError):target.response_items(bad)
 
+    def test_network_failure_stops_new_batches_without_relabeling_or_retry(self):
+        import urllib.error
+        from unittest.mock import patch
+        from experiments.news_processing.storage import write_json,read_jsonl
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            write_json(root/'declaration.json',{'training_company_codes':['601857','600276'],
+                'training_publication_window':['2026-09-28','2026-10-26']})
+            articles=[{**self.article,'id':'T'+str(i)} for i in range(24)]
+            with patch.object(target,'_request',side_effect=urllib.error.URLError('temporary network')) as request:
+                result=target.run_stage(root,'facts_primary',articles,self.catalog,
+                    {'model':'test','base_url':'https://example.invalid','api_key':'test'},cap=1000000,batch_size=1)
+            self.assertGreaterEqual(request.call_count,1);self.assertLessEqual(request.call_count,3)
+            self.assertEqual(result['valid_outputs'],0)
+            self.assertEqual(read_jsonl(root/'facts_primary/labels.jsonl'),[])
+            failures=read_jsonl(root/'facts_primary/failures.jsonl')
+            self.assertEqual(len(failures),request.call_count)
+            self.assertTrue(all(row['error_type']=='URLError' for row in failures))
+
     def test_evaluation_gate_requires_fixed_weights_and_exact_sealed_material(self):
         from experiments.news_processing.storage import write_json,write_jsonl
         from experiments.news_processing.evidence_pipeline import sha

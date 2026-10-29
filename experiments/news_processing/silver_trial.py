@@ -98,10 +98,24 @@ def adapt(source,questions=None,*,for_evaluation=False):
             raise ValueError('Missing explicit event context evidence')
         context=[byid[id_] for id_ in context_ids]
     state={'news_context':context,'event_evidence':event,'publication_date':article.get('publication_date','')}
+    if 'event_focus' in inputs:
+        focus=inputs['event_focus']
+        if not isinstance(focus,dict) or set(focus)!={'quote','product'} or any(not isinstance(focus[k],str) or not focus[k] for k in focus):
+            raise ValueError('Missing literal event focus')
+        if focus['quote'] not in ''.join(event) or focus['product'] not in focus['quote']:
+            raise ValueError('Focus absent from source event')
+        state['event_focus']=focus
     if not is_fact:
         c=inputs['company']['company']
         state['target_company']={k:c.get(k,[] if k in {'products','upstream','downstream','regions'} else '')
             for k in ('code','name','products','upstream','downstream','regions')}
+        if 'industry_context' in inputs:
+            from .boundary_dataset import industry_context
+            # Full citation IDs, URLs and hashes stay bound by source_record_sha256.
+            # The classifier receives business facts, ownership and their dates.
+            state['industry_context']=[{k:q[k] for k in
+                ('company_code','company_name','field','text','as_of','published_date')}
+                for q in industry_context(inputs['industry_context'])]
     return {'id':source['id'],'article_id':source['lineage'].get('article_id',source['id'].split(':')[0].split('__')[0]),
             'group_id':source['lineage']['group_id'],'source_record_sha256':source['sha256'],
             'state':state,'questions':{qid:questions[qid]},'expected':{qid:label},

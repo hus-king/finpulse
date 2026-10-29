@@ -145,7 +145,7 @@ def response_items(content):
     return items,isinstance(parsed,list)
 
 
-def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batches=None,evaluation=False):
+def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batches=None,evaluation=False,boundary=False,path_first=False):
     """One-attempt durable stages; blind packets contain no primary relation labels."""
     root=Path(root);stage_root=root/stage
     if (root/'closed.json').exists() or (root.parent/'closed.json').exists():
@@ -157,7 +157,15 @@ def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batche
         declaration=json.loads((root/'declaration.json').read_text())
         for article in articles:
             check_training_material(article,declaration)
-    prompt=PROMPTS[stage]
+    if path_first:
+        if not stage.startswith('relations_'):raise ValueError('Path-first protocol is relation-only')
+        from . import path_first_dataset as protocol
+    elif boundary:
+        from . import boundary_dataset as protocol
+    packet_fn=protocol.teacher_packet if boundary or path_first else teacher_packet
+    fact_fn=protocol.check_fact if boundary and not path_first else check_fact
+    relations_fn=protocol.check_relations if boundary or path_first else check_relations
+    prompt=(protocol.PROMPTS if boundary or path_first else PROMPTS)[stage]
     url=config['base_url'].rstrip('/')
     if not url.endswith('/chat/completions'):url+='/chat/completions'
     if not url.startswith('https://'):raise ValueError('HTTPS required')
@@ -165,11 +173,15 @@ def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batche
         raise ValueError('Relations require frozen reviewed source facts')
     identity={'model':config['model'],'endpoint':url}
     policy={'max_attempts':200,'token_soft_stop':cap,'token_hard_cap':cap,'attempts_per_batch':1,
-            'batch_size':batch_size,'max_output_tokens':6000,'workers':3,'stage':stage,
-            'prompt_sha256':digest(prompt),'input_sha256':digest(teacher_packet(stage,articles,catalog)),
+            'batch_size':batch_size,'max_output_tokens':12000 if (boundary or path_first) and stage.startswith('relations_') else 6000,'workers':3,'stage':stage,
+            'prompt_sha256':digest(prompt),'input_sha256':digest(packet_fn(stage,articles,catalog)),
             'model_identity':identity,'executed_code_sha256':sha(__file__),
             'bulk_code_sha256':sha(bulk.__file__),'purpose':'evaluation' if evaluation else 'training',
             'fixed_evaluation_checkpoint_sha256':checkpoint}
+    if boundary:policy['boundary_code_sha256']=sha(protocol.__file__)
+    if path_first:
+        policy['path_protocol_code_sha256']=sha(protocol.__file__)
+        policy['boundary_code_sha256']=sha(protocol.boundary.__file__)
     with Journal(stage_root,policy) as journal:
         budget=PreflightBudget(journal,cap);stop=threading.Event()
         attempted={k for row in read_jsonl(stage_root/'attempts.jsonl') for k in row.get('keys',[])}
@@ -178,7 +190,7 @@ def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batche
 
         def one(chunk):
             if stop.is_set():return
-            content=teacher_packet(stage,chunk,catalog)
+            content=packet_fn(stage,chunk,catalog)
             key=digest({'input':content,'prompt':prompt,'identity':identity})
             if key in attempted:return
             thinking={'enable_thinking':False} if config['model'].startswith('qwen/') else {'thinking':{'type':'disabled'}}
@@ -206,8 +218,8 @@ def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batche
                     try:
                         if len(values)!=1:raise ValueError('Missing or duplicate article output')
                         if stage.startswith('facts_'):
-                            answer=check_fact(article,values[0],review=stage=='facts_review')
-                        else:answer,pair_errors=check_relations(article,catalog,values[0])
+                            answer=fact_fn(article,values[0],review=stage=='facts_review')
+                        else:answer,pair_errors=relations_fn(article,catalog,values[0])
                     except (KeyError,TypeError,ValueError) as exc:error=str(exc)
                     journal.append('labels.jsonl',{'id':article['id'],'attempt':attempt,'raw_items':values,
                                                    'answer':answer,'error':error,'pair_errors':pair_errors,
@@ -216,7 +228,8 @@ def run_stage(root,stage,articles,catalog,config,*,cap,batch_size=8,limit_batche
                 status=exc.code if isinstance(exc,urllib.error.HTTPError) else None
                 journal.append('failures.jsonl',{'attempt':attempt,'ids':[a['id'] for a in chunk],
                                                 'error_type':type(exc).__name__,'http_status':status})
-                if status in {400,401,402,403,404,422,429}:stop.set()
+                if status in {400,401,402,403,404,422,429} or isinstance(exc,(urllib.error.URLError,TimeoutError,ConnectionError)):
+                    stop.set()
 
         with ThreadPoolExecutor(max_workers=3) as pool:list(pool.map(one,chunks))
         labels=read_jsonl(stage_root/'labels.jsonl')
