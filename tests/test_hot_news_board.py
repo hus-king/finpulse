@@ -289,6 +289,19 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first[0]['screening']['method'], 'model')
         with patch('backend.hot_news_board.read_config', return_value={'model': 'different', 'api_key': 'not-a-real-key'}):
             await self.service.screen([topic()])
+
+    async def test_model_cache_separates_platform_summary_from_reported_excerpt(self):
+        async def complete(messages, **kwargs):
+            data = json.loads(messages[1]['content'])['topics']
+            return {'content': json.dumps({'items': [model_row(item) for item in data]}), 'model': 'fixture'}
+        self.completion.side_effect = complete
+        plain = topic()
+        reported = {**topic(), 'sources': [{'id': 'tushare_cls', 'kind': 'news'}]}
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            await self.service.screen([plain])
+            await self.service.screen([reported])
+            await self.service.screen([plain])
+        self.assertEqual(self.completion.await_count, 2)
         self.assertEqual(self.completion.await_count, 3)
 
     async def test_invalid_model_output_falls_back_without_losing_review_items(self):

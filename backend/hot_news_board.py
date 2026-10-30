@@ -352,7 +352,8 @@ class HotNewsBoardService:
         configured = bool(config.get('model') and config.get('api_key'))
         pending, results, warnings = [], {}, []
         for topic in topics:
-            key = digest([VERSION, SYSTEM, model_identity, topic['title'], topic['summary']])
+            reported = any(source.get('kind') == 'news' for source in topic.get('sources', []))
+            key = digest([VERSION, SYSTEM, model_identity, topic['title'], topic['summary'], reported])
             cached = await asyncio.to_thread(self.store.get, 'hot_news_screen', key)
             if editorial_reason(topic):
                 results[topic['id']] = rule_screen(topic)

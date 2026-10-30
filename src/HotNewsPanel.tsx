@@ -165,7 +165,7 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
         </article>
       </li>)}</ol>
       {current && !loading && !topics.length && <div className="hot-empty"><p>{current.candidate_total ? '没有符合当前条件的新闻，可调整关键词或影响类型。' : '暂时没有符合标准的重要新事件。可以更新热点；不会用泛话题或消费小事填满榜单。'}</p>{filtering && <button className="hot-reset" onClick={resetFilters}>重置筛选</button>}</div>}
-      {current && current.matched_total > topics.length && <button className="hot-show-all" onClick={() => setLimit(100)}>显示全部匹配热点（{current.matched_total} 条）</button>}
+      {current && current.matched_total > topics.length && topics.length < 100 && <button className="hot-show-all" onClick={() => setLimit(100)}>显示更多匹配热点（最多100条）</button>}
       <footer className="hot-note"><p>{feed?.ranking_note ?? '榜单保留原平台名次、热度和采集时间。'}</p><p>选择热点可核对其与自选股的业务关联、利好利空及原文依据。</p></footer>
     </section>
     {selected && <HotStockImpactPanel key={`${selected.id}:${watchKey}`} topic={selected} watchlist={watchlist} ready={watchReady} close={() => setSelected(null)} returnFocus={impactOpener.current} onResult={rememberImpact} matching={matching} />}
