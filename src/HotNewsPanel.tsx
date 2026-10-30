@@ -22,7 +22,7 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('hot');
-  const [limit, setLimit] = useState(50);
+  const limit = 6;
   const [reload, setReload] = useState(0);
   const [selected, setSelected] = useState<HotTopic | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,12 +96,12 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
   }
 
   function resetFilters() {
-    setSource('all'); setChannel('all'); setSearch(''); setQuery(''); setSort('hot'); setLimit(50);
+    setSource('all'); setChannel('all'); setSearch(''); setQuery(''); setSort('hot');
   }
   const topics = current?.items ?? [];
-  const filtering = source !== 'all' || channel !== 'all' || !!search.trim() || sort !== 'hot' || limit !== 50;
+  const filtering = source !== 'all' || channel !== 'all' || !!search.trim() || sort !== 'hot';
   return <section className="hot-news-workspace" aria-label="市场相关热点榜单">
-    <header className="hot-toolbar panel"><div><Flame size={24} /><div><h2>国内国际 · 重要热点新闻</h2><p>每个平台最多采集20条，按事件指向、重复传播、重要性、舆论和具体事实综合评分。</p></div></div>
+    <header className="hot-toolbar panel"><div><Flame size={24} /><div><h2>国内国际 · 重要热点新闻</h2><p>每个平台最多采集20条，仅展示通过筛选后综合评分最高的6条新闻。</p></div></div>
       <button className="primary-button" onClick={() => void refresh()} disabled={refreshing || loading}>
         {refreshing ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{refreshing ? '更新进行中…' : '更新热点'}
       </button>
@@ -126,7 +126,6 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
         <label>来源<select aria-label="筛选热榜来源" value={source} onChange={event => setSource(event.target.value)} disabled={refreshing}><option value="all">全部平台</option>{feed?.sources.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label>影响类型<select aria-label="筛选经济影响类型" value={channel} onChange={event => setChannel(event.target.value)} disabled={refreshing}><option value="all">全部影响类型</option>{Object.entries(channels).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
         <label>排序<select aria-label="热点排序方式" value={sort} onChange={event => setSort(event.target.value)} disabled={refreshing}><option value="hot">综合评分优先</option><option value="latest">最近更新</option></select></label>
-        <label>展示条数<select aria-label="热点展示条数" value={limit} onChange={event => setLimit(Number(event.target.value))} disabled={refreshing}>{[20, 50, 100].map(value => <option key={value} value={value}>{value} 条</option>)}</select></label>
       </div>
       {current && !loading && <p className="hot-result-count" role="status">当前条件匹配 {current.matched_total} 条重要热点，展示 {topics.length} 条。{channel !== 'all' ? '影响类型仅适用于已识别市场入口的事件。' : ''}</p>}
       {loading && <p className="hot-empty" role="status">正在读取热点榜单…</p>}
@@ -165,7 +164,6 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
         </article>
       </li>)}</ol>
       {current && !loading && !topics.length && <div className="hot-empty"><p>{current.candidate_total ? '没有符合当前条件的新闻，可调整关键词或影响类型。' : '暂时没有符合标准的重要新事件。可以更新热点；不会用泛话题或消费小事填满榜单。'}</p>{filtering && <button className="hot-reset" onClick={resetFilters}>重置筛选</button>}</div>}
-      {current && current.matched_total > topics.length && topics.length < 100 && <button className="hot-show-all" onClick={() => setLimit(100)}>显示更多匹配热点（最多100条）</button>}
       <footer className="hot-note"><p>{feed?.ranking_note ?? '榜单保留原平台名次、热度和采集时间。'}</p><p>选择热点可核对其与自选股的业务关联、利好利空及原文依据。</p></footer>
     </section>
     {selected && <HotStockImpactPanel key={`${selected.id}:${watchKey}`} topic={selected} watchlist={watchlist} ready={watchReady} close={() => setSelected(null)} returnFocus={impactOpener.current} onResult={rememberImpact} matching={matching} />}

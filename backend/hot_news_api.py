@@ -52,7 +52,7 @@ async def feed(response: Response,
                channel: Literal['all', 'trade', 'supply', 'cost', 'demand', 'regulation', 'funding', 'risk'] = 'all',
                q: str = Query(default='', max_length=80),
                sort: Literal['hot', 'latest'] = 'hot',
-               limit: int = Query(default=100, ge=1, le=100),
+               limit: int = Query(default=6, ge=1, le=100),
                news=Depends(service)):
     response.headers['Cache-Control'] = 'no-store'
     def read():

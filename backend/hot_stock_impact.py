@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from .catalog import DEFAULT_WATCHLIST
 from .hot_stock_scoring import SCORING_SYSTEM, validate_scores
-from .hot_news_board import digest
+from .hot_news_board import digest, public_board
 from .hot_news_events import validate_event
 from .news_cleaning import SHANGHAI, get_stock_aliases
 from .providers import read_config
@@ -44,11 +44,17 @@ class HotStockImpactService:
         self.requests = asyncio.Semaphore(2)
 
     def topic(self, topic_id):
-        topic = next((row for row in self.board.feed()['items'] if row['id'] == topic_id), None)
+        topic = next((row for row in self.published_topics() if row['id'] == topic_id), None)
         if topic and not self.published(topic): topic = None
         if topic is None:
             raise HTTPException(404, '该热点已不在当前榜单，请更新热点后重试。')
         return topic
+
+    def published_topics(self):
+        feed = self.board.feed()
+        ids = {row['id'] for row in public_board(feed)['items']}
+        # Keep the original bounded body for analysis; public payloads omit it.
+        return [row for row in feed['items'] if row['id'] in ids]
 
     @staticmethod
     def published(topic):
@@ -107,7 +113,7 @@ class HotStockImpactService:
     def snapshots(self, topic_ids, owner):
         """One feed/watchlist read, no upstream collection or model invocation."""
         requested = set(topic_ids)
-        topics = [row for row in self.board.feed()['items'] if row['id'] in requested and self.published(row)]
+        topics = [row for row in self.published_topics() if row['id'] in requested and self.published(row)]
         stocks = self.stocks(owner); config = read_config()
         records = self.store.get_many(NAMESPACE, [self.key(topic, stock, config) for topic in topics for stock in stocks], owner)
         return {'items': [self._assemble(topic, stocks, records, config, preview=True) for topic in topics],

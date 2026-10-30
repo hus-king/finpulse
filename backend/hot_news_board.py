@@ -21,7 +21,7 @@ from .tushare_news import NEWS_SOURCES, configured_sources, fetch_news
 from .hot_news_events import EVENT_PROMPT, NewsEvent, editorial_reason, rule_event, validate_event
 from .hot_news_attention import GROUPING_VERSION, attach_attention, cluster_events
 from .hot_platforms import PLATFORMS, fetch_platform
-from .hot_news_limits import PER_SOURCE_LIMIT
+from .hot_news_limits import PER_SOURCE_LIMIT, PUBLIC_NEWS_LIMIT
 from .hot_news_scoring import NewsRubric, RUBRIC_PROMPT, SCORING_VERSION, validate_rubric, attach_scores
 from .tushare_news import ACTIVE_SOURCES
 from .hot_sectors import SECTORS, SectorImpact, present_sectors, rule_sectors, validate_sectors
@@ -223,9 +223,14 @@ def public_board(feed, **filters):
         except (ValueError, KeyError, TypeError):
             continue
         accepted.append(topic)
-    result = filter_board({**feed, 'items': deduplicate_reports(accepted)}, decision='keep', **filters)
+    # Select globally before query/source/latest filters so they cannot expose
+    # a seventh lower-scoring candidate or change the publication decision.
+    selected = filter_board({**feed, 'items': deduplicate_reports(accepted)},
+                            decision='keep', sort='hot', limit=PUBLIC_NEWS_LIMIT)['items']
+    result = filter_board({**feed, 'items': selected}, decision='keep', **filters)
     result['items'] = [{key: value for key, value in row.items() if not key.startswith('_')} for row in result['items']]
     result['counts'] = {'keep': result['matched_total']}
+    result['publication_limit'] = PUBLIC_NEWS_LIMIT
     return result
 
 
