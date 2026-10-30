@@ -27,6 +27,22 @@ class EventGroups(BaseModel):
     groups: list[EventGroup] = Field(max_length=50)
 
 
+def retain_valid_groups(content, topics):
+    """Reject unsupported merge proposals independently, preserving every input."""
+    proposals = parse_json(content, EventGroups)['groups']
+    accepted, rejected, used = [], [], set()
+    for group in proposals:
+        try:
+            if used.intersection(group['topic_ids']): raise ValueError('Overlapping event proposal')
+            validate_groups(json.dumps({'groups': [group]}, ensure_ascii=False), topics)
+        except (ValueError, TypeError) as error:
+            rejected.append({'topic_ids': group['topic_ids'], 'reason': str(error)[:240]})
+            continue
+        accepted.append(group); used.update(group['topic_ids'])
+    groups = validate_groups(json.dumps({'groups': accepted}, ensure_ascii=False), topics)
+    return groups, rejected
+
+
 def validate_groups(content, topics):
     groups = parse_json(content, EventGroups)['groups']
     by_id = {topic['id']: topic for topic in topics}
@@ -36,8 +52,10 @@ def validate_groups(content, topics):
         anchor = group['anchor'].strip()
         if len(anchor) < 2 or anchor in ('公司', '新闻', '发展', '市场', '回应', '中国', '美国', '宣布', '发布'):
             raise ValueError('Generic event anchor')
-        if any(anchor not in by_id[key]['title'] + '\n' + by_id[key].get('summary', '') for key in group['topic_ids']):
-            raise ValueError('Event anchor is not shared by members')
+        mismatched = [key for key in group['topic_ids']
+                      if anchor not in by_id[key]['title'] + '\n' + by_id[key].get('summary', '')]
+        if mismatched:
+            raise ValueError(f'Event anchor {anchor!r} is absent from members {mismatched[:8]}')
     # Unmentioned inputs are retained, never interpreted as rejected news.
     groups.extend({'label': topic['title'][:60], 'anchor': '', 'topic_ids': [topic['id']]}
                   for topic in topics if topic['id'] not in set(ids))
@@ -112,16 +130,36 @@ async def cluster_events(topics, completion, store, model_identity):
     try:
         import asyncio
         cached = await asyncio.to_thread(store.get, 'hot_event_groups', key)
+        warning = None
         if cached:
-            groups = validate_groups(json.dumps(cached, ensure_ascii=False), material)
+            groups = validate_groups(json.dumps({'groups': cached['groups']}, ensure_ascii=False), material)
+            if cached.get('split_unverified'):
+                warning = '部分归组提议缺少共同原文证据，已拆为独立报道，不计作重复事件。'
         else:
             short_to_full = {'t' + str(index): topic['id'] for index, topic in enumerate(material)}
             compact = [{**topic, 'id': short_id} for short_id, topic in zip(short_to_full, material)]
-            reply = await completion([{'role': 'system', 'content': GROUP_SYSTEM}, {'role': 'user', 'content': json.dumps({'topics': compact}, ensure_ascii=False)}], max_tokens=8000)
-            groups = validate_groups(reply['content'], compact)
+            messages = [{'role': 'system', 'content': GROUP_SYSTEM}, {'role': 'user', 'content': json.dumps({'topics': compact}, ensure_ascii=False)}]
+            for attempt in range(2):
+                reply = await completion(messages, max_tokens=8000)
+                try:
+                    groups = validate_groups(reply['content'], compact)
+                    break
+                except (ValueError, TypeError) as error:
+                    if attempt:
+                        groups, rejected = retain_valid_groups(reply['content'], compact)
+                        if rejected:
+                            warning = '部分归组提议缺少共同原文证据，已拆为独立报道，不计作重复事件。'
+                            await asyncio.to_thread(store.put, 'hot_event_group_rejections', key,
+                                {'rejected': [{**item, 'topic_ids': [short_to_full.get(identity, identity)
+                                               for identity in item['topic_ids']]} for item in rejected], 'topics': len(compact)})
+                        break
+                    messages.extend([{'role': 'assistant', 'content': reply['content']}, {'role': 'user', 'content':
+                        '归组校验未通过：' + str(error)[:180] + '。只修复ID覆盖和anchor引文：每组anchor必须逐字出现在每条成员的title或summary中。'
+                        '没有共同的具体主体词就拆开，不归组，不用泛词或自行改写主体。只输出完整JSON。'}])
             for group in groups: group['topic_ids'] = [short_to_full[topic_id] for topic_id in group['topic_ids']]
-            await asyncio.to_thread(store.put, 'hot_event_groups', key, {'groups': [group for group in groups if len(group['topic_ids']) > 1]})
-        return group_reports(selected, groups) + remaining, None
+            await asyncio.to_thread(store.put, 'hot_event_groups', key, {'groups': [group for group in groups if len(group['topic_ids']) > 1],
+                                                                       'split_unverified': bool(warning)})
+        return group_reports(selected, groups) + remaining, warning
     except Exception as error:
         try:
             await asyncio.to_thread(store.put, 'hot_event_group_errors', key,

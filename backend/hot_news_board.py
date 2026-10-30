@@ -181,8 +181,13 @@ def validate_screening(content, topics):
         if row['evidence'] not in topic['title'] + '\n' + topic['summary']:
             raise ValueError('Screening evidence does not match')
         validate_sectors(row['sectors'], topic['title'] + '\n' + topic['summary'])
-        if row.get('rubric') is not None:
-            row['rubric'] = validate_rubric(row['rubric'], topic['title'] + '\n' + topic['summary'], topic.get('reported', False))
+        if row['decision'] != 'keep':
+            row['rubric'] = None
+        elif row.get('rubric') is not None:
+            try:
+                row['rubric'] = validate_rubric(row['rubric'], topic['title'] + '\n' + topic['summary'], topic.get('reported', False))
+            except ValueError as error:
+                raise ValueError(f'Topic {row["id"]}: {error}') from None
         if row['decision'] == 'keep':
             if editorial_reason(topic): raise ValueError('Commentary cannot be kept as an event')
             validate_event(row['event'], topic['title'] + '\n' + topic['summary'])
@@ -369,13 +374,32 @@ class HotNewsBoardService:
                 data = [{key: topic[key] for key in ('id', 'title', 'summary')} for topic, _ in batch]
                 for data_row, (topic, _) in zip(data, batch):
                     data_row['reported'] = any(source.get('kind') == 'news' for source in topic.get('sources', []))
+                messages = [{'role': 'system', 'content': SYSTEM},
+                            {'role': 'user', 'content': json.dumps({'topics': data}, ensure_ascii=False)}]
                 try:
-                    reply = await self.completion([{'role': 'system', 'content': SYSTEM},
-                        {'role': 'user', 'content': json.dumps({'topics': data}, ensure_ascii=False)}], max_tokens=10000)
-                    parsed = validate_screening(reply['content'], data)
-                    if any(row.get('rubric') is None for row in parsed):
+                    for attempt in range(2):
+                        reply = None
+                        try:
+                            reply = await self.completion(messages, max_tokens=10000)
+                            parsed = validate_screening(reply['content'], data)
+                            break
+                        except (HTTPException, ValueError, TypeError) as error:
+                            # A single contract/quotation repair, never retries for a target score.
+                            repairable = not isinstance(error, HTTPException) or (
+                                error.status_code == 502 and '长度上限' in str(error.detail))
+                            if attempt or not repairable: raise
+                            if reply: messages.append({'role': 'assistant', 'content': reply['content']})
+                            messages.append({'role': 'user', 'content':
+                                '当前校验错误：' + str(error.detail if isinstance(error, HTTPException) else error)[:300] +
+                                '。上一轮字段、原文引用校验未通过或输出被截断。只修复JSON结构、完整ID覆盖、字段枚举和逐字引用，'
+                                '引文从输入复制且不改标点。保留rubric与四类evidence，精简说明；不得为了通过校验提高分数或编造事实。'})
+                    if any(row['decision'] == 'keep' and row.get('rubric') is None for row in parsed):
                         warnings.append('部分新闻缺少模型评分维度，使用保守规则评分，舆论信息记为未知。')
-                except (HTTPException, ValueError, TypeError):
+                except (HTTPException, ValueError, TypeError) as error:
+                    audit_key = digest([VERSION, model_identity, [topic['id'] for topic, _ in batch]])
+                    await asyncio.to_thread(self.store.put, 'hot_news_screen_errors', audit_key,
+                        {'error_type': type(error).__name__, 'reason': str(error.detail if isinstance(error, HTTPException) else error)[:400],
+                         'topic_ids': [topic['id'] for topic, _ in batch], 'attempts': attempt + 1})
                     warnings.append('部分话题的模型筛选未完成，已标记为规则初筛；待核实项不会当作无关删除。')
                     for topic, _ in batch:
                         results[topic['id']] = rule_screen(topic)
@@ -383,7 +407,7 @@ class HotNewsBoardService:
                     return
                 keys = {topic['id']: key for topic, key in batch}
                 for row in parsed:
-                    value = {**row, 'method': 'model', 'model': reply.get('model')}
+                    value = {**row, 'method': 'model', 'model': reply.get('model'), 'repair_attempted': bool(attempt)}
                     results[row['id']] = value
                     await asyncio.to_thread(self.store.put, 'hot_news_screen', keys[row['id']], value)
                 if progress: await progress(len(results), len(topics))

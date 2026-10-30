@@ -62,7 +62,7 @@ async def lifespan(application):
     async def invoke(messages, max_tokens=1100):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)
-    application.state.hot_news = HotNewsBoardService(research_store, invoke)
+    application.state.hot_news = HotNewsBoardService(research_store, hot_news_completion)
     application.state.hot_stock_impact = HotStockImpactService(application.state.research, application.state.hot_news)
     application.state.hot_news_matches = HotNewsMatchService(application.state.hot_stock_impact)
     application.state.peg = PegService(research_store)
@@ -156,30 +156,39 @@ class AnalysisRequest(BaseModel):
     stock_name: str = Field(min_length=1, max_length=50)
 
 
-async def completion(messages, max_tokens=1100):
+async def hot_news_completion(messages, max_tokens=1100):
+    return await completion(messages, max_tokens, disable_thinking=True)
+
+
+async def completion(messages, max_tokens=1100, *, disable_thinking=False):
     try:
         await asyncio.wait_for(app.state.model_capacity.acquire(), timeout=30)
     except TimeoutError:
         raise HTTPException(429, '模型请求繁忙，请稍后重试。') from None
     try:
+        if disable_thinking:
+            return await _completion(messages, max_tokens, disable_thinking=True)
         return await _completion(messages, max_tokens)
     finally:
         app.state.model_capacity.release()
 
 
-async def _completion(messages, max_tokens=1100):
+async def _completion(messages, max_tokens=1100, *, disable_thinking=False):
     config = load_config()
     request_id = uuid.uuid4().hex[:12]
     url = config.base_url.rstrip("/")
     if not url.endswith("/chat/completions"):
         url += "/chat/completions"
     started = time.perf_counter()
+    payload = {"model": config.model, "messages": messages, "temperature": 0.4,
+               "max_tokens": max_tokens, "stream": False}
+    # This provider/model combination supports the explicit thinking switch.
+    # Other callers and providers retain their existing request contract.
+    if disable_thinking and urlparse(config.base_url).hostname == 'api.ppio.com' and 'deepseek' in config.model.lower():
+        payload['thinking'] = {'type': 'disabled'}
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=10), follow_redirects=False) as client:
-            response = await client.post(url, headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"}, json={
-                "model": config.model, "messages": messages, "temperature": 0.4,
-                "max_tokens": max_tokens, "stream": False,
-            })
+            response = await client.post(url, headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"}, json=payload)
     except httpx.TimeoutException:
         raise HTTPException(504, "模型请求超时，请稍后重试。") from None
     except httpx.RequestError:

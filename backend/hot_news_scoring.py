@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SCORING_VERSION = 'newsworthiness-v1'
 RUBRIC_PROMPT = '''每项还必须包含rubric对象，用于100分新闻入榜优先级，不能与个股利好利空分数混用。
+只有decision=keep才必须提供完整rubric；review/exclude直接用rubric=null，不为非新闻材料编造事件证据或评分依据。
 rubric只含以下字段，各项只能从给定分值选择：identity(0/4/6，主体模糊/可定位/身份明确)，target(0/5，是否明确具体政策产品业务或合作对象)，scope(0/2/4，范围缺失/范围明确/具体规模或名单)，importance(0/5/12/18/25，无实质变化/局部轻微/明确经营变化/重大公司产业品牌安全声誉事件/重大公共系统性事件)，attitude(0/3/5，无态度证据/有归属观点/鲜明态度诉求)，intensity(0/3/5，普通/明显反应/强烈反应)，concentration(0/3/5，个别或未知/多份材料支持一致态度或两方争论/有足够样本支持高度集中或持续对立)，action(0/5，模糊概括/具体动作)，newness(0/3/5，背景或假设/新进展细节少/明确新增事实)，traceability(0/2/5，无材料/平台标题摘要支持/有可追溯报道或公告摘录)，evidence对象包含specificity、importance、opinion、event四个字符串。
 四项evidence必须逐字摘录输入title或summary；没有舆论证据时opinion为空且三个舆论项均0，不得从热榜名次推测评论比例。只有平台话题而无报道摘录时traceability最高2。夸张标题、震惊或全网炸锅等词不能单独证明强烈舆论。
 品牌产品安全的具体测试质疑、监管行动及重要代言争议引发正式解约，可属于18分重要事件；实际定性、发生范围与来源归属必须按材料表述，不编造缺陷确认。普通合作到期、小事或无具体对象的安全议论不能套用此分值。不得针对特定品牌硬编码分数。重复次数和总分由程序计算，不输出这两项。'''
@@ -36,14 +37,20 @@ class NewsRubric(BaseModel):
 
 def validate_rubric(rubric, material, reported=False):
     values = NewsRubric.model_validate(rubric).model_dump()
+    dimensions = {'specificity': ('identity', 'target', 'scope'), 'importance': ('importance',),
+                  'opinion': ('attitude', 'intensity', 'concentration'), 'event': ('action', 'newness', 'traceability')}
     totals = {'specificity': values['identity'] + values['target'] + values['scope'],
               'importance': values['importance'],
               'opinion': values['attitude'] + values['intensity'] + values['concentration'],
               'event': values['action'] + values['newness'] + values['traceability']}
     for key, score in totals.items():
         quote = values['evidence'][key].strip()
+        # Missing support earns zero points; an invented quotation is still rejected.
+        if not quote:
+            for field in dimensions[key]: values[field] = 0
+            continue
         if (score and len(quote) < 2) or (quote and quote not in material):
-            raise ValueError('Newsworthiness quotation mismatch: ' + key)
+            raise ValueError(f'Newsworthiness quotation mismatch: {key}, quote={quote!r}')
     if not reported: values['traceability'] = min(values['traceability'], 2)
     return values
 

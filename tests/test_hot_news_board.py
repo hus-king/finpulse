@@ -312,6 +312,37 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(warnings)
         self.assertTrue(all(item['screening']['method'] == 'rules' for item in result))
         self.assertEqual(self.store.list('hot_news_screen'), [])
+        self.assertEqual(self.completion.await_count, 2)
+        self.assertEqual(self.store.list('hot_news_screen_errors')[0]['value']['attempts'], 2)
+
+    async def test_one_structure_repair_preserves_valid_model_result(self):
+        item = topic()
+        self.completion.side_effect = [{'content': '{invalid'}, {'content': json.dumps({'items': [model_row(item)]})}]
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            rows, _ = await self.service.screen([item])
+        self.assertEqual(self.completion.await_count, 2)
+        self.assertEqual(rows[0]['screening']['method'], 'model')
+        self.assertTrue(rows[0]['screening']['repair_attempted'])
+        self.assertEqual(self.store.list('hot_news_screen_errors'), [])
+
+    async def test_rate_limit_is_not_retried_as_a_structure_failure(self):
+        self.completion.side_effect = HTTPException(429, 'fixture rate limit')
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            rows, _ = await self.service.screen([topic()])
+        self.assertEqual(self.completion.await_count, 1)
+        self.assertEqual(rows[0]['screening']['method'], 'rules')
+
+    async def test_unselected_material_needs_no_fabricated_rubric_evidence(self):
+        item = topic()
+        reply = {**model_row(item), 'decision': 'review', 'channels': [], 'rubric': None}
+        self.completion.return_value = {'content': json.dumps({'items': [reply]})}
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            rows, warnings = await self.service.screen([item])
+        self.assertEqual(rows[0]['screening']['decision'], 'review')
+        self.assertIsNone(rows[0]['screening']['rubric'])
+        self.assertEqual(rows[0]['screening']['method'], 'model')
+        self.assertFalse(warnings)
+        self.assertEqual(self.completion.await_count, 1)
 
     async def test_batches_are_bounded_and_complete(self):
         sizes = []

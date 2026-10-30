@@ -74,6 +74,15 @@ class ScoringTests(unittest.TestCase):
         invalid = deepcopy(rubric); invalid['importance'] = 24
         with self.assertRaises(ValueError): validate_rubric(invalid, row['title'])
 
+    def test_missing_evidence_earns_zero_instead_of_unearned_points(self):
+        row = topic()
+        rubric = row['screening']['rubric']
+        rubric['evidence']['opinion'] = ''
+        rubric['evidence']['importance'] = ''
+        parsed = validate_rubric(rubric, row['title'])
+        self.assertEqual(parsed['attitude'] + parsed['intensity'] + parsed['concentration'], 0)
+        self.assertEqual(parsed['importance'], 0)
+
     def test_candidate_is_not_returned_by_public_api(self):
         row = topic()
         row['newsworthiness'] = {'decision': 'candidate'}
