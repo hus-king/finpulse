@@ -84,7 +84,7 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
       kineticScroll: { mouse: true, touch: true },
       rightPriceScale: { minimumWidth: 66, borderVisible: true },
-      timeScale: { minBarSpacing: .5, rightOffset: 5, lockVisibleTimeRangeOnResize: true, ignoreWhitespaceIndices: false },
+      timeScale: { minBarSpacing: .5, rightOffset: 0, lockVisibleTimeRangeOnResize: true, ignoreWhitespaceIndices: false },
       localization: { locale: 'zh-CN' },
     });
     instance.current = chart;
@@ -157,7 +157,7 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
       grid: { vertLines: { color: color('grid'), style: LineStyle.Dotted }, horzLines: { color: color('grid'), style: LineStyle.Dotted } },
       crosshair: { vertLine: { color: color('crosshair'), style: LineStyle.Dashed, labelBackgroundColor: color('crosshair') }, horzLine: { color: color('crosshair'), style: LineStyle.Dashed, labelBackgroundColor: color('crosshair') } },
       rightPriceScale: { borderColor: color('border'), mode: PriceScaleMode.Normal },
-      timeScale: { borderColor: color('border'), fixLeftEdge: intraday, fixRightEdge: false, timeVisible: intraday || period.endsWith('分钟'), secondsVisible: false,
+      timeScale: { borderColor: color('border'), fixLeftEdge: intraday, fixRightEdge: !intraday, timeVisible: intraday || period.endsWith('分钟'), secondsVisible: false,
         tickMarkFormatter: (time: Time) => {
           const date = new Date(Number(time) * 1000).toISOString();
           if (intraday) return date.slice(11, 16) === '11:30' ? '11:30/13:00' : date.slice(11, 16);
@@ -233,7 +233,7 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
     const scale = instance.current?.timeScale(), range = scale?.getVisibleLogicalRange();
     if (!scale || !range) return;
     if (intraday && plot.latestIndex < 0) { reset(); return; }
-    const end = intraday ? Math.min(plot.dates.length - .5, plot.latestIndex + 4) : plot.dates.length + 4;
+    const end = intraday ? Math.min(plot.dates.length - .5, plot.latestIndex + 4) : plot.dates.length - 1;
     scale.setVisibleLogicalRange({ from: end - (range.to - range.from), to: end });
   }
   function values(lines: IndicatorLine[], unit: IndicatorResult['unit']) {

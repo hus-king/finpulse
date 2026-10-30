@@ -14,5 +14,5 @@ export function initialChartRange(dates: readonly string[], period: string, mode
   const days = [...new Set(dates.map(date => date.slice(0, 10)))];
   const from = period.endsWith('分钟') ? mode === '当日' ? days.at(-1)! : days.slice(-5)[0] : cutoff.toISOString().slice(0, 10);
   const first = mode === '全部' ? 0 : Math.max(0, dates.findIndex(date => date >= from));
-  return { from: first - .5, to: dates.length + 4 };
+  return { from: first - .5, to: dates.length - 1 };
 }

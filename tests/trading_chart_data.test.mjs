@@ -16,9 +16,14 @@ test('fixed intraday range includes missing and future slots, with no generated 
  assert.equal(chartTimestamp(plot.dates[3])-chartTimestamp(plot.dates[2]),90*60);
  assert.deepEqual(initialChartRange([],'分时','当日'),null);
 });
-test('daily/month and minute/day resets select existing bars and retain right-side space',()=>{
+test('daily/month and minute/day resets end at the newest candle without future space',()=>{
  const dates=['2026-06-01','2026-09-01','2026-10-01','2026-10-30'];
- assert.deepEqual(initialChartRange(dates,'日 K','近 1 月'),{from:1.5,to:8});
- assert.deepEqual(initialChartRange(dates,'日 K','全部'),{from:-.5,to:8});
- assert.deepEqual(initialChartRange(['2026-10-29 15:00:00','2026-10-30 09:31:00'],'1 分钟','当日'),{from:.5,to:6});
+ assert.deepEqual(initialChartRange(dates,'日 K','近 1 月'),{from:1.5,to:3});
+ assert.deepEqual(initialChartRange(dates,'日 K','全部'),{from:-.5,to:3});
+ assert.deepEqual(initialChartRange(['2026-10-29 15:00:00','2026-10-30 09:31:00'],'1 分钟','当日'),{from:.5,to:1});
+});
+
+test('weekly and single-candle ranges also stop at the newest index',()=>{
+ assert.equal(initialChartRange(['2026-10-19','2026-10-26'],'周 K','全部').to,1);
+ assert.deepEqual(initialChartRange(['2026-10-30'],'日 K','全部'),{from:-.5,to:0});
 });
