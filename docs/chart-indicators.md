@@ -1,5 +1,14 @@
 # 图表指标与数值栏
 
+## 图表操作
+
+行情主图与指标副图使用 TradingView 官方开源 Lightweight Charts 5.2.1；其他统计图继续使用 ECharts。滚轮以光标位置为中心缩放，按住图内拖动平移，触控支持横向拖动与双指缩放。拖动时间轴／价格轴调整刻度，双击坐标轴恢复自动刻度。各副图共享时间轴及十字光标，分隔线可拖动调整高度。
+
+图表上方提供放大、缩小、复位、回到最新、全屏按钮；Esc 先关闭指标菜单，再退出全屏。分时的 `%` 按钮把价格轴切换为相对昨收的涨跌幅；副图保持各自原有单位。分时默认保留09:30—15:00完整交易日，午休折叠；未到时段和缺失分钟不补行情。后台刷新和主题切换保留当前时间范围；切换股票、周期或显示范围恢复对应默认范围。回到最新在分时缩放后定位最新实际分钟，不定位到尚无数据的收盘时段。
+
+按用户要求，K线内不显示新闻N字或圆点；新闻从下方列表查看。此为接入开源图表引擎，未引入TradingView完整网站、Pine脚本或绘图工具箱。保留官方图表署名，许可证随网页发布于`/licenses/lightweight-charts.txt`。官方文档：[交互选项](https://tradingview.github.io/lightweight-charts/docs/api/interfaces/HandleScaleOptions)、[多副图](https://tradingview.github.io/lightweight-charts/docs/panes)。
+
+
 在行情图下方点击当前指标名称，可打开紧凑的指标菜单。默认使用“单项”：一次选择一种，显示在价格主图下方，其他指标不会挤在同一张纵轴上。分时、日K、周K及分钟K均使用相同的选择方式。
 
 菜单里的“同时显示”可选择最多4个副图，上下排列；各副图保留自己的刻度，共用时间轴、光标和K线缩放。再次切换“单项”即可恢复一个副图。设置保存在当前浏览器，旧版成交量／MACD／RSI设置自动兼容。主图的MA、EMA及BOLL仍在右上角图表工具内设置。
@@ -28,7 +37,7 @@
 ## 验证
 
 ```bash
-node --test tests/*.test.mjs
+node --experimental-transform-types --test tests/*.test.mjs
 npm run build
 # 另一个终端启动Vite；浏览器脚本拦截API，使用隔离的固定行情，不写服务器数据库。
 npm run dev -- --port 8013

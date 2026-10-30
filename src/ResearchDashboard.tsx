@@ -33,7 +33,7 @@ export default function ResearchDashboard(props: Props) {
     <div className="research-main-column">
       {loading && <div className="panel empty-card"><LoaderCircle className="spin" size={25} /><p>正在读取已保存的数据…</p></div>}
       {data && <>
-        <QuotePanel data={data} add={add} running={running} onEvent={openEvent} onMarket={props.onMarket} />
+        <QuotePanel data={data} add={add} running={running} onMarket={props.onMarket} />
         {!indexView && <>
         <section className="research-update" aria-label="新闻研究更新">
           <div className="research-update-heading"><div><h2>新闻研究</h2><p>{running ? job?.stage ?? '正在更新研究材料' : `更新于 ${dateTime(data.as_of)}`}</p></div><div className="pipeline-options"><select aria-label="新闻检索区间" value={days} onChange={e => setDays(+e.target.value)} disabled={running}><option value={7}>近 7 天</option><option value={30}>近 30 天</option><option value={90}>近 90 天</option></select><button className="research-refresh" disabled={running} onClick={() => collect(days, false)}>{running ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{running ? '更新中' : '更新研究'}</button></div></div>

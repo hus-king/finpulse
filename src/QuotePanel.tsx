@@ -33,8 +33,8 @@ function readPreferences(): ChartPreferences {
   } catch { return defaults; }
 }
 
-export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
-  data: Dashboard; add: () => void; running: boolean; onEvent: (id: string) => void;
+export default function QuotePanel({ data, add, running, onMarket }: {
+  data: Dashboard; add: () => void; running: boolean;
   onMarket: (data: Dashboard) => void;
 }) {
   const [preferences, setPreferences] = useState(readPreferences);
@@ -88,10 +88,10 @@ export default function QuotePanel({ data, add, running, onEvent, onMarket }: {
     {!minutePeriod && <div className="minute-status" role="status"><span className="minute-market-state"><span className={`status-dot ${dailyBusy ? 'pending' : ''}`} />{dailyBusy ? candles.length ? '日线缓存已展示，后台更新中' : '正在获取日线' : dailyError ? '日线更新失败' : '日线行情已就绪'}</span><span>分时与日线分别就绪 · 切换周期直接绘图</span></div>}
     {!minutePeriod && dailyError && <div className="minute-warning" role="alert">{dailyError}{candles.length ? '；保留已获取的日线。' : '；可点击刷新行情重试。'}</div>}
     {(minute.error || minute.data?.error) && minutePeriod && <div className="minute-warning" role="alert">{minute.error || minute.data?.error}{candles.length ? '；保留已获取的分钟数据。' : ''}</div>}
-    {intraday && session ? <IntradayChart volumeUnit={volumeUnit} session={session} candles={candles} loading={!!busy} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} /> : candles.length && !intraday ? <PriceChart volumeUnit={volumeUnit} key={`${data.stock.code}:${period}`} candles={candles} news={data.news} mode={mode} period={period} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} chartStyle={chartStyle} overlay={overlay} onEvent={onEvent} /> : <div className="chart-empty">{market.loading ? <LoaderCircle size={32} className="spin" /> : <Activity size={32} />}<h3>{market.loading ? intraday ? '正在读取分时缓存' : '正在读取行情缓存' : '暂未取得该周期行情'}</h3><p>{market.loading ? '已保存的数据优先展示，最新行情在后台更新。' : '行情源未返回可用数据，可在图表工具中刷新行情。'}</p></div>}
-    <footer className="chart-footer"><span>{intraday ? '分时走势 · 未来时段与缺失分钟留空' : chartStyle === 'heikin' ? '平滑 K 线为计算后的趋势价格' : minutePeriod ? 'Ctrl + 滚轮缩放' : indexView ? '指数历史点位 · 日线与周线' : '新闻日期标记 · 点击查看原文与研判'}</span></footer>
+    {intraday && session ? <IntradayChart instrument={data.stock.name} key={data.stock.code} volumeUnit={volumeUnit} session={session} candles={candles} loading={!!busy} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} /> : candles.length && !intraday ? <PriceChart instrument={data.stock.name} volumeUnit={volumeUnit} key={`${data.stock.code}:${period}`} candles={candles} mode={mode} period={period} selection={indicators} onSelectionChange={indicators => updatePreferences({ indicators })} chartStyle={chartStyle} overlay={overlay} /> : <div className="chart-empty">{market.loading ? <LoaderCircle size={32} className="spin" /> : <Activity size={32} />}<h3>{market.loading ? intraday ? '正在读取分时缓存' : '正在读取行情缓存' : '暂未取得该周期行情'}</h3><p>{market.loading ? '已保存的数据优先展示，最新行情在后台更新。' : '行情源未返回可用数据，可在图表工具中刷新行情。'}</p></div>}
+    <footer className="chart-footer"><span>{intraday ? '分时走势 · 未来时段与缺失分钟留空' : chartStyle === 'heikin' ? '平滑 K 线为计算后的趋势价格' : minutePeriod ? '滚轮缩放 · 拖动平移' : indexView ? '指数历史点位 · 日线与周线' : '滚轮缩放 · 拖动平移 · 新闻在下方列表查看'}</span></footer>
     {!minutePeriod && market.data?.errors.minute && <div className="minute-warning" role="alert">分钟行情：{market.data.errors.minute}；日线可正常查看，分钟线可稍后刷新。</div>}
-    {minutePeriod && <details className="quote-data-note"><summary>行情数据说明</summary><div><p>数据时间：{intraday ? session?.as_of ?? '—' : minute.data?.as_of ?? '—'}</p><p>获取时间：{minute.data?.fetched_at ? dateTime(minute.data.fetched_at) : '—'}</p><p>各分钟周期使用相同的历史范围，行情源可能延迟。{minute.data?.partial_bars ? '部分 K 线尚未结束或存在缺失分钟。' : ''}{intraday ? '分时横轴固定全天，缺失分钟与未来时段留空。' : '可使用 Ctrl 和滚轮缩放。'}</p></div></details>}
+    {minutePeriod && <details className="quote-data-note"><summary>行情数据说明</summary><div><p>数据时间：{intraday ? session?.as_of ?? '—' : minute.data?.as_of ?? '—'}</p><p>获取时间：{minute.data?.fetched_at ? dateTime(minute.data.fetched_at) : '—'}</p><p>各分钟周期使用相同的历史范围，行情源可能延迟。{minute.data?.partial_bars ? '部分 K 线尚未结束或存在缺失分钟。' : ''}{intraday ? '分时横轴固定全天，缺失分钟与未来时段留空。' : '可滚轮缩放、拖动平移，双击坐标轴复位。'}</p></div></details>}
     </>}
   </section>;
 }
