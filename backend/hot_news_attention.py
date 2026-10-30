@@ -88,7 +88,8 @@ def attach_attention(topics, previous, now):
         appearances = {(source['id'], member['id']): source for member in members for source in member['sources']
                        if source.get('rank') is not None and not source.get('stale')}
         platforms = sorted({source for source, _ in appearances})
-        if appearances: seen[now] = {'at': now, 'platforms': platforms}
+        if appearances: seen[now] = {'at': now, 'platforms': platforms,
+                                     'platform_counts': {source: sum(platform == source for platform, _ in appearances) for source in platforms}}
         history = sorted(seen.values(), key=lambda sighting: sighting['at'])[-144:]
         ranks = [source['rank'] for source in appearances.values()]
         snapshots = len(history)

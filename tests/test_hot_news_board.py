@@ -202,9 +202,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.completion = AsyncMock()
         self.service = HotNewsBoardService(self.store, self.completion, clock=lambda: NOW)
         self.config = patch('backend.hot_news_board.read_config', return_value={}); self.config.start()
+        self.source_config = patch('backend.hot_news_board.configured_sources', return_value={}); self.source_config.start()
 
     async def asyncTearDown(self):
-        self.config.stop(); self.directory.cleanup()
+        self.source_config.stop(); self.config.stop(); self.directory.cleanup()
 
     async def fetch(self, source):
         return [board_row('美国宣布加征进口关税'), board_row('明星红毯同框', 2), board_row('某地普通生活话题', 3)]
@@ -218,10 +219,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch('backend.hot_news_board.fetch_board', new=AsyncMock(side_effect=self.fetch)) as fetch:
             result = await self.service.refresh()
             await self.service.refresh()
-        self.assertEqual(fetch.await_count, 2)
+        self.assertEqual(fetch.await_count, len(SOURCES))
         self.assertEqual(result['status'], 'ok')
         self.assertEqual(result['counts'], {'keep': 1, 'review': 1, 'exclude': 1})
-        self.assertEqual(len(result['items'][0]['sources']), 2)
+        self.assertEqual(len(result['items'][0]['sources']), len(SOURCES))
         self.completion.assert_not_awaited()
 
     async def test_partial_source_failure_is_explicit_with_working_source(self):
@@ -260,7 +261,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.refresh()
         record = self.store.get('hot_news_board', FEED_KEY)
         for item in record['topics']:
-            item['sources'][1]['observed_timestamp'] = NOW - MAX_STALE
+            for source in item['sources'][1:]: source['observed_timestamp'] = NOW - MAX_STALE
         self.store.put('hot_news_board', FEED_KEY, record)
         result = self.service.feed()
         self.assertEqual(len(result['items'][0]['sources']), 1)

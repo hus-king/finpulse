@@ -101,7 +101,7 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
   const topics = current?.items ?? [];
   const filtering = source !== 'all' || channel !== 'all' || !!search.trim() || sort !== 'hot' || limit !== 50;
   return <section className="hot-news-workspace" aria-label="市场相关热点榜单">
-    <header className="hot-toolbar panel"><div><Flame size={24} /><div><h2>国内国际 · 重要热点新闻</h2><p>关注新政策、重大事故与安全事件、重要新品和公司动态，只展示筛选后留下的新闻。</p></div></div>
+    <header className="hot-toolbar panel"><div><Flame size={24} /><div><h2>国内国际 · 重要热点新闻</h2><p>每个平台最多采集20条，按事件指向、重复传播、重要性、舆论和具体事实综合评分。</p></div></div>
       <button className="primary-button" onClick={() => void refresh()} disabled={refreshing || loading}>
         {refreshing ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{refreshing ? '更新进行中…' : '更新热点'}
       </button>
@@ -125,7 +125,7 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
         <label className="hot-search"><span>关键词</span><div><Search size={15} /><input aria-label="搜索热点新闻" value={search} maxLength={80} placeholder="搜索标题或摘要，如关税、航运" onChange={event => setSearch(event.target.value)} disabled={refreshing} /></div></label>
         <label>来源<select aria-label="筛选热榜来源" value={source} onChange={event => setSource(event.target.value)} disabled={refreshing}><option value="all">全部平台</option>{feed?.sources.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label>影响类型<select aria-label="筛选经济影响类型" value={channel} onChange={event => setChannel(event.target.value)} disabled={refreshing}><option value="all">全部影响类型</option>{Object.entries(channels).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-        <label>排序<select aria-label="热点排序方式" value={sort} onChange={event => setSort(event.target.value)} disabled={refreshing}><option value="hot">热度优先</option><option value="latest">最近更新</option></select></label>
+        <label>排序<select aria-label="热点排序方式" value={sort} onChange={event => setSort(event.target.value)} disabled={refreshing}><option value="hot">综合评分优先</option><option value="latest">最近更新</option></select></label>
         <label>展示条数<select aria-label="热点展示条数" value={limit} onChange={event => setLimit(Number(event.target.value))} disabled={refreshing}>{[20, 50, 100].map(value => <option key={value} value={value}>{value} 条</option>)}</select></label>
       </div>
       {current && !loading && <p className="hot-result-count" role="status">当前条件匹配 {current.matched_total} 条重要热点，展示 {topics.length} 条。{channel !== 'all' ? '影响类型仅适用于已识别市场入口的事件。' : ''}</p>}
@@ -138,6 +138,13 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
             {entry.publisher || entry.name}{entry.kind === 'news' ? ` · 报道于 ${dateTime(entry.published_at ?? null)} · ${entry.link_kind === 'provider_doc' ? '接口说明' : '来源入口'}` : ` · 第 ${entry.rank} 名`}{entry.heat ? ` · 热度 ${entry.heat}` : ''}{entry.stale ? ' · 旧快照' : ''}<ExternalLink size={11} />
           </a>)}</div>
           {topic.summary && <p className="hot-summary">{topic.summary}</p>}
+          {topic.newsworthiness && <details className="hot-score-details"><summary>
+            {topic.newsworthiness.decision === 'core' ? '核心热点' : topic.newsworthiness.major_event_supplement ? '重大事件补充' : '热点'} · 新闻优先级 {topic.newsworthiness.total_score}/100
+          </summary><p>指向 {topic.newsworthiness.specificity_score}/15 · 重复 {topic.newsworthiness.repetition_score}/30 · 重要性 {topic.newsworthiness.importance_score}/25 · 舆论 {topic.newsworthiness.opinion_score}/15 · 事件 {topic.newsworthiness.event_score}/15</p>
+            <p>同平台有效出现 {topic.newsworthiness.repetition_detail.same_platform_count} 次（{topic.newsworthiness.repetition_detail.same_platform_score}/22），跨 {topic.newsworthiness.repetition_detail.platform_count} 个平台（{topic.newsworthiness.repetition_detail.cross_platform_score}/8）。</p>
+            {Object.entries(topic.newsworthiness.rubric.evidence).filter(([, quote]) => quote).map(([key, quote]) => <blockquote key={key}>{quote}</blockquote>)}
+            <p>{topic.newsworthiness.method === 'rules' ? '规则评分；模型维度未完成，舆论信息未知。' : topic.newsworthiness.opinion_evidence_status === 'unknown' ? '未取得足够舆论证据，该项暂记0分。' : '模型维度经原文引文检查；重复次数与总分由程序计算。'}{topic.newsworthiness.note}</p>
+          </details>}
           {topic.attention && <p className={`hot-attention ${topic.attention.priority ? 'priority' : ''}`}>
             {topic.attention.priority ? '重点关注 · ' : ''}{topic.attention.mentions ? `${topic.attention.mentions} 条热搜 · ${topic.attention.platforms} 个平台 · 近24小时 ${topic.attention.snapshots} 次采集上榜` : '资讯报道 · 未取得热搜名次'}
           </p>}

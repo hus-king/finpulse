@@ -7,13 +7,16 @@ import httpx
 from .providers import ProviderError, read_config
 from .news_cleaning import SHANGHAI, clean_text
 from .hot_news_events import rule_event
+from .hot_news_limits import PER_SOURCE_LIMIT
 
 NEWS_SOURCES = {
     'tushare_cls': {'name': '财联社快讯', 'url': 'https://www.cls.cn/telegraph', 'api': 'news', 'src': 'cls'},
+    # Read compatibility for old audit records; only ACTIVE_SOURCES are collected.
     'tushare_sina': {'name': '新浪新闻快讯', 'url': 'https://finance.sina.com.cn/7x24/', 'api': 'news', 'src': 'sina'},
     'tushare_wallstreetcn': {'name': '华尔街见闻快讯', 'url': 'https://wallstreetcn.com/live/global', 'api': 'news', 'src': 'wallstreetcn'},
     'tushare_major': {'name': '新闻通讯', 'url': 'https://tushare.pro/document/2?doc_id=195', 'api': 'major_news', 'src': None},
 }
+ACTIVE_SOURCES = ('tushare_cls', 'tushare_major')
 PUBLISHER_URLS = {'新浪财经': 'https://finance.sina.com.cn/', '财联社': 'https://www.cls.cn/',
                   '华尔街见闻': 'https://wallstreetcn.com/', '新华网': 'https://www.news.cn/',
                   '第一财经': 'https://www.yicai.com/', '同花顺': 'https://news.10jqka.com.cn/',
@@ -35,7 +38,7 @@ def settings():
 def configured_sources():
     cfg = settings()
     if not cfg.get('token') or not cfg.get('base_url'): return {}
-    return {key: {'name': row['name'], 'url': row['url'], 'kind': 'news'} for key, row in NEWS_SOURCES.items()}
+    return {key: {'name': NEWS_SOURCES[key]['name'], 'url': NEWS_SOURCES[key]['url'], 'kind': 'news'} for key in ACTIVE_SOURCES}
 
 
 def parse_news(payload, source, now):
@@ -67,7 +70,7 @@ def parse_news(payload, source, now):
                      'publisher': publisher,
                      'published_at': published.isoformat(), 'published_timestamp': published.timestamp()})
     # Prefer concrete event candidates, then newest reports. This is not a heat ranking.
-    return sorted(rows, key=lambda row: (not bool(rule_event(row)), -row['published_timestamp']))[:15]
+    return sorted(rows, key=lambda row: (not bool(rule_event(row)), -row['published_timestamp']))[:PER_SOURCE_LIMIT]
 
 
 async def fetch_news(source, now=None):
@@ -79,7 +82,7 @@ async def fetch_news(source, now=None):
     if not cfg.get('token'): raise ProviderError('新闻服务未配置。')
     origin = NEWS_SOURCES[source]
     params = {'start_date': (now - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'),
-              'end_date': now.strftime('%Y-%m-%d %H:%M:%S'), 'limit': 100}
+              'end_date': now.strftime('%Y-%m-%d %H:%M:%S'), 'limit': PER_SOURCE_LIMIT}
     if origin['src']: params['src'] = origin['src']
     fields = 'datetime,title,content,channels' if origin['api'] == 'news' else 'title,content,pub_time,src'
     try:

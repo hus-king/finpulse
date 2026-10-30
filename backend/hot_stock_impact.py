@@ -54,6 +54,7 @@ class HotStockImpactService:
     def published(topic):
         try:
             if topic['screening']['decision'] != 'keep': return False
+            if topic.get('newsworthiness', {}).get('decision') not in (None, 'core', 'hot'): return False
             validate_event(topic['screening'].get('event'), topic['title'] + '\n' + topic.get('summary', ''))
             return True
         except (ValueError, KeyError, TypeError):
