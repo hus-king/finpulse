@@ -116,6 +116,15 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
         : chart.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: true })
       : chart.addSeries(CandlestickSeries, { priceLineVisible: true });
     series.current.set('main', main);
+    if (intraday) {
+      // Calendar anchors, not quotes: invisible, isolated from all price scales
+      // and readouts. Native edge locking otherwise stops at the latest price,
+      // even when the remaining session contains valid whitespace timestamps.
+      series.current.set('session-calendar', chart.addSeries(LineSeries, {
+        visible: false, priceScaleId: 'session-calendar', priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null,
+      }));
+    }
     mainLines.forEach(line => series.current.set(`overlay-${line.key}`, chart.addSeries(LineSeries, { ...common, lineWidth: 1, crosshairMarkerVisible: false })));
     indicators.forEach((indicator, pane) => indicator.lines.forEach(line => {
       series.current.set(`${indicator.id}-${line.key}`, line.kind === 'bar'
@@ -157,7 +166,7 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
       grid: { vertLines: { color: color('grid'), style: LineStyle.Dotted }, horzLines: { color: color('grid'), style: LineStyle.Dotted } },
       crosshair: { vertLine: { color: color('crosshair'), style: LineStyle.Dashed, labelBackgroundColor: color('crosshair') }, horzLine: { color: color('crosshair'), style: LineStyle.Dashed, labelBackgroundColor: color('crosshair') } },
       rightPriceScale: { borderColor: color('border'), mode: PriceScaleMode.Normal },
-      timeScale: { borderColor: color('border'), fixLeftEdge: intraday, fixRightEdge: !intraday, timeVisible: intraday || period.endsWith('分钟'), secondsVisible: false,
+      timeScale: { borderColor: color('border'), fixLeftEdge: intraday, fixRightEdge: true, timeVisible: intraday || period.endsWith('分钟'), secondsVisible: false,
         tickMarkFormatter: (time: Time) => {
           const date = new Date(Number(time) * 1000).toISOString();
           if (intraday) return date.slice(11, 16) === '11:30' ? '11:30/13:00' : date.slice(11, 16);
@@ -165,6 +174,9 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
         } },
       localization: { timeFormatter: (time: Time) => new Date(Number(time) * 1000).toISOString().slice(0, intraday || period.endsWith('分钟') ? 16 : 10).replace('T', ' ') },
     });
+    if (intraday && times.length) series.current.get('session-calendar')!.setData(
+      [times[0], ...times.length > 1 ? [times.at(-1)!] : []].map(time => ({ time, value: 0 })),
+    );
     const priceFormat = intraday && percentage && reference
       ? { type: 'custom' as const, minMove: .01, formatter: (price: number) => `${(100 * (price / reference - 1)).toFixed(2)}%` }
       : { type: 'price' as const, precision: 2, minMove: .01 };
@@ -233,7 +245,7 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
     const scale = instance.current?.timeScale(), range = scale?.getVisibleLogicalRange();
     if (!scale || !range) return;
     if (intraday && plot.latestIndex < 0) { reset(); return; }
-    const end = intraday ? Math.min(plot.dates.length - .5, plot.latestIndex + 4) : plot.dates.length - 1;
+    const end = intraday ? Math.min(plot.dates.length - 1, plot.latestIndex + 4) : plot.dates.length - 1;
     scale.setVisibleLogicalRange({ from: end - (range.to - range.from), to: end });
   }
   function values(lines: IndicatorLine[], unit: IndicatorResult['unit']) {

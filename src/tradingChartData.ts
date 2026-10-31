@@ -6,8 +6,7 @@ export function chartTimestamp(date: string): number {
 
 export function initialChartRange(dates: readonly string[], period: string, mode: string) {
   if (!dates.length) return null;
-  // Leave a small gutter so the closing-time label is not clipped by the price axis.
-  if (period === '分时') return { from: -.5, to: dates.length + 7.5 };
+  if (period === '分时') return { from: -.5, to: dates.length - 1 };
   const last = dates.at(-1)!;
   const cutoff = new Date(chartTimestamp(last.slice(0, 10)) * 1000);
   cutoff.setUTCMonth(cutoff.getUTCMonth() - (mode === '近 1 月' ? 1 : 3));

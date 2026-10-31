@@ -11,7 +11,7 @@ test('exchange wall times stay on the same displayed day, regardless of local ti
 test('fixed intraday range includes missing and future slots, with no generated prices',()=>{
  const rows=[bar('2026-10-30 09:31:00'),bar('2026-10-30 11:30:00')];
  const plot=preparePlotData(rows,'分时',{day:'2026-10-30',times:['09:30','09:31','11:30','13:00','15:00'],rows});
- assert.deepEqual(initialChartRange(plot.dates,'分时','当日'),{from:-.5,to:12.5});
+ assert.deepEqual(initialChartRange(plot.dates,'分时','当日'),{from:-.5,to:4});
  assert.deepEqual(plot.display.map(row=>row?.close??null),[null,11,11,null,null]);
  assert.equal(chartTimestamp(plot.dates[3])-chartTimestamp(plot.dates[2]),90*60);
  assert.deepEqual(initialChartRange([],'分时','当日'),null);
@@ -26,4 +26,13 @@ test('daily/month and minute/day resets end at the newest candle without future 
 test('weekly and single-candle ranges also stop at the newest index',()=>{
  assert.equal(initialChartRange(['2026-10-19','2026-10-26'],'周 K','全部').to,1);
  assert.deepEqual(initialChartRange(['2026-10-30'],'日 K','全部'),{from:-.5,to:0});
+});
+
+test('empty and sparse sessions retain the 15:00 endpoint without inventing values',()=>{
+ const times=['09:30','09:31','10:00','13:00','15:00'];
+ for(const rows of [[],[bar('2026-10-30 09:31:00')]]) {
+  const plot=preparePlotData(rows,'分时',{day:'2026-10-30',times,rows});
+  assert.deepEqual(initialChartRange(plot.dates,'分时','当日'),{from:-.5,to:4});
+  assert.equal(plot.display.at(-1),null);
+ }
 });
