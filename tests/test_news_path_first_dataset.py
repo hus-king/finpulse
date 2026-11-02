@@ -85,6 +85,26 @@ class PathFirstDatasetTests(unittest.TestCase):
         self.assertFalse(paths.pair_agreement(p,other))
         other=copy.deepcopy(p);other['intermediates'].append(copy.deepcopy(other['intermediates'][0]))
         self.assertFalse(paths.pair_agreement(p,other))
+        other=copy.deepcopy(p);other['source_product']='矿石'
+        self.assertFalse(paths.pair_agreement(p,other))
+        other=copy.deepcopy(p);other['endpoint_product']='钢'
+        self.assertFalse(paths.pair_agreement(p,other))
+
+    def test_nonfundamental_optional_words_are_not_a_material_path(self):
+        for family, role in [('NO_SUPPORTED_PATH', 'NONE'), ('INSUFFICIENT', 'UNKNOWN'),
+                             ('SENTIMENT_ONLY', 'SENTIMENT')]:
+            with self.subTest(family=family):
+                raw={**self.p,'family':family,'endpoint_role':role,'endpoint_product':'',
+                     'source_product':'','intermediates':[],'missing_axes':[],'conditions':[],
+                     'reason':'同一固定焦点和主营资料下的研究判断。'}
+                first=paths.derive_pair(self.a,self.c,raw)
+                second=paths.derive_pair(self.a,self.c,{**raw,'source_product':'铁矿石',
+                                                     'endpoint_product':'钢材'})
+                self.assertTrue(paths.pair_agreement(first,second))
+                second['intermediates']=[{'product':'钢材'}]
+                self.assertFalse(paths.pair_agreement(first,second))
+                second['intermediates']=[];second['endpoint_role']='DEMAND'
+                self.assertFalse(paths.pair_agreement(first,second))
 
     def test_pending_transmission_and_a_specific_material_are_required(self):
         with self.assertRaisesRegex(ValueError,'pending transmission'):

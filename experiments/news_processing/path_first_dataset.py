@@ -37,9 +37,26 @@ def _literal(word,texts):
     return isinstance(word,str) and bool(word.strip()) and any(clean(word) in clean(t) for t in texts)
 
 
+def _new_process_role_link(left,right,text):
+    """Require roles/direction when only 炼焦/浸提 licenses a single-quote edge."""
+    compact=re.sub(r'\s+','',text);left=re.escape(re.sub(r'\s+','',left));right_word=re.sub(r'\s+','',right);right=re.escape(right_word)
+    # A named feed undergoes a named process and yields the named material.
+    if re.search(left+r'(?:经|经过|进行)[^。；;|]{0,100}(?:炼焦|浸提)[^。；;|]{0,40}(?:生成|制得|得到|产出|获得)[^。；;|]{0,20}'+right,compact):return True
+    # An explicit product-first definition has the same directed roles.
+    if re.search(right+r'(?:是由|为由|由)'+left+r'(?:籽粒|胚片)?(?:经|经过)[^。；;|]{0,100}(?:炼焦|浸提)[^。；;|]{0,60}(?:获得|制得|得到|生成)',compact):return True
+    # Official catalogue tables name the output in a separate preserved cell.
+    cells=compact.split('|')
+    if '原料名称' in cells and '特征描述' in cells:
+        for i in range(len(cells)-1):
+            name,description=cells[i:i+2]
+            if len(name)>80 or right_word not in name:continue
+            if re.search(left+r'(?:籽粒|胚片)?(?:经|经过)[^。；;|]{0,100}浸提[^。；;|]{0,60}(?:取油|提取油)[^。；;|]{0,20}(?:获得|得到)[^。；;|]{0,15}(?:副产品|产品)',description):return True
+    return False
+
+
 def _link(left,right,kind,rows):
     """A source can show one link; separate quotes need an actual input/output role."""
-    words={'INPUT_OUTPUT':r'冶炼|炼油|裂解|气化|制成|加工为|压榨|生产(?!成本)',
+    words={'INPUT_OUTPUT':r'冶炼|炼油|炼焦|裂解|气化|制成|加工为|压榨|浸提|生产(?!成本)',
            'DOWNSTREAM_DEMAND':r'需求|客户|用于|应用|采购|供货',
            'SUBSTITUTION':r'替代|取代|替换',
            'FINANCIAL':r'影响|传导|利率|汇率',
@@ -47,6 +64,10 @@ def _link(left,right,kind,rows):
            'OTHER':r'影响|传导|用于'}
     for q in rows:
         if _literal(left,[q['text']]) and _literal(right,[q['text']]) and re.search(words[kind],q['text']):
+            legacy_process = r'冶炼|炼油|裂解|气化|制成|加工为|压榨|生产(?!成本)'
+            if (kind == 'INPUT_OUTPUT' and not re.search(legacy_process,q['text'])
+                    and not _new_process_role_link(left,right,q['text'])):
+                continue
             return True
     owners={q['owner'] for q in rows}
     for owner in owners:
@@ -142,6 +163,12 @@ def check_relations(article,catalog,raw):
 
 
 def pair_agreement(left,right):
+    if not left or not right:return False
+    # These families have no material path. Optional product wording is reviewed
+    # against the frozen focus and reasons separately by the admission audit.
+    if left['relation'] in {'NONE','UNKNOWN','SENTIMENT'}:
+        return (all(left[k]==right[k] for k in ('relation','endpoint_role','path_basis'))
+                and not left['intermediates'] and not right['intermediates'])
     if not boundary.pair_agreement(left,right):return False
     if clean(left['source_product'])!=clean(right['source_product']):return False
     return all(a['input_product']==b['input_product'] and a['edge_kind']==b['edge_kind'] and

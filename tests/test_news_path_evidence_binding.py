@@ -12,6 +12,36 @@ class PathEvidenceBindingTests(unittest.TestCase):
         self.a, self.c, self.raw = fixture.a, fixture.c, fixture.p
         self.raw['intermediates'][0]['bridge_ids'] = ['IGS']
 
+    def test_exact_relation_subtype_can_normalize_only_with_a_matching_supported_path(self):
+        raw = {**copy.deepcopy(self.raw), 'family': 'DISTANT'}
+        before = copy.deepcopy(raw)
+        pair, changes = binding.validate_saved_path(self.a, self.c, raw)
+        self.assertEqual(pair['relation'], 'DISTANT')
+        self.assertEqual(pair['ai_family'], 'DISTANT')
+        self.assertEqual(pair['normalized_mechanism_family'], 'FUNDAMENTAL')
+        self.assertEqual(changes[0]['kind'], 'exact_family_subtype_normalization')
+        self.assertEqual(changes[0]['AI_original_value'], 'DISTANT')
+        self.assertEqual(raw, before)
+
+    def test_relation_subtype_cannot_relabel_the_material_distance_or_conditions(self):
+        for declared in ('DIRECT', 'CONDITIONAL'):
+            with self.subTest(declared=declared), self.assertRaisesRegex(ValueError, 'subtype contradicts'):
+                binding.validate_saved_path(self.a, self.c, {**self.raw, 'family': declared})
+        article = copy.deepcopy(self.a)
+        article['fact'].update(focus_quote='钢材价格上涨。', focus_product='钢材')
+        raw = {**self.raw, 'source_product': '钢材', 'intermediates': [],
+               'conditions': [], 'missing_axes': [], 'family': 'DISTANT'}
+        with self.assertRaisesRegex(ValueError, 'subtype contradicts'):
+            binding.validate_saved_path(article, self.c, raw)
+
+    def test_subtype_cleanup_does_not_repair_an_unknown_enum_or_missing_evidence(self):
+        with self.assertRaisesRegex(ValueError, 'Missing mechanism family'):
+            binding.validate_saved_path(self.a, self.c, {**self.raw, 'family': 'DISTANT_PATH'})
+        raw = {**copy.deepcopy(self.raw), 'family': 'DISTANT'}
+        raw['intermediates'][0]['bridge_ids'] = ['foreign']
+        with self.assertRaisesRegex(ValueError, 'Foreign'):
+            binding.validate_saved_path(self.a, self.c, raw)
+
     def test_missing_product_citation_can_bind_only_to_its_already_cited_owner(self):
         original = copy.deepcopy(self.raw)
         pair, delta = binding.validate_saved_path(self.a, self.c, self.raw)

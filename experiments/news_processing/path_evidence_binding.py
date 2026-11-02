@@ -49,13 +49,31 @@ def bind_provided_process_evidence(article, catalog, raw):
 
 
 def validate_saved_path(article, catalog, raw):
-    """Return a checked path and explicit citation delta; never replace failures by NONE."""
+    """Check saved semantics; record exact enum cleanup and citation binding separately.
+
+    A positive relation subtype has a unique FUNDAMENTAL parent. It is accepted
+    only when the complete evidence-checked path independently yields that same
+    subtype. The saved answer and all products, nodes and conditions stay intact.
+    """
+    subtype = raw.get('family') if isinstance(raw, dict) else None
+    normalize = isinstance(subtype, str) and subtype in {'DIRECT', 'CONDITIONAL', 'DISTANT'}
+    value = copy.deepcopy(raw) if normalize else raw
+    if normalize:
+        value['family'] = 'FUNDAMENTAL'
     try:
-        return paths.derive_pair(article, catalog, raw), []
+        pair, changes = paths.derive_pair(article, catalog, value), []
     except ValueError as error:
         if str(error) != 'No evidence of the stated adjacent business link':
             raise
-        value, changes = bind_provided_process_evidence(article, catalog, raw)
+        value, changes = bind_provided_process_evidence(article, catalog, value)
         if not changes:
             raise
-        return paths.derive_pair(article, catalog, value), changes
+        pair = paths.derive_pair(article, catalog, value)
+    if normalize:
+        if pair['relation'] != subtype:
+            raise ValueError('Declared family subtype contradicts the evidence-derived relation')
+        pair.update(ai_family=subtype, normalized_mechanism_family='FUNDAMENTAL')
+        changes = [{'kind': 'exact_family_subtype_normalization', 'field': 'family',
+                    'AI_original_value': subtype, 'canonical_parent': 'FUNDAMENTAL',
+                    'evidence_derived_subtype': pair['relation']}] + changes
+    return pair, changes
