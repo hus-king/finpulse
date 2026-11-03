@@ -142,6 +142,19 @@ class DailyApiTests(unittest.TestCase):
         del app.state.auth_store
         self.directory.cleanup()
 
+    def test_replay_context_returns_cached_benchmark_and_calendar_without_model_work(self):
+        research = app.state.research
+        research.store.put('daily_market', 'sh000300', {
+            'candles': [BAR], 'quote': {'as_of_date': BAR['date'], 'collected_at': NOW.isoformat()}})
+        with patch('backend.providers.search_news', new_callable=AsyncMock) as news, patch('backend.app.completion', new_callable=AsyncMock) as model:
+            response = self.client.get('/api/market/replay-context')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            self.assertEqual(response.json()['benchmark']['candles'], [BAR])
+            self.assertEqual(response.json()['completed_through'], '2026-09-30')
+            news.assert_not_awaited()
+            model.assert_not_awaited()
+
     def test_new_stock_minute_then_daily_can_read_prices_without_news_or_login(self):
         minute_rows = {'rows': [{'day': '2026-09-30 15:00:00', 'open': 10, 'close': 11, 'low': 9, 'high': 12, 'volume': 1000}]}
         with patch('backend.providers.akshare_worker', new=AsyncMock(return_value=minute_rows)), patch('backend.providers.daily_market', new=AsyncMock(return_value=MARKET)) as daily, patch('backend.providers.search_news', new_callable=AsyncMock) as news, patch('backend.app.completion', new_callable=AsyncMock) as model:

@@ -22,6 +22,16 @@ def private(response):
     response.headers['Cache-Control'] = 'no-store'
 
 
+@router.get('/market/replay-context')
+async def replay_context(response: Response, research=Depends(service)):
+    private(response)
+    from .replay_market import replay_market_context
+    benchmark = research.catalog.get('sh000300')
+    request_state = await research.daily_market.snapshot(benchmark)
+    record = await asyncio.to_thread(research.daily_market.cached, 'sh000300')
+    return replay_market_context(record, request_state, research.daily_market.clock())
+
+
 @router.get('/market/{code}/bundle')
 async def market_bundle(code: str, request: Request, response: Response,
                         refresh: bool = False, wait: bool = True, research=Depends(service)):

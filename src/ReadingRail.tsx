@@ -6,7 +6,7 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
     { selector: '.finance-heading', title: '市场概览' },
     { selector: '.live-quote', title: '行情走势' },
     { selector: '.live-news', title: '新闻研判' },
-    { selector: '.returns-panel', title: '历史观察' },
+    { selector: '.returns-panel', title: '消息复盘' },
   ],
   'hot-news': [
     { selector: '.finance-heading', title: '热点榜单' },

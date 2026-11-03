@@ -5,6 +5,7 @@ import QuotePanel from './QuotePanel';
 import NewsFeed from './NewsFeed';
 import ResearchOverview from './ResearchOverview';
 import CommunityCard from './CommunityCard';
+import NewsReplayPanel from './NewsReplayPanel';
 import { dateTime, number, percent, tone } from './format';
 import type { Dashboard, Job, News, Stock } from './types';
 
@@ -42,7 +43,7 @@ export default function ResearchDashboard(props: Props) {
           <div className="research-metadata"><span>{data.pipeline?.counts.retained ?? data.news.length} 条有效新闻</span><details className="research-details"><summary>{limitations.length ? `采集说明 (${limitations.length})` : '采集说明'}</summary><div>{data.pipeline && <><dl><div><dt>检索材料</dt><dd>{data.pipeline.counts.input}</dd></div><div><dt>有效新闻</dt><dd>{data.pipeline.counts.retained}</dd></div><div><dt>合并重复</dt><dd>{data.pipeline.counts.merged}</dd></div><div><dt>复用研判</dt><dd>{data.pipeline.counts.analysis_reused ?? 0}</dd></div><div><dt>本轮研判</dt><dd>{data.pipeline.counts.analyzed}</dd></div></dl><button disabled={auditLoading || !data.pipeline.collection_id} onClick={audit}>{auditLoading ? '正在读取' : '查看清洗记录'}</button></>}{limitations.map(item => <p key={item}>{item}</p>)}<p>自动巡检时间：08:30、12:00、20:00</p></div></details></div>
         </section>
         <NewsFeed data={data} openAssistant={openAssistant} analyzeAll={() => collect(days, false, false, true)} running={running} stage={job?.stage} />
-        <section className="panel returns-panel"><header><h2>新闻后的历史走势</h2><span>事后观察</span></header>{data.backtest.items.length ? <div className="returns-table"><table><thead><tr><th>新闻</th><th>基准日</th><th>3 交易日</th><th>5 交易日</th></tr></thead><tbody>{data.backtest.items.slice(0, 8).map(item => <tr key={item.news_id}><td>{item.title}</td><td>{item.base_date ?? '待有日线'}</td><td className={tone(item.return_3d)}>{percent(item.return_3d)}</td><td className={tone(item.return_5d)}>{percent(item.return_5d)}</td></tr>)}</tbody></table></div> : <p className="returns-note">保存新闻与日线后，这里会展示可计算的后续价格变化。</p>}<p className="returns-note">{data.backtest.note}</p></section>
+        <NewsReplayPanel key={data.stock.code} data={data} openAssistant={openAssistant} />
         </>}
         {indexView && <section className="panel index-notice"><h2>大盘指数行情</h2><p>指数点位用于观察市场整体或板块走势。交易日优先展示当日分时，休市显示最近交易日；可在图表上方切换日 K、周 K。</p><p>指数成交量保留行情源原始单位，不能按个股股数比较。</p></section>}
       </>}
