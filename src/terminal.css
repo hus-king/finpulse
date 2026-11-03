@@ -767,3 +767,63 @@
 /* The title backplates otherwise blur real values beneath the page ruler. */
 :root[data-theme="light"] .reading-contrast { display: none; }
 :root[data-theme="light"][data-reading-ruler] .finance-shell { padding-right: 180px; }
+
+/* Light dialogs need their own nested surfaces, not the legacy dark defaults. */
+:root[data-theme="light"] .ai-drawer :is(.context-card, .analysis-result, .chat-entry.user, .suggestions > button) {
+  background: var(--theme-background); border-color: var(--theme-border); color: var(--theme-text);
+}
+:root[data-theme="light"] .ai-drawer :is(.drawer-header h2, .assistant-intro h3, .context-card h4, .analysis-result h4) { color: var(--theme-heading); }
+:root[data-theme="light"] .ai-drawer :is(.chat-content, .causal-chain p, .analysis-evidence li) { color: var(--theme-text); font-size: 13px; line-height: 1.85; }
+:root[data-theme="light"] .ai-drawer :is(.drawer-header p, .assistant-intro p, .context-card > p, .context-card .article-source-note,
+  .context-card details, .suggestions > span, .response-meta, .uncertainty, .chat-form > p) { color: var(--theme-muted); font-size: 11px; line-height: 1.8; }
+:root[data-theme="light"] .ai-drawer :is(.assistant-intro .eyebrow, .context-card > .eyebrow) { color: var(--theme-subtle); font-size: 11px; }
+:root[data-theme="light"] .ai-drawer :is(.context-card a, .chat-author, .live-label, .thinking) { color: var(--theme-accent-text); font-size: 12px; }
+:root[data-theme="light"] .ai-drawer :is(.drawer-header, .response-meta, .chat-entry.assistant, .causal-chain) { border-color: var(--theme-border); }
+:root[data-theme="light"] .ai-drawer .chat-entry.user .chat-content { background: transparent; color: var(--theme-text); }
+:root[data-theme="light"] .ai-drawer .causal-chain > div > span { background: var(--theme-panel); border-color: var(--theme-accent-border); color: var(--theme-accent-text); font-size: 11px; }
+:root[data-theme="light"] .ai-drawer .uncertainty { background: transparent; border-color: var(--theme-border); }
+:root[data-theme="light"] .ai-drawer .tiny-tag { background: var(--theme-raised); color: var(--theme-muted); border-color: var(--theme-border); font-size: 11px; }
+:root[data-theme="light"] .ai-drawer :is(.drawer-header .icon-square, .response-meta button) { color: var(--theme-accent-text); }
+:root[data-theme="light"] .ai-drawer .drawer-header .icon-square { background: var(--theme-accent-soft); border-color: var(--theme-accent-border); }
+:root[data-theme="light"] .ai-drawer .score-label { font-size: 11px; }
+:root[data-theme="light"] .ai-drawer .score-label.positive { color: var(--up); background: color-mix(in srgb, var(--up) 8%, var(--theme-panel)); border-color: color-mix(in srgb, var(--up) 22%, var(--theme-panel)); }
+:root[data-theme="light"] .ai-drawer .score-label.negative { color: var(--down); background: color-mix(in srgb, var(--down) 8%, var(--theme-panel)); border-color: color-mix(in srgb, var(--down) 22%, var(--theme-panel)); }
+:root[data-theme="light"] .ai-drawer .score-label.neutral { color: var(--theme-muted); background: var(--theme-raised); border-color: var(--theme-border); }
+:root[data-theme="light"] .ai-drawer .chat-form { background: var(--theme-panel); border-color: var(--theme-border); }
+:root[data-theme="light"] .ai-drawer .chat-input { background: var(--theme-background); border-color: var(--theme-control-border); }
+:root[data-theme="light"] .ai-drawer .chat-input:focus-within { border-color: var(--theme-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-focus) 18%, transparent); }
+:root[data-theme="light"] .ai-drawer .chat-input textarea { color: var(--theme-text); font-size: 14px; }
+:root[data-theme="light"] .ai-drawer .chat-input textarea::placeholder { color: var(--theme-subtle); opacity: 1; }
+:root[data-theme="light"] .ai-drawer .chat-input textarea:focus-visible { outline: none; }
+:root[data-theme="light"] .ai-drawer .send-button { background: var(--theme-accent); color: var(--action-text); }
+:root[data-theme="light"] .ai-drawer .suggestions > button:hover { background: var(--theme-hover); border-color: var(--theme-accent-border); }
+:root[data-theme="light"] .ai-drawer .suggestions > button > svg:last-child { color: var(--theme-accent-text); }
+
+/* The same older mint text was still present in search and account dialogs. */
+:root[data-theme="light"] :is(.auth-dialog > .eyebrow, .auth-dialog > .auth-footnote, .supported-caption, .stock-search-loading,
+  .research-modal .catalog-list small, .research-modal .search-source-warning, .account-menu .account-created) { color: var(--theme-muted); font-size: 11px; }
+:root[data-theme="light"] :is(.auth-mode-switch button, .auth-password button, .research-modal .catalog-list > div > button:last-child) { color: var(--theme-accent-text); }
+:root[data-theme="light"] :is(.research-modal h3, .research-modal h4) { color: var(--theme-heading); }
+:root[data-theme="light"] .research-modal .stock-search { background: var(--theme-background); color: var(--theme-muted); border-color: var(--theme-control-border); }
+:root[data-theme="light"] .research-modal .stock-search input { color: var(--theme-text); font-size: 14px; }
+:root[data-theme="light"] :is(.research-modal input, .auth-field input, .paper-search-field input)::placeholder { color: var(--theme-subtle); opacity: 1; }
+:root[data-theme="light"] .research-modal .auto-collect-note { background: var(--theme-background); color: var(--theme-text); border-color: var(--theme-border); }
+:root[data-theme="light"] .research-modal .instrument-filters button { color: var(--theme-muted); border-color: var(--theme-control-border); }
+:root[data-theme="light"] .research-modal .instrument-filters button[aria-pressed="true"] { background: var(--theme-accent); color: var(--action-text); border-color: var(--theme-accent); }
+:root[data-theme="light"] .account-menu .icon-square { background: var(--theme-accent-soft); color: var(--theme-accent-text); border-color: var(--theme-accent-border); }
+:root[data-theme="light"] .research-modal .audit-records p { color: var(--theme-muted); font-size: 12px; }
+
+/* Read-only secondary screens shared the same pale, fixed light colors. */
+:root[data-theme="light"] :is(.digest-note, .digest-time, .digest-panel .eyebrow, .channel-hint,
+  .connection-card > p, .connection-card dt, .connection-details dt, .response-stats span, .response-stats small) { color: var(--theme-muted); font-size: 11px; }
+:root[data-theme="light"] .subscription-panel > p { color: var(--theme-muted); font-size: 12px; }
+:root[data-theme="light"] .subscription-toggle { color: var(--theme-text); font-size: 12px; }
+:root[data-theme="light"] .subscription-toggle input { accent-color: var(--theme-accent); }
+:root[data-theme="light"] :is(.connection-card dd, .connection-details dd) { color: var(--theme-text); }
+:root[data-theme="light"] .connection-card dl > div { border-color: var(--theme-border); }
+:root[data-theme="light"] .connection-card pre { background: var(--theme-background); color: var(--theme-text); }
+:root[data-theme="light"] :is(.empty-card, .empty-card p, .loading-state, .reply-metadata) { color: var(--theme-muted); }
+:root[data-theme="light"] .empty-card h3 { color: var(--theme-heading); }
+:root[data-theme="light"] .error-box { background: var(--theme-error-bg); color: var(--theme-error); border-color: var(--theme-error-border); }
+:root[data-theme="light"] .error-box button { color: inherit; }
+:root[data-theme="light"] :is(.search-error, .account-error) { color: var(--theme-error); }
