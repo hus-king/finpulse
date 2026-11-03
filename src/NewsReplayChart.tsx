@@ -39,9 +39,9 @@ export default function NewsReplayChart({ points, name }: { points: ReplayPoint[
         } },
       xAxis: { type: 'category', data: points.map(point => point.date), boundaryGap: false,
         axisTick: { show: false }, axisLine: { lineStyle: { color: color('border') } },
-        axisLabel: { color: color('text'), fontSize: 10, lineHeight: 16, hideOverlap: true,
+        axisLabel: { color: color('text'), fontSize: theme === 'light' ? 11 : 10, lineHeight: 16, hideOverlap: true,
           formatter: (_: string, index: number) => `${index ? `D+${index}` : 'D0'}\n${points[index].date.slice(5)}` } },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: color('text'), fontSize: 10, formatter: (value: number) => `${value > 0 ? '+' : ''}${Number(value.toFixed(1))}%` },
+      yAxis: { type: 'value', scale: true, axisLabel: { color: color('text'), fontSize: theme === 'light' ? 11 : 10, formatter: (value: number) => `${value > 0 ? '+' : ''}${Number(value.toFixed(1))}%` },
         splitLine: { lineStyle: { color: color('grid'), type: 'dashed' } } },
       series: [
         { name, type: 'line', data: points.map(point => point.stock), connectNulls: false, symbol: 'circle', symbolSize: 5,
