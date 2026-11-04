@@ -1,0 +1,37 @@
+plugins { id 'com.android.application' }
+
+def signingReady = System.getenv('FINPULSE_KEYSTORE') != null
+android {
+    namespace 'cn.finpulse.app'
+    buildFeatures { buildConfig true }
+    compileSdk 35
+    defaultConfig {
+        applicationId 'cn.finpulse.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        testInstrumentationRunner 'cn.finpulse.app.SmokeTest'
+    }
+    signingConfigs {
+        if (signingReady) {
+            release {
+                storeFile file(System.getenv('FINPULSE_KEYSTORE'))
+                storePassword System.getenv('FINPULSE_STORE_PASSWORD')
+                keyAlias System.getenv('FINPULSE_KEY_ALIAS')
+                keyPassword System.getenv('FINPULSE_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (signingReady) signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError true }
+}

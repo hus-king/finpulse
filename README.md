@@ -6,6 +6,8 @@ FinPulse 是软件工程课程项目，支持本机开发和服务器完整部�
 
 **服务器网站已部署：允许所有网络可达的设备访问网站 8000 端口，无需逐个登记来源 IP；受保护功能仍需登录。** 学校路由和 Tailscale 网络策略仍决定设备能否到达服务器。完整说明见 [服务器部署与访问说明](docs/服务器部署与访问说明.md)，团队工作流见 [服务器部署与开发流程](docs/服务器部署与开发流程.md)。
 
+Android 安装包在 [GitHub Releases](https://github.com/hus-king/finpulse/releases) 下载，安装、网络要求和构建方式见 [Android 说明](docs/android.md)。
+
 ### 先选择运行方式
 
 | 方式 | 运行位置 | 浏览器地址 | 使用前提 |
