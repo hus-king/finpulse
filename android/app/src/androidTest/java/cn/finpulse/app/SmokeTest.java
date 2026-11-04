@@ -32,6 +32,7 @@ public class SmokeTest extends Instrumentation {
         Bundle result = new Bundle(); Activity activity = null;
         try (ServerSocket server = new ServerSocket(0)) {
             String origin = "http://127.0.0.1:" + server.getLocalPort() + "/";
+            AtomicInteger generations = new AtomicInteger();
             Thread fixture = new Thread(() -> {
                 while (!server.isClosed()) {
                     try (Socket socket = server.accept()) {
@@ -41,7 +42,7 @@ public class SmokeTest extends Instrumentation {
                         while ((line = input.readLine()) != null && !line.isEmpty()) if (line.toLowerCase().startsWith("cookie:") && line.contains("session=smoke")) cookie = true;
                         boolean csv = request.contains(" /export.csv ");
                         String html = csv ? (cookie ? "code,name\n600000,FinPulse\n" : "unauthenticated") : request.contains(" /session ") ? (cookie ? "authenticated" : "anonymous")
-                                : "<!doctype html><meta name='viewport' content='width=device-width'><title>FinPulse test</title><body><input type='file' accept='application/json'><a id='export'>Export</a><script>localStorage.setItem('smoke','persisted');document.cookie='session=smoke; SameSite=Lax; path=/';window.fixtureReady=true;</script>";
+                                : "<!doctype html><meta name='viewport' content='width=device-width'><title>FinPulse test</title><body><input type='file' accept='application/json'><a id='export'>Export</a><script>localStorage.setItem('smoke','persisted');document.cookie='session=smoke; SameSite=Lax; path=/';window.fixtureReady=true;window.fixtureGeneration=" + generations.incrementAndGet() + ";</script>";
                         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
                         socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: " + (csv ? "text/csv\r\nContent-Disposition: attachment; filename=export.csv" : "text/html; charset=utf-8") + "\r\nContent-Length: " + bytes.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
                         socket.getOutputStream().write(bytes);
@@ -68,12 +69,15 @@ public class SmokeTest extends Instrumentation {
             js(web, "fetch('/session').then(r=>r.text()).then(t=>window.sessionResult=t)");
             for (int i = 0; i < 30 && !"\"authenticated\"".equals(js(web, "window.sessionResult")); i++) Thread.sleep(100);
             check("\"authenticated\"".equals(js(web, "window.sessionResult")), "same-origin cookie auth failed");
+            String previousGeneration = js(web, "window.fixtureGeneration");
             runOnMainSync(web::reload);
             for (int i = 0; i < 30; i++) {
-                if ("true".equals(js(web, "!!window.fixtureReady && typeof window.__finpulseExport === 'function'"))) break;
+                if ("true".equals(js(web, "!!window.fixtureReady && window.fixtureGeneration !== " + previousGeneration + " && typeof window.__finpulseExport === 'function'"))) break;
                 Thread.sleep(200);
             }
+            check(!previousGeneration.equals(js(web, "window.fixtureGeneration")), "reload did not commit a new document");
             check("\"persisted\"".equals(js(web, "localStorage.getItem('smoke')")), "storage lost after reload");
+            js(web, "window.alert = message => window.lastAlert = message");
             runOnMainSync(() -> {
                 check(!web.getSettings().getAllowFileAccess(), "file access must stay disabled");
                 check(web.getSettings().getJavaScriptEnabled(), "JavaScript disabled");
@@ -103,7 +107,7 @@ public class SmokeTest extends Instrumentation {
             addMonitor(monitor);
             js(web, "(()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['{\"hello\":\"finpulse\"}'],{type:'application/json'}));a.download='finpulse-test.json';a.click();URL.revokeObjectURL(a.href)})()");
             for (int i = 0; i < 50 && savedBytes.get() == null; i++) Thread.sleep(100);
-            check(savedBytes.get() != null, "Blob export did not open save picker");
+            check(savedBytes.get() != null, "Blob export did not open save picker: " + js(web, "JSON.stringify({url:location.href,alert:window.lastAlert,shim:typeof window.__finpulseExport})"));
             check("{\"hello\":\"finpulse\"}".equals(new String(savedBytes.get(), StandardCharsets.UTF_8)), "Blob bytes corrupted");
             check("finpulse-test.json".equals(savedName.get()), "Blob filename lost");
             savedBytes.set(null);
