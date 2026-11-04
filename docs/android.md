@@ -19,7 +19,7 @@ Gradle Wrapper 固定为 8.11.1，校验下载 SHA-256；AGP 固定为 8.9.2。�
 
 ## GitHub Release
 
-`.github/workflows/android-release.yml` 在 `codex/android-apk-release` 分支推送或手动触发时验证，在推送 `android-v*` 标签时先验证，再发布签名 APK 和 SHA-256。验证包括 lint 和 Android 15 模拟器：启动真实 WebView，以隔离的本地 HTTP fixture 检查 JavaScript、同源 Cookie 请求、localStorage、刷新、导出脚本加载及地址验证；不使用生产账号或修改服务器数据。它不是所有业务界面的端到端测试。
+`.github/workflows/android-release.yml` 在 `codex/android-apk-release` 分支推送或手动触发时验证，在推送 `android-v*` 标签时先验证，再发布签名 APK 和 SHA-256。验证包括 lint 和 Android 15 模拟器：启动真实 WebView，以隔离的本地 HTTP fixture 检查 JavaScript、同源 Cookie 请求、localStorage、刷新、JSON 导出字节和文件名、带 Cookie 的 CSV 下载、文件选择器取消及重试、外链浏览器跳转及地址验证；不使用生产账号或修改服务器数据。它不是所有业务界面的端到端测试。
 
 仓库需配置以下 GitHub Actions secrets：
 
