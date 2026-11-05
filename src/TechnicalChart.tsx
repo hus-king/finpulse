@@ -78,7 +78,7 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
     if (!canvas.current) return;
     const chart = createChart(canvas.current, {
       autoSize: true,
-      layout: { attributionLogo: true, fontFamily: 'Inter, Segoe UI, Microsoft YaHei, sans-serif', fontSize: 11, panes: { enableResize: true } },
+      layout: { attributionLogo: false, fontFamily: 'Inter, Segoe UI, Microsoft YaHei, sans-serif', fontSize: 11, panes: { enableResize: true } },
       crosshair: { mode: CrosshairMode.Normal },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
@@ -279,6 +279,6 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
         <div className="chart-readout-values">{values(indicator.lines, indicator.unit)}{indicator.lines.every(line => line.values[active] == null) && <span className="chart-data-gap">{empty ? '此时点无数据' : '历史数据不足'}</span>}</div>
       </div>)}
     </div>
-    <div className="chart-interaction-hint"><span>滚轮缩放 · 拖动平移 · 双击坐标轴复位</span><span><a href="/licenses/lightweight-charts.txt" target="_blank" rel="noreferrer" title="TradingView Lightweight Charts™ · Copyright (с) 2025 TradingView, Inc.">图表版权</a> · 北京时间 UTC+8</span></div>
+    <div className="chart-interaction-hint"><span>滚轮缩放 · 拖动平移 · 双击坐标轴复位</span><span><a href="https://www.tradingview.com/" target="_blank" rel="noreferrer" title="TradingView Lightweight Charts™ · Copyright (с) 2025 TradingView, Inc.">TradingView</a> · 北京时间 UTC+8</span></div>
   </div>;
 }

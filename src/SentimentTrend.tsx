@@ -29,7 +29,7 @@ export default function SentimentTrend({ history, error }: { history: SentimentH
     const byDay = new Map(points.map(point => [point.date, point]));
     const dates = (history?.trading_dates ?? points.map(point => point.date)).filter(date => date !== history?.to_date || byDay.has(date));
     chart.setOption({ animation: false, backgroundColor: 'transparent',
-      grid: { left: 30, right: 12, top: 12, bottom: 25 },
+      grid: { left: theme === 'light' ? 36 : 30, right: 12, top: 12, bottom: theme === 'light' ? 28 : 25 },
       tooltip: { trigger: 'axis', renderMode: 'richText', backgroundColor: color('tooltip-bg'), borderColor: color('border'), textStyle: { color: color('tooltip-text'), fontSize: 11 },
         formatter: (params: unknown) => {
           const item = (params as { dataIndex: number }[])[0];
@@ -38,8 +38,8 @@ export default function SentimentTrend({ history, error }: { history: SentimentH
           const provisional = point.market_as_of.slice(11, 16) < '15:00';
           return `${point.date}${provisional ? ' · 盘中' : ' · 收盘'}\n情绪 ${point.score} / 100\n上涨 ${point.advancing.toLocaleString()}  下跌 ${point.declining.toLocaleString()}\n平盘 ${point.flat.toLocaleString()}`;
         } },
-      xAxis: { type: 'category', boundaryGap: false, data: dates, axisTick: { show: false }, axisLine: { lineStyle: { color: color('border') } }, axisLabel: { color: color('text'), fontSize: 9, hideOverlap: true, formatter: (date: string) => date.slice(5) } },
-      yAxis: { type: 'value', min: 0, max: 100, interval: 50, axisLabel: { color: color('text'), fontSize: 9 }, splitLine: { lineStyle: { color: color('grid'), type: 'dashed' } } },
+      xAxis: { type: 'category', boundaryGap: false, data: dates, axisTick: { show: false }, axisLine: { lineStyle: { color: color('border') } }, axisLabel: { color: color('text'), fontSize: theme === 'light' ? 11 : 9, hideOverlap: true, formatter: (date: string) => date.slice(5) } },
+      yAxis: { type: 'value', min: 0, max: 100, interval: 50, axisLabel: { color: color('text'), fontSize: theme === 'light' ? 11 : 9 }, splitLine: { lineStyle: { color: color('grid'), type: 'dashed' } } },
       series: [{ type: 'line', data: dates.map(date => byDay.get(date)?.score ?? null), connectNulls: false, smooth: false, showSymbol: points.length < 3, symbolSize: 5,
         lineStyle: { width: 1.3, color: color('marker-neutral') }, itemStyle: { color: color('marker-neutral') },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color('marker-neutral') + '40' }, { offset: 1, color: color('marker-neutral') + '00' }]) },

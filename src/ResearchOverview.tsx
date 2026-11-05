@@ -1,18 +1,43 @@
+import { useId } from 'react';
 import type { Dashboard, News } from './types';
 import { confidenceNames } from './analysisPresentation';
 export default function ResearchOverview({data,openAssistant,running=false}:{data:Dashboard|null;openAssistant:(news:News)=>void;running?:boolean}) {
+  const colors = useId();
   const updating=running || data?.pipeline?.score_display==='updating';
   const overview=data?.research_overview, score=overview?.net_score ?? null, series=overview?.score_series ?? [];
   const angle=Math.PI * (1 - ((score ?? 0) + 100) / 200);
   const open=(id:string)=>{const news=data?.news.find(n=>n.id===id);if(news)openAssistant(news);};
   return <section className="panel research-overview"><span className="eyebrow">AI NEWS SCORE</span><h2>公司消息面研判</h2>
     {updating ? <div className="empty-card" role="status" aria-live="polite"><strong>正在更新消息面研判</strong><p>先展示行情和新闻。完成本轮合并与研判后，统一显示复用分数、新增分数和综合消息分。</p><small>已有研判已保存在数据库中，不会重复评分。</small></div> : <>
-    <div className="score-gauge"><svg viewBox="0 0 240 140" role="img" aria-label={`AI综合消息分：${score === null ? '待研判' : score}`}><path d="M 24 112 A 96 96 0 0 1 120 16" fill="none" stroke="var(--down)" strokeWidth="6"/><path d="M 120 16 A 96 96 0 0 1 216 112" fill="none" stroke="var(--up)" strokeWidth="6"/>{score !== null && <><line x1="120" y1="112" x2={120+76*Math.cos(angle)} y2={112-76*Math.sin(angle)} stroke="currentColor" strokeWidth="2.5"/><circle cx="120" cy="112" r="4" fill="currentColor"/></>}<text x="18" y="137">−100</text><text x="120" y="10" textAnchor="middle">0</text><text x="222" y="137" textAnchor="end">+100</text></svg>
+    <div className="score-gauge"><svg viewBox="0 0 240 140" role="img" aria-label={`AI综合消息分：${score === null ? '待研判' : score}`}>
+      <defs>
+        <linearGradient id={`${colors}-arc-color`} gradientUnits="userSpaceOnUse" x1="24" y1="0" x2="216" y2="0">
+          <stop offset="0" stopColor="var(--research-negative-depth)"/>
+          <stop offset=".32" stopColor="var(--research-negative-mark)"/>
+          <stop offset=".5" stopColor="var(--research-arc-neutral)"/>
+          <stop offset=".75" stopColor="var(--research-positive-mark)"/>
+          <stop offset="1" stopColor="var(--research-positive-depth)"/>
+        </linearGradient>
+        <linearGradient id={`${colors}-arc-sheen`} gradientUnits="userSpaceOnUse" x1="0" y1="13" x2="0" y2="112">
+          <stop offset="0" stopColor="var(--research-glass-highlight)" stopOpacity="var(--research-sheen-peak)"/>
+          <stop offset=".18" stopColor="var(--research-glass-highlight)" stopOpacity="var(--research-sheen-shoulder)"/>
+          <stop offset=".6" stopColor="var(--research-glass-highlight)" stopOpacity="0"/>
+          <stop offset="1" stopColor="var(--research-glass-highlight)" stopOpacity="var(--research-sheen-edge)"/>
+        </linearGradient>
+      </defs>
+      {/* One continuous semicircle avoids separately rasterized edges at zero. */}
+      <path className="score-gauge-arc" d="M24 112 A96 96 0 0 1 216 112" fill="none" stroke={`url(#${colors}-arc-color)`} strokeWidth="6"/>
+      <path d="M24 112 A96 96 0 0 1 216 112" fill="none" stroke={`url(#${colors}-arc-sheen)`} strokeWidth="6" aria-hidden="true"/>
+      <path d="M21.75 112 A98.25 98.25 0 0 1 218.25 112" fill="none" stroke="var(--research-glass-highlight)" strokeOpacity="var(--research-rim-opacity)" strokeWidth=".65" aria-hidden="true"/>
+      {score !== null && <><line x1="120" y1="112" x2={120+76*Math.cos(angle)} y2={112-76*Math.sin(angle)} stroke="currentColor" strokeWidth="2.5"/><circle cx="120" cy="112" r="4" fill="currentColor"/></>}<text x="18" y="137">−100</text><text x="120" y="10" textAnchor="middle">0</text><text x="222" y="137" textAnchor="end">+100</text></svg>
     <strong className={score === null || score === 0 ? '' : score > 0 ? 'up' : 'down'}>{score === null ? '待研判' : `${score > 0 ? '+' : ''}${score}`}</strong><span>AI 综合消息分</span></div>
     {overview?.weighting && <p className="score-weighting-rule" title={`按新闻发布时间计算，权重每 ${overview.weighting.half_life_days} 个自然日减半：今天 1，${overview.weighting.half_life_days} 天前 0.5，${overview.weighting.half_life_days * 2} 天前 0.25。以北京时间 ${overview.weighting.as_of} 为准。`}>时间加权 · {overview.weighting.half_life_days} 天半衰期{overview.weighting.excluded_dates > 0 ? ` · ${overview.weighting.excluded_dates} 条日期无效未计入` : ''}</p>}
     <p>{overview?.analyzed ?? 0} / {overview?.total ?? data?.news.length ?? 0} 条新闻已研判</p>
     <div className="overview-stats"><span><strong className="up">{overview?.counts.positive ?? 0}</strong>利好</span><span><strong className="down">{overview?.counts.negative ?? 0}</strong>利空</span><span><strong>{overview?.counts.pending ?? data?.news.length ?? 0}</strong>待研判</span></div>
-    {series.length > 0 && <div className="news-score-chart"><h3>逐条新闻分数</h3><svg viewBox="0 0 280 162" role="group" aria-label="新闻分数图，按日期排列，点击柱子查看研判"><line x1="28" y1="77" x2="277" y2="77" stroke="var(--theme-border)"/>{[100,0,-100].map(v=><text key={v} x="23" y={81-v*.6} textAnchor="end">{v > 0 ? '+' : ''}{v}</text>)}{series.map((item,i)=>{const step=246/series.length, value=item.score ?? 0, height=Math.abs(value)*.6;return <g key={item.news_id} role="button" tabIndex={0} aria-label={`${item.title} ${value > 0 ? '+' : ''}${value}分，查看研判`} onClick={()=>open(item.news_id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open(item.news_id);}}}><title>{item.date} · {item.title} · {value > 0 ? '+' : ''}{value}/100{item.weight_share != null ? ` · 综合权重 ${item.weight_share}%` : ' · 日期无效，未计入综合分'}</title><rect x={29+i*step} y="12" width={step} height="130" fill="transparent"/><rect x={29+i*step+step*.16} y={value>0 ? 77-height : 77} width={Math.max(.5,step*.68)} height={height} rx="1" fill={value>0 ? 'var(--up)' : 'var(--down)'}/></g>;})}<text x="28" y="159">较早</text><text x="276" y="159" textAnchor="end">较新</text></svg><small>红色利好 · 绿色利空 · 点击查看依据</small></div>}
+    {series.length > 0 && <div className="news-score-chart"><h3>逐条新闻分数</h3><svg viewBox="0 0 280 162" role="group" aria-label="新闻分数图，按日期排列，点击柱子查看研判"><defs>
+      <linearGradient id={`${colors}-positive`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--research-positive-mark)"/><stop offset="1" stopColor="var(--research-positive-depth)"/></linearGradient>
+      <linearGradient id={`${colors}-negative`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--research-negative-depth)"/><stop offset="1" stopColor="var(--research-negative-mark)"/></linearGradient>
+    </defs><line x1="28" y1="77" x2="277" y2="77" stroke="var(--theme-border)"/>{[100,0,-100].map(v=><text key={v} x="23" y={81-v*.6} textAnchor="end">{v > 0 ? '+' : ''}{v}</text>)}{series.map((item,i)=>{const step=246/series.length, value=item.score ?? 0, height=Math.abs(value)*.6;return <g key={item.news_id} role="button" tabIndex={0} aria-label={`${item.title} ${value > 0 ? '+' : ''}${value}分，查看研判`} onClick={()=>open(item.news_id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open(item.news_id);}}}><title>{item.date} · {item.title} · {value > 0 ? '+' : ''}{value}/100{item.weight_share != null ? ` · 综合权重 ${item.weight_share}%` : ' · 日期无效，未计入综合分'}</title><rect x={29+i*step} y="12" width={step} height="130" fill="transparent"/><rect x={29+i*step+step*.16} y={value>0 ? 77-height : 77} width={Math.max(.5,step*.68)} height={height} rx="1" fill={`url(#${colors}-${value > 0 ? 'positive' : 'negative'})`}/></g>;})}<text x="28" y="159">较早</text><text x="276" y="159" textAnchor="end">较新</text></svg><small>红色利好 · 绿色利空 · 点击查看依据</small></div>}
     {overview && <>{[['主要利好',overview.opportunities],['风险与限制',overview.risks],['后续验证',overview.watch_points]].map(([label,items])=><details className="overview-evidence" key={String(label)}><summary>{String(label)}</summary>{Array.isArray(items) && items.length ? items.map((item,i)=><button key={`${item.news_id}-${i}`} onClick={()=>open(item.news_id)}><span>{item.text}</span><small>可信度 {confidenceNames[item.confidence]} · 查看依据</small></button>) : <p>暂无已研判依据</p>}</details>)}<p className="overview-note">{overview.note}</p></>}
     </>}
   </section>;
