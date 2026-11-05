@@ -2,11 +2,12 @@ package cn.finpulse.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.util.TypedValue;
+import android.widget.ImageButton;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -21,7 +22,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -36,22 +36,27 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
     static final String CAMPUS = "http://202.114.212.116:8000/";
-    static final String TAILSCALE = "http://100.121.102.14:8000/";
     private static final int PICK_FILE = 10, SAVE_FILE = 11, MAX_EXPORT = 16 * 1024 * 1024;
     private WebView web;
     private ProgressBar progress;
     private LinearLayout errorPanel;
     private TextView errorText;
-    private String server;
-    private boolean pageFailed, resetHistory;
+    private String server = CAMPUS;
+    private boolean pageFailed;
     private ValueCallback<Uri[]> fileCallback;
     private byte[] pendingExport;
     private long backPressedAt;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        server = getPreferences().getString("server", CAMPUS);
-        try { server = normalizeServer(server); } catch (Exception e) { server = CAMPUS; }
+        // Release builds always use the campus server, including upgrades with old saved settings.
+        if (BuildConfig.DEBUG) {
+            String fixture = getSharedPreferences("finpulse-test", MODE_PRIVATE).getString("server", "");
+            try {
+                String normalized = normalizeServer(fixture);
+                if ("127.0.0.1".equals(URI.create(normalized).getHost())) server = normalized;
+            } catch (IllegalArgumentException ignored) { /* Use the campus server. */ }
+        }
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(9, 12, 18));
@@ -64,11 +69,25 @@ public class MainActivity extends Activity {
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
-        title.setText("  FinPulse"); title.setTextColor(Color.WHITE); title.setTextSize(18);
-        toolbar.addView(title, new LinearLayout.LayoutParams(0, dp(52), 1));
-        toolbar.addView(button("刷新", v -> loadHome()));
-        toolbar.addView(button("服务器", v -> showServers()));
-        root.addView(toolbar);
+        toolbar.setPadding(dp(16), 0, dp(12), 0);
+        title.setText("FinPulse"); title.setTextColor(Color.WHITE); title.setTextSize(18);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        toolbar.addView(title, new LinearLayout.LayoutParams(-2, -1));
+        ImageButton refresh = new ImageButton(this);
+        refresh.setImageResource(R.drawable.ic_refresh);
+        refresh.setImageTintList(android.content.res.ColorStateList.valueOf(Color.rgb(177, 189, 207)));
+        refresh.setPadding(dp(11), dp(11), dp(11), dp(11));
+        refresh.setContentDescription("刷新页面"); refresh.setTooltipText("刷新页面");
+        refresh.setTag("refresh-page");
+        TypedValue ripple = new TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        refresh.setBackgroundResource(ripple.resourceId);
+        refresh.setOnClickListener(v -> { if (pageFailed) loadHome(); else web.reload(); });
+        LinearLayout.LayoutParams refreshLayout = new LinearLayout.LayoutParams(dp(44), dp(44));
+        refreshLayout.leftMargin = dp(6);
+        toolbar.addView(refresh, refreshLayout);
+        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(48)));
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         root.addView(progress, new LinearLayout.LayoutParams(-1, dp(3)));
         errorPanel = new LinearLayout(this);
@@ -76,7 +95,6 @@ public class MainActivity extends Activity {
         errorText = new TextView(this); errorText.setTextSize(17); errorText.setTextColor(Color.WHITE);
         errorPanel.addView(errorText);
         errorPanel.addView(button("重试", v -> loadHome()));
-        errorPanel.addView(button("切换服务器", v -> showServers()));
         errorPanel.setVisibility(View.GONE);
         root.addView(errorPanel, new LinearLayout.LayoutParams(-1, 0, 1));
         web = new WebView(this);
@@ -86,7 +104,6 @@ public class MainActivity extends Activity {
         if (state == null || web.restoreState(state) == null || !sameOrigin(web.getUrl())) loadHome();
     }
 
-    private SharedPreferences getPreferences() { return getSharedPreferences("finpulse", MODE_PRIVATE); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private Button button(String label, View.OnClickListener listener) {
         Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setOnClickListener(listener); return b;
@@ -114,7 +131,7 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false); s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setSupportMultipleWindows(false);
-        s.setUserAgentString(s.getUserAgentString() + " FinPulseAndroid/1.0.0");
+        s.setUserAgentString(s.getUserAgentString() + " FinPulseAndroid/" + BuildConfig.VERSION_NAME);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
@@ -135,19 +152,18 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView v, String url) {
                 CookieManager.getInstance().flush();
                 if (!pageFailed && sameOrigin(url)) {
-                    if (resetHistory) { web.clearHistory(); resetHistory = false; }
                     installExportSupport();
                     web.setVisibility(View.VISIBLE); errorPanel.setVisibility(View.GONE);
                 }
             }
             @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
-                if (r.isForMainFrame()) fail("无法连接服务器，请检查网络。校园入口需校园网络或相应网络路由；Tailscale 入口需先连接 Tailscale。");
+                if (r.isForMainFrame()) fail("无法连接服务器，请检查手机是否已连接可访问校园服务器的网络。");
             }
             @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse e) {
-                if (r.isForMainFrame()) fail("服务器返回 HTTP " + e.getStatusCode() + "。请重试或切换服务器。");
+                if (r.isForMainFrame()) fail("服务器返回 HTTP " + e.getStatusCode() + "。请稍后重试。");
             }
             @Override public void onReceivedSslError(WebView v, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
-                handler.cancel(); fail("服务器 HTTPS 证书无效，请联系管理员或更换地址。");
+                handler.cancel(); fail("服务器 HTTPS 证书无效，请联系管理员。");
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -176,28 +192,6 @@ public class MainActivity extends Activity {
     private void fail(String message) {
         pageFailed = true; web.setVisibility(View.GONE); progress.setVisibility(View.GONE);
         errorText.setText(message + "\n\n当前地址：" + server); errorPanel.setVisibility(View.VISIBLE);
-    }
-    private void showServers() {
-        new AlertDialog.Builder(this).setTitle("选择服务器")
-            .setItems(new String[]{"校园网络 · 202.114.212.116:8000", "Tailscale · 100.121.102.14:8000", "自定义地址", "在浏览器中打开当前服务器"}, (d, i) -> {
-                if (i == 0) changeServer(CAMPUS); else if (i == 1) changeServer(TAILSCALE);
-                else if (i == 2) editServer(); else openExternal(server);
-            }).setNegativeButton("取消", null).show();
-    }
-    private void editServer() {
-        EditText input = new EditText(this); input.setSingleLine(true); input.setText(server);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("服务器根地址")
-            .setMessage("填写可信的 FinPulse 地址。HTTP 连接不加密；账号和数据来自所选服务器。\n当前公网域名入口可能返回 403。")
-            .setView(input).setPositiveButton("连接", null).setNegativeButton("取消", null).create();
-        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            try { changeServer(normalizeServer(input.getText().toString())); dialog.dismiss(); }
-            catch (Exception e) { input.setError("请输入有效的 HTTP(S) 服务器根地址"); }
-        })); dialog.show();
-    }
-    private void changeServer(String value) {
-        server = normalizeServer(value); getPreferences().edit().putString("server", server).apply();
-        web.stopLoading(); resetHistory = true; loadHome();
     }
     private void openExternal(String url) {
         Uri u = Uri.parse(url);
@@ -233,7 +227,7 @@ public class MainActivity extends Activity {
                 connection = (HttpURLConnection) new URL(url).openConnection();
                 connection.setInstanceFollowRedirects(false); connection.setConnectTimeout(15000); connection.setReadTimeout(30000);
                 if (cookie != null) connection.setRequestProperty("Cookie", cookie);
-                connection.setRequestProperty("User-Agent", "FinPulseAndroid/1.0.0");
+                connection.setRequestProperty("User-Agent", "FinPulseAndroid/" + BuildConfig.VERSION_NAME);
                 if (connection.getResponseCode() != 200) throw new Exception();
                 byte[] bytes;
                 try (InputStream in = connection.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

@@ -54,7 +54,8 @@ public class SmokeTest extends Instrumentation {
                 boolean rejected = false; try { MainActivity.normalizeServer(invalid); } catch (Exception e) { rejected = true; }
                 check(rejected, "accepted invalid server: " + invalid);
             }
-            getTargetContext().getSharedPreferences("finpulse", 0).edit().putString("server", origin).commit();
+            getTargetContext().getSharedPreferences("finpulse-test", 0).edit().putString("server", origin).commit();
+            getTargetContext().getSharedPreferences("finpulse", 0).edit().putString("server", "https://old-server.invalid/").commit();
             Intent intent = new Intent(getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity = startActivitySync(intent);
             java.lang.reflect.Field field = MainActivity.class.getDeclaredField("web"); field.setAccessible(true);
@@ -70,7 +71,14 @@ public class SmokeTest extends Instrumentation {
             for (int i = 0; i < 30 && !"\"authenticated\"".equals(js(web, "window.sessionResult")); i++) Thread.sleep(100);
             check("\"authenticated\"".equals(js(web, "window.sessionResult")), "same-origin cookie auth failed");
             String previousGeneration = js(web, "window.fixtureGeneration");
-            runOnMainSync(web::reload);
+            Activity toolbarActivity = activity;
+            runOnMainSync(() -> {
+                android.view.View refresh = toolbarActivity.getWindow().getDecorView().findViewWithTag("refresh-page");
+                check(refresh instanceof android.widget.ImageButton, "refresh must be an icon button");
+                android.view.ViewGroup toolbar = (android.view.ViewGroup) refresh.getParent();
+                check(toolbar.getChildCount() == 2 && toolbar.getChildAt(1) == refresh, "toolbar must only contain logo and adjacent refresh");
+                refresh.performClick();
+            });
             for (int i = 0; i < 30; i++) {
                 if ("true".equals(js(web, "!!window.fixtureReady && window.fixtureGeneration !== " + previousGeneration + " && typeof window.__finpulseExport === 'function'"))) break;
                 Thread.sleep(200);

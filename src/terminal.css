@@ -674,8 +674,9 @@
   :root[data-theme] :is(.portfolio-rail, .research-main-column, .research-right-rail) { width: 100%; }
   :root[data-theme] .portfolio-rail { gap: 0; }
   :root[data-theme] .rail-note { display: none; }
-  :root[data-theme] .portfolio-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  :root[data-theme] .portfolio-panel > :is(header, .rail-caption, .add-watch, .rail-empty) { grid-column: 1 / -1; }
+  :root[data-theme] .portfolio-panel { display: block; }
+  :root[data-theme] .portfolio-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+  :root[data-theme] .portfolio-list > .rail-empty { grid-column: 1 / -1; }
   :root[data-theme] .portfolio-panel header { padding: 20px 20px 10px; flex-wrap: nowrap; }
   :root[data-theme] .rail-caption { padding: 0 20px 18px; }
   :root[data-theme] .portfolio-row { min-width: 0; border-right: 1px solid var(--theme-border); }
@@ -722,8 +723,9 @@
 @media (min-width: 651px) and (max-width: 1000px) {
   :root[data-theme] .finance-layout { display: flex; flex-direction: column; }
   :root[data-theme] :is(.portfolio-rail, .research-main-column, .research-right-rail) { width: 100%; }
-  :root[data-theme] .portfolio-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  :root[data-theme] .portfolio-panel > :is(header, .rail-caption, .add-watch, .rail-empty) { grid-column: 1 / -1; }
+  :root[data-theme] .portfolio-panel { display: block; }
+  :root[data-theme] .portfolio-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+  :root[data-theme] .portfolio-list > .rail-empty { grid-column: 1 / -1; }
   :root[data-theme] .portfolio-row > button:first-child { flex-direction: column; padding: 22px 18px; }
   :root[data-theme] .portfolio-row { border-top: 1px solid var(--theme-border); border-right: 1px solid var(--theme-border); }
   :root[data-theme] .portfolio-row span:last-child { display: flex; width: 100%; justify-content: space-between; align-items: baseline; }
