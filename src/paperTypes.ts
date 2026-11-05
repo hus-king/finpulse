@@ -44,7 +44,7 @@ export interface QuantDecision {
   skipped_targets?: Record<string, string>;
   peg_snapshot?: { snapshot_id: string; method_version: string; market_date: string; published_at: string };
   peg_selection?: { code: string; name: string; group: string; peg: number }[];
-  allocation_outcome?: { positions: Record<string, { quantity: number; weight: number }>; differences: Record<string, { target_weight: number; actual_weight: number }>; note: string };
+  allocation_outcome?: { positions: Record<string, { quantity: number; weight?: number }>; differences?: Record<string, { target_weight: number; actual_weight: number }>; note: string };
   results?: { request_id: string; code: string; status: string; sequence?: number; reason?: string }[];
 }
 export interface PaperAutomationState {
