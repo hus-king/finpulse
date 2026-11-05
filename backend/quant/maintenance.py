@@ -11,7 +11,8 @@ from ..trading_calendar import is_trade_day
 from .peg_strategy import PEG_STRATEGY_ID
 
 RESET_NAMESPACES = ('paper_account', 'paper_trade', 'quant_config', 'quant_decision',
-                    'quant_day', 'quant_runtime', 'quant_opening', 'peg_b_state')
+                    'quant_day', 'quant_runtime', 'quant_opening', 'peg_b_state',
+                    'n2_state', 'n2_daily_nav', 'paper_replay', 'paper_corporate')
 
 
 def opening_date(now):

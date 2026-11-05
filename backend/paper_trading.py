@@ -61,7 +61,8 @@ class PaperTradingService:
         trades=self.store.day_trades(owner,day.isoformat(),account['sequence'])
         codes=set(account['positions'])|{trade['code'] for trade in trades}
         closes=self._previous_closes(codes,reference.isoformat())
-        return {**valued,**dates,**daily_performance(account,trades,closes,valued)}
+        corporate=self.store.day_cash_events(owner,day.isoformat(),account.get('corporate_revision',0))
+        return {**valued,**dates,**daily_performance(account,trades,closes,valued,corporate)}
 
     async def snapshot(self, owner: str, refresh: bool = False) -> dict:
         """A portfolio read schedules all held quotes, independent of trading decisions."""

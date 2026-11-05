@@ -8,6 +8,7 @@ const percent = (value?: number) => value === undefined ? '—' : `${(value * 10
 const stamp = (value?: string) => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '尚无';
 const PEG_ID = 'official-low-peg-v1';
 const PEG_B_ID = 'official-peg-buffered-v1';
+const N2_ID = 'official-four-factor-n2-v1';
 const decisionStatus = (status: string) => ({ completed: '已完成', paused: '已暂停', expired: '已过期', running: '执行中，可恢复' }[status] ?? status);
 
 export default function PaperAutomation({ disabled, onModeChange }: { disabled: boolean; onModeChange: (mode: 'manual' | 'algorithm' | null) => void }) {
@@ -77,15 +78,21 @@ export default function PaperAutomation({ disabled, onModeChange }: { disabled: 
     <header><div><span className="paper-eyebrow">ACCOUNT PILOT</span><h2><Bot size={19} />自己操作，或选择算法托管</h2></div><span className={`paper-pilot-status ${state?.mode === 'algorithm' ? 'active' : ''}`}>{state ? state.mode === 'algorithm' ? '算法托管中' : '手动操作' : '读取操作方式'}</span></header>
     <div className="paper-pilot-controls"><label>操作方式<select aria-label="操作方式" value={selected} disabled={busy || disabled || !state} onChange={event => { setSelected(event.target.value); setDirty(true); }}><option value="manual">自己操作 · 手动交易</option><optgroup label="官方算法">{strategies.filter(item => item.origin !== 'user').map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.name}{item.available ? ' · 官方' : ' · 暂不可用'}</option>)}</optgroup><optgroup label="我的策略">{strategies.filter(item => item.origin === 'user').map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.name} · 我的策略 · r{item.revision}{item.available ? '' : ' · 暂不可用'}</option>)}</optgroup></select></label>
       {selected === PEG_ID && <><label>目标持股数量<select aria-label="PEG目标持股数量" value={pegCount} disabled={busy || disabled} onChange={event => { setPegCount(Number(event.target.value)); setDirty(true); }}>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n} 只</option>)}</select></label><label>PEG选股范围<select aria-label="PEG选股范围" value={pegGroup} disabled={busy || disabled} onChange={event => { setPegGroup(event.target.value); setDirty(true); }}><option value="all">全部合格股票</option><option value="非金融">仅非金融</option><option value="金融">仅金融</option></select></label></>}
-      <button className="primary-button" disabled={busy || disabled || !state || !!unchanged || selected !== 'manual' && !strategy?.available} onClick={() => { void change(selected === 'manual' ? 'manual' : 'algorithm', selected === 'manual' ? undefined : selected); }}>{busy ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}{selected === 'manual' ? '切回手动' : selected === PEG_B_ID ? '启用 PEG B 策略' : selected === PEG_ID ? (state?.strategy_id === PEG_ID && state.mode === 'algorithm' ? '更新PEG参数' : '启用低 PEG 策略') : strategy?.origin === 'user' ? '启用我的策略' : '启用官方算法'}</button>
+      <button className="primary-button" disabled={busy || disabled || !state || !!unchanged || selected !== 'manual' && !strategy?.available} onClick={() => { void change(selected === 'manual' ? 'manual' : 'algorithm', selected === 'manual' ? undefined : selected); }}>{busy ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}{selected === 'manual' ? '切回手动' : selected === N2_ID ? '启用双股倒波动' : selected === PEG_B_ID ? '启用 PEG B 策略' : selected === PEG_ID ? (state?.strategy_id === PEG_ID && state.mode === 'algorithm' ? '更新PEG参数' : '启用低 PEG 策略') : strategy?.origin === 'user' ? '启用我的策略' : '启用官方算法'}</button>
       {state?.mode === 'algorithm' && <button className="paper-pause" disabled={busy} onClick={() => { void change('manual'); }}><Pause size={15} />暂停并手动接管</button>}
     </div>
-    <p className="paper-pilot-note">启用后，算法会在交易日北京时间 10:00 后自动管理此模拟账户，关闭网页后继续运行。{displayed?.kind === 'peg' ? '低 PEG 策略会调整账户全部已有持仓，包括原手动持仓，卖出不再入选的股票。' : '切换保留持仓；股票池外持仓不自动清仓。'}托管期间手动新单暂停。</p>
+    <p className="paper-pilot-note">启用后，算法会在交易日北京时间 10:00 后自动管理此模拟账户，关闭网页后继续运行。{displayed?.kind === 'n2' ? '双股倒波动会按规则管理账户全部持仓；需要退出的持仓仍受实际成交与T+1约束。' : displayed?.kind === 'peg' ? '低 PEG 策略会调整账户全部已有持仓，包括原手动持仓，卖出不再入选的股票。' : '切换保留持仓；股票池外持仓不自动清仓。'}托管期间手动新单暂停。</p>
     {disabled && <p className="paper-pilot-note">请先确认当前未完成的交易请求，再切换操作方式。</p>}
     {error && <div className="paper-error" role="alert">{error}<button onClick={() => { void load(); }}>重新读取</button></div>}
     {state && !state.scheduler_enabled && <p className="paper-pilot-warning">当前实例未开启自动执行，托管配置会保存；由已开启调度的服务器处理。</p>}
     {state?.reason && <p className="paper-pilot-warning">{state.reason}</p>}
     {state?.mode === 'algorithm' && <div className="paper-pilot-runtime"><span>最近检查 {stamp(state.runtime.checked_at)}</span><span>{state.runtime.reason ?? (state.last_decision?.status === 'completed' ? '今日决策已完成' : '等待交易时段或首轮检查')}</span><span>{state.next_check}</span></div>}
+    {state?.replay && <section className="paper-rule-summary" aria-label="账户历史回放"><strong>账户起点 · {state.replay.start_date}</strong><p>已回放至 {state.replay.end_date}，共 {state.replay.trading_days} 个交易日、{state.replay.fills} 笔成交。{state.replay.note}</p><p>导入后由当前托管策略继续运行，历史成交在流水中标记为“历史回放”。</p></section>}
+    {displayed?.id === N2_ID && <section className="paper-rule-summary" aria-label="双股倒波动策略说明"><strong>四因子 · 双股倒波动</strong>
+      <p>沪深300合格股票按 PEG 35.10%、风险调整动量24.90%、趋势15.00%、低波动25.00%综合排序。使用上一完整交易日的数据；动量回看252日并跳过最近21日，趋势采用60日均线，低波动采用120日波动率。</p>
+      <p>固定2个持股名额，以60日倒波动分配仓位，每个一级行业最多1只、资金不超过60%。约束排序前9名内保留，连续3次有效离榜确认后退出；首次建仓复权价格下跌18%时退出，实际清仓后冷却20个完整交易日。加仓保留原建仓锚点，目标差额不超过账户权益5个百分点时免微调。</p>
+      <details><summary>调仓、成交与历史参考</summary><p>交易日10:00决策，10:02提交卖单、10:07提交买单。实时模拟使用闭合分钟的买入高价、卖出低价，1%分钟成交量参与率及部分成交；每笔母单总费用不低于成交额20bp，同时覆盖模拟法定费用。受阻持仓继续占用名额。</p><p>冻结历史回测参考：2011-01-04至2026-08-31，20bp版累计收益 <span className="up">+1183.44%</span>，最大回撤33.63%。本账户从所示起点独立累计业绩，历史日线开盘回放的成交口径另行标注。</p></details>
+    </section>}
     {displayed?.id === PEG_B_ID && <section className="paper-rule-summary" aria-label="PEG B策略说明"><strong>PEG B · 3股分散与5个百分点免微调</strong>
       <p>沿用正前瞻 PEG 排序与合格门槛，合并金融和非金融。候选排序每个申万一级行业最多保留5只；持仓在这个排序前9名内继续保留，空缺按前9顺序补齐。最多持有3只，每行业最多1只、资金不超过账户权益60%。</p>
       <p>每只目标约为账户的三分之一，预留费用和整手余额；当前持仓与目标相差不超过账户权益的5个百分点时免微调。必要退出、新建仓仍执行。卖出失败或T+1锁定的持仓继续占名额，不提前假定卖出成功。</p>

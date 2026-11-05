@@ -38,6 +38,8 @@ from .paper_store import PaperStore
 from .paper_trading import PaperTradingService
 from .paper_rules import PaperError
 from .paper_api import router as paper_router, paper_error_handler
+from .paper_performance import PaperPerformanceService
+from .paper_performance_api import router as paper_performance_router
 
 from .peg_service import PegService
 from .peg_api import router as peg_router
@@ -70,6 +72,7 @@ async def lifespan(application):
     application.state.minute_market = MinuteMarketService(research_store)
     application.state.paper_trading = PaperTradingService(PaperStore(research_store), application.state.research.catalog, application.state.minute_market,
                                                         daily_market=application.state.research.daily_market)
+    application.state.paper_performance = PaperPerformanceService(application.state.paper_trading)
     application.state.quant = QuantService(application.state.paper_trading, enabled=os.environ.get('FINPULSE_QUANT_ENABLED', '0') == '1')
     application.state.quant.start()
     application.state.market_bundle = MarketBundleService(application.state.research, application.state.minute_market)
@@ -84,6 +87,7 @@ async def lifespan(application):
             await application.state.hot_news.resume_interrupted()
         yield
     finally:
+        await application.state.paper_performance.close()
         await application.state.hot_news_matches.close()
         await application.state.hot_news.close()
         await application.state.peg.close()
@@ -104,6 +108,7 @@ app.include_router(admin_router)
 app.include_router(research_router)
 app.include_router(hot_news_router)
 app.include_router(paper_router)
+app.include_router(paper_performance_router)
 app.include_router(peg_router)
 app.include_router(quant_router)
 app.include_router(user_strategy_router)

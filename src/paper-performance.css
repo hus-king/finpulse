@@ -1,0 +1,29 @@
+.paper-performance{margin-top:24px;padding:26px 28px;border:1px solid var(--border);border-radius:16px;background:var(--panel);min-width:0}
+.paper-performance .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.paper-performance-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:24px}
+.paper-performance-eyebrow{font:11px/1.5 ui-monospace,SFMono-Regular,monospace;letter-spacing:.17em;color:var(--muted)}
+.paper-performance h3{margin:7px 0 0;font-size:21px;font-weight:650;letter-spacing:.02em}
+.paper-performance-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.paper-performance-controls select{max-width:160px;background:var(--theme-input-bg,var(--panel));color:inherit;border:1px solid var(--border);border-radius:8px;padding:9px 30px 9px 11px;font:inherit;font-size:13px;cursor:pointer}
+.paper-performance-switch{display:flex;border:1px solid var(--border);border-radius:8px;padding:3px;gap:2px}
+.paper-performance-switch button{border:0;background:transparent;color:var(--muted);padding:6px 11px;border-radius:5px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.paper-performance-switch button[aria-pressed=true]{background:var(--theme-accent-soft);color:var(--theme-accent-text)}
+.paper-performance-refresh{display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;cursor:pointer}
+.paper-performance-refresh:disabled{opacity:.55;cursor:default}
+.paper-performance-controls button:focus-visible,.paper-performance-controls select:focus-visible{outline:2px solid var(--theme-focus);outline-offset:3px}
+.paper-performance-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-bottom:20px}
+.paper-performance-metrics>div{padding:0 22px 0 0;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:7px;min-width:0}
+.paper-performance-metrics>div:last-child{border:0}
+.paper-performance-metrics>div>span{font-size:12px;color:var(--muted)}
+.paper-performance-metrics strong{font:600 clamp(20px,2.1vw,31px)/1.3 ui-monospace,SFMono-Regular,monospace;letter-spacing:-.035em;overflow-wrap:anywhere}
+.paper-performance-metrics small{font:12px/1.5 ui-monospace,SFMono-Regular,monospace;opacity:.85}
+.paper-performance .up{color:var(--up)}
+.paper-performance .down{color:var(--down)}
+.paper-performance-chart{height:310px;width:100%;min-width:0}
+.paper-performance-empty{min-height:210px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;color:var(--muted);font-size:13px;text-align:center}
+.paper-performance-empty p{max-width:520px;line-height:1.7}
+.paper-performance-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:15px;border-top:1px solid var(--border);color:var(--muted);font-size:11px}
+.paper-performance-basis,.paper-performance-notice{margin:11px 0 0;color:var(--muted);font-size:11px;line-height:1.7}
+.paper-performance-notice{color:var(--theme-warning)}
+@media(max-width:900px){.paper-performance-heading{align-items:flex-start;flex-direction:column;gap:14px}.paper-performance{padding:22px 20px}.paper-performance-controls{width:100%}.paper-performance-metrics{gap:12px}.paper-performance-metrics>div{padding-right:12px}.paper-performance-metrics strong{font-size:22px}}
+@media(max-width:560px){.paper-performance{padding:19px 14px}.paper-performance-controls{gap:8px}.paper-performance-controls select{max-width:130px}.paper-performance-switch button{padding:6px 8px}.paper-performance-metrics{grid-template-columns:1fr;gap:15px}.paper-performance-metrics>div{border-right:0;border-bottom:1px solid var(--border);padding:0 0 14px;display:grid;grid-template-columns:1fr auto;align-items:center}.paper-performance-metrics>div>span{grid-row:1/3}.paper-performance-metrics strong,.paper-performance-metrics small{text-align:right}.paper-performance-chart{height:280px}.paper-performance h3{font-size:19px}}

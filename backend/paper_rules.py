@@ -125,7 +125,8 @@ def _quantity(quantity, rules: dict, side: str, available: int) -> None:
         raise PaperError('INVALID_QUANTITY', f"{rules['board']}股数不符合申报规则，请检查最小股数和零股余额。", 422)
 
 
-def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dict, now: datetime) -> tuple[dict, dict]:
+def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dict, now: datetime,
+                *, execution_costs=None, partial_fill=False) -> tuple[dict, dict]:
     now = now.astimezone(SHANGHAI)
     state = session_state(now)
     if not state['can_trade']:
@@ -136,7 +137,13 @@ def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dic
     rules = board_rules(code)
     position = account['positions'].get(code)
     available = sellable_quantity(position, now) if position else 0
-    _quantity(quantity, rules, side, available)
+    if partial_fill:
+        # Only the internal model executor uses this after validating its legal
+        # parent order. Exchange fills can be smaller than an order's lot size.
+        if type(quantity) is not int or not 0 < quantity <= rules['max_quantity']:
+            raise PaperError('INVALID_QUANTITY', '部分成交股数无效。', 422)
+    else:
+        _quantity(quantity, rules, side, available)
     if side == 'sell':
         if not position or quantity > position['quantity']:
             raise PaperError('INSUFFICIENT_POSITION', '持仓数量不足，不能卖空。')
@@ -146,7 +153,14 @@ def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dic
     if type(price) is not int or price <= 0:
         raise PaperError('QUOTE_UNAVAILABLE', '成交报价无效。')
     gross = quantity * price
-    costs = fees(gross, side)
+    costs = fees(gross, side) if execution_costs is None else dict(execution_costs)
+    if execution_costs is not None:
+        parts = ('commission_fen', 'transfer_fen', 'stamp_fen', 'friction_fen')
+        if (set(costs) != {*parts, 'fees_fen'} or
+                any(type(costs[k]) is not int for k in costs) or
+                any(costs[k] < 0 for k in parts[:3]) or costs['fees_fen'] < 0 or
+                sum(costs[k] for k in parts) != costs['fees_fen']):
+            raise PaperError('INVALID_FEES', '模型成交费用不一致。', 422)
     net = gross + costs['fees_fen'] if side == 'buy' else gross - costs['fees_fen']
     cash = account['cash_fen'] - net if side == 'buy' else account['cash_fen'] + net
     if cash < 0:
@@ -193,10 +207,15 @@ def apply_trade(account: dict, stock: dict, side: str, quantity: int, quote: dic
     return updated, trade
 
 
-def daily_performance(account: dict, trades: list[dict], previous_closes: dict[str, int], valuation: dict) -> dict:
+def daily_performance(account: dict, trades: list[dict], previous_closes: dict[str, int], valuation: dict,
+                      corporate_events=()) -> dict:
     """Reverse today's cash flows and share changes to recover the overnight book."""
     cash=account['cash_fen'];quantities={code:p['quantity'] for code,p in account['positions'].items()}
-    buys={};sells={}
+    buys={};sells={};benefits={};receivable=account.get('receivable_fen',0)
+    for event in corporate_events:
+        cash-=event['cash_delta_fen'];receivable-=event['receivable_delta_fen']
+        code=event['code']
+        benefits[code]=benefits.get(code,0)+event['cash_delta_fen']+event['receivable_delta_fen']
     for trade in trades:
         code=trade['code'];quantity=trade['quantity'];gross=trade['gross_fen'];cost=trade['fees_fen']
         if trade['side']=='buy':
@@ -206,14 +225,14 @@ def daily_performance(account: dict, trades: list[dict], previous_closes: dict[s
             cash-=gross-cost;quantities[code]=quantities.get(code,0)+quantity
             sells[code]=sells.get(code,0)+gross-cost
     missing=sorted(code for code,quantity in quantities.items() if quantity>0 and code not in previous_closes)
-    invalid=cash<0 or any(quantity<0 for quantity in quantities.values())
+    invalid=cash<0 or receivable<0 or any(quantity<0 for quantity in quantities.values())
     positions=[]
     for position in valuation['positions']:
         code=position['code'];overnight=quantities[code]*previous_closes.get(code,0)
         base=overnight+buys.get(code,0)
         reason=('当日成交记录与持仓暂未对齐' if invalid else '暂缺上一交易日收盘价' if code in missing
                 else '当日投入基准无效' if base<=0 else '')
-        pnl=None if reason else position['market_value_fen']+sells.get(code,0)-buys.get(code,0)-overnight
+        pnl=None if reason else position['market_value_fen']+sells.get(code,0)-buys.get(code,0)-overnight+benefits.get(code,0)
         positions.append({**position,'daily_pnl_fen':pnl,
                           'daily_return_percent':round(pnl/base*100,4) if pnl is not None else None,
                           'daily_pnl_reason':reason})
@@ -222,7 +241,7 @@ def daily_performance(account: dict, trades: list[dict], previous_closes: dict[s
     if invalid:
         return {**result,'daily_pnl_reason':'当日成交记录与持仓暂未对齐'}
     if missing:return {**result,'daily_pnl_reason':'暂缺上一交易日收盘价'}
-    baseline=cash+sum(quantity*previous_closes[code] for code,quantity in quantities.items() if quantity)
+    baseline=cash+receivable+sum(quantity*previous_closes[code] for code,quantity in quantities.items() if quantity)
     if baseline<=0:return {**result,'daily_pnl_reason':'上一交易日资产基准无效'}
     pnl=valuation['equity_fen']-baseline
     return {**result,'daily_pnl_fen':pnl,'daily_return_percent':round(pnl/baseline*100,4),
@@ -252,10 +271,10 @@ def value_account(account: dict, quotes: dict[str, dict], now: datetime) -> dict
             'market_value_fen': market_value, 'unrealized_pnl_fen': market_value - position['cost_fen']})
     market_value = sum(item['market_value_fen'] for item in positions)
     unrealized = sum(item['unrealized_pnl_fen'] for item in positions)
-    equity = account['cash_fen'] + market_value
+    equity = account['cash_fen'] + market_value + account.get('receivable_fen',0)
     pnl = equity - account['initial_cash_fen']
     return {'initial_cash_fen': account['initial_cash_fen'], 'cash_fen': account['cash_fen'],
-            'market_value_fen': market_value, 'equity_fen': equity,
+            'market_value_fen': market_value, 'equity_fen': equity, 'receivable_fen':account.get('receivable_fen',0),
             'realized_pnl_fen': account['realized_pnl_fen'], 'unrealized_pnl_fen': unrealized,
             'total_pnl_fen': pnl, 'return_percent': round(pnl / account['initial_cash_fen'] * 100, 4),
             'total_fees_fen': account['total_fees_fen'], 'positions': positions, 'market': session_state(now)}

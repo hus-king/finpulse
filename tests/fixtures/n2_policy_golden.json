@@ -1,0 +1,409 @@
+{
+  "reference": "Frozen research functions; synthetic deterministic raw/adjusted input generator is golden_inputs in test_n2_policy.py. Decision date is the session after as_of, matching the source shift(1).",
+  "source_sha256": {
+    "peg_factor_windows.py": "5a2a9882f71318c78a81d29c15d6df23483e5edd80d348c1d073239a624aa6c7",
+    "b_ranking_factors.py": "4c8e591772c3200d8d896eddc41bb27a8490f6f3ffd5c2418295df3916995d6c",
+    "peg_allocation_design.py": "34f9b0a00690e06389aea3e526fee7a9963eae2f33b6fa4288d7b6ae938575d6"
+  },
+  "cases": [
+    {
+      "as_of": "2026-01-27",
+      "ranking": [
+        "600004",
+        "600003",
+        "600002",
+        "600001",
+        "600005",
+        "600000"
+      ],
+      "rows": {
+        "600000": {
+          "factor_values": {
+            "peg": 0.3,
+            "momentum": 1.86722213578187,
+            "trend": 0.012908607235462055,
+            "lowvol": -0.04588347157795265
+          },
+          "factor_scores": {
+            "peg": 0.0,
+            "momentum": -0.5,
+            "trend": -0.1,
+            "lowvol": -0.5
+          },
+          "score": -0.2645
+        },
+        "600001": {
+          "factor_values": {
+            "peg": 0.25,
+            "momentum": 5.095412119431584,
+            "trend": 0.000148381721730928,
+            "lowvol": -0.035778881698137054
+          },
+          "factor_scores": {
+            "peg": 0.3,
+            "momentum": -0.16666666666666666,
+            "trend": -0.3,
+            "lowvol": -0.25
+          },
+          "score": -0.0437
+        },
+        "600002": {
+          "factor_values": {
+            "peg": 0.3,
+            "momentum": 7.431109883715699,
+            "trend": 0.027691531050395346,
+            "lowvol": -0.029817749869122487
+          },
+          "factor_scores": {
+            "peg": 0.0,
+            "momentum": 0.16666666666666666,
+            "trend": 0.1,
+            "lowvol": 0.0
+          },
+          "score": 0.056499999999999995
+        },
+        "600003": {
+          "factor_values": {
+            "peg": 0.6,
+            "momentum": 12.557157448173925,
+            "trend": 0.0399442996386945,
+            "lowvol": -0.024469459987433186
+          },
+          "factor_scores": {
+            "peg": -0.5,
+            "momentum": 0.5,
+            "trend": 0.5,
+            "lowvol": 0.25
+          },
+          "score": 0.08650000000000001
+        },
+        "600004": {
+          "factor_values": {
+            "peg": 0.2,
+            "momentum": null,
+            "trend": 0.03244020281282878,
+            "lowvol": null
+          },
+          "factor_scores": {
+            "peg": 0.5,
+            "momentum": 0.0,
+            "trend": 0.3,
+            "lowvol": 0.0
+          },
+          "score": 0.22049999999999997
+        },
+        "600005": {
+          "factor_values": {
+            "peg": 0.4,
+            "momentum": null,
+            "trend": 0.0,
+            "lowvol": -0.0
+          },
+          "factor_scores": {
+            "peg": -0.3,
+            "momentum": 0.0,
+            "trend": -0.5,
+            "lowvol": 0.5
+          },
+          "score": -0.05529999999999999
+        }
+      },
+      "allocation": {
+        "600000": 0.4,
+        "600003": 0.6
+      },
+      "allocation_info": {
+        "allocation": "invvol60",
+        "stocks": [
+          "600000",
+          "600003"
+        ],
+        "window": 60,
+        "window_start": "2025-11-05",
+        "window_end": "2026-01-27",
+        "fallback": null
+      },
+      "allocation_unclipped": {
+        "600001": 0.45237304571977793,
+        "600002": 0.5476269542802221
+      },
+      "allocation_unclipped_info": {
+        "allocation": "invvol60",
+        "stocks": [
+          "600001",
+          "600002"
+        ],
+        "window": 60,
+        "window_start": "2025-11-05",
+        "window_end": "2026-01-27",
+        "fallback": null
+      }
+    },
+    {
+      "as_of": "2026-02-25",
+      "ranking": [
+        "600004",
+        "600002",
+        "600003",
+        "600001",
+        "600005",
+        "600000"
+      ],
+      "rows": {
+        "600000": {
+          "factor_values": {
+            "peg": 0.3,
+            "momentum": 2.0600275973414446,
+            "trend": -0.0010207853467180117,
+            "lowvol": -0.04443470293918195
+          },
+          "factor_scores": {
+            "peg": 0.0,
+            "momentum": -0.5,
+            "trend": -0.5,
+            "lowvol": -0.5
+          },
+          "score": -0.3245
+        },
+        "600001": {
+          "factor_values": {
+            "peg": 0.25,
+            "momentum": 3.9283988245253165,
+            "trend": 0.006658325135110665,
+            "lowvol": -0.03623930611943155
+          },
+          "factor_scores": {
+            "peg": 0.3,
+            "momentum": -0.16666666666666666,
+            "trend": -0.1,
+            "lowvol": -0.25
+          },
+          "score": -0.013700000000000004
+        },
+        "600002": {
+          "factor_values": {
+            "peg": 0.3,
+            "momentum": 7.028282364168487,
+            "trend": 0.019572251160050014,
+            "lowvol": -0.030256345870040825
+          },
+          "factor_scores": {
+            "peg": 0.0,
+            "momentum": 0.16666666666666666,
+            "trend": 0.3,
+            "lowvol": 0.0
+          },
+          "score": 0.0865
+        },
+        "600003": {
+          "factor_values": {
+            "peg": 0.6,
+            "momentum": 12.902575900753957,
+            "trend": 0.01806927542028869,
+            "lowvol": -0.02506290781111745
+          },
+          "factor_scores": {
+            "peg": -0.5,
+            "momentum": 0.5,
+            "trend": 0.1,
+            "lowvol": 0.25
+          },
+          "score": 0.02650000000000001
+        },
+        "600004": {
+          "factor_values": {
+            "peg": 0.2,
+            "momentum": null,
+            "trend": 0.037606952892300205,
+            "lowvol": null
+          },
+          "factor_scores": {
+            "peg": 0.5,
+            "momentum": 0.0,
+            "trend": 0.5,
+            "lowvol": 0.0
+          },
+          "score": 0.2505
+        },
+        "600005": {
+          "factor_values": {
+            "peg": 0.4,
+            "momentum": null,
+            "trend": 0.0,
+            "lowvol": -0.0
+          },
+          "factor_scores": {
+            "peg": -0.3,
+            "momentum": 0.0,
+            "trend": -0.3,
+            "lowvol": 0.5
+          },
+          "score": -0.02529999999999999
+        }
+      },
+      "allocation": {
+        "600000": 0.4,
+        "600003": 0.6
+      },
+      "allocation_info": {
+        "allocation": "invvol60",
+        "stocks": [
+          "600000",
+          "600003"
+        ],
+        "window": 60,
+        "window_start": "2025-12-04",
+        "window_end": "2026-02-25",
+        "fallback": null
+      },
+      "allocation_unclipped": {
+        "600001": 0.45583294037209526,
+        "600002": 0.5441670596279048
+      },
+      "allocation_unclipped_info": {
+        "allocation": "invvol60",
+        "stocks": [
+          "600001",
+          "600002"
+        ],
+        "window": 60,
+        "window_start": "2025-12-04",
+        "window_end": "2026-02-25",
+        "fallback": null
+      }
+    },
+    {
+      "as_of": "2026-03-24",
+      "ranking": [
+        "600004",
+        "600003",
+        "600002",
+        "600001",
+        "600005",
+        "600000"
+      ],
+      "rows": {
+        "600000": {
+          "factor_values": {
+            "peg": 0.3,
+            "momentum": 1.624205114148683,
+            "trend": -0.005372399218587898,
+            "lowvol": -0.04555779945472563
+          },
+          "factor_scores": {
+            "peg": 0.0,
+            "momentum": -0.5,
+            "trend": -0.5,
+            "lowvol": -0.5
+          },
+          "score": -0.3245
+        },
+        "600001": {
+          "factor_values": {
+            "peg": 0.25,
+            "momentum": 3.80828656129919,
+            "trend": 0.03260557570082301,
+            "lowvol": -0.036917727135210826
+          },
+          "factor_scores": {
+            "peg": 0.3,
+            "momentum": -0.16666666666666666,
+            "trend": 0.1,
+            "lowvol": -0.25
+          },
+          "score": 0.016299999999999995
+        },
+        "600002": {
+          "factor_values": {
+            "peg": 0.3,
+            "momentum": 7.420457719237253,
+            "trend": 0.028369742869444492,
+            "lowvol": -0.029879173799782156
+          },
+          "factor_scores": {
+            "peg": 0.0,
+            "momentum": 0.16666666666666666,
+            "trend": -0.1,
+            "lowvol": 0.0
+          },
+          "score": 0.026499999999999996
+        },
+        "600003": {
+          "factor_values": {
+            "peg": 0.6,
+            "momentum": 11.604994457881654,
+            "trend": 0.04555061695101892,
+            "lowvol": -0.02650886749558203
+          },
+          "factor_scores": {
+            "peg": -0.5,
+            "momentum": 0.5,
+            "trend": 0.3,
+            "lowvol": 0.25
+          },
+          "score": 0.05650000000000001
+        },
+        "600004": {
+          "factor_values": {
+            "peg": 0.2,
+            "momentum": null,
+            "trend": 0.056700984586378844,
+            "lowvol": null
+          },
+          "factor_scores": {
+            "peg": 0.5,
+            "momentum": 0.0,
+            "trend": 0.5,
+            "lowvol": 0.0
+          },
+          "score": 0.2505
+        },
+        "600005": {
+          "factor_values": {
+            "peg": 0.4,
+            "momentum": null,
+            "trend": 0.0,
+            "lowvol": -0.0
+          },
+          "factor_scores": {
+            "peg": -0.3,
+            "momentum": 0.0,
+            "trend": -0.3,
+            "lowvol": 0.5
+          },
+          "score": -0.02529999999999999
+        }
+      },
+      "allocation": {
+        "600000": 0.4,
+        "600003": 0.6
+      },
+      "allocation_info": {
+        "allocation": "invvol60",
+        "stocks": [
+          "600000",
+          "600003"
+        ],
+        "window": 60,
+        "window_start": "2025-12-31",
+        "window_end": "2026-03-24",
+        "fallback": null
+      },
+      "allocation_unclipped": {
+        "600001": 0.44391322338065764,
+        "600002": 0.5560867766193422
+      },
+      "allocation_unclipped_info": {
+        "allocation": "invvol60",
+        "stocks": [
+          "600001",
+          "600002"
+        ],
+        "window": 60,
+        "window_start": "2025-12-31",
+        "window_end": "2026-03-24",
+        "fallback": null
+      }
+    }
+  ]
+}

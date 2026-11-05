@@ -8,6 +8,8 @@ from typing import Protocol
 from .features import FEATURE_NAMES, FEATURE_VERSION, features
 from .peg_strategy import PEG_STRATEGY_ID, PegStrategy
 from .buffered_peg import BUFFERED_PEG_ID, BufferedPegStrategy
+from .n2_live import N2Strategy
+from .n2_policy import N2_STRATEGY_ID
 
 STRATEGY_ID = 'official-multifactor-v1'
 MODEL_ROOT = Path(__file__).resolve().parents[2] / 'models' / 'official_quant'
@@ -95,6 +97,7 @@ class StrategyRegistry:
             self.error = '官方模型尚未发布或未通过校验'
         self.register(PEG_STRATEGY_ID, PegStrategy())
         self.register(BUFFERED_PEG_ID, BufferedPegStrategy())
+        self.register(N2_STRATEGY_ID, N2Strategy())
 
     def register(self, strategy_id, strategy: Strategy):
         if strategy_id in self.strategies:

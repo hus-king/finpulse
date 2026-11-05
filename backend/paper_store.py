@@ -45,6 +45,13 @@ class PaperStore:
         items = [self._public(json.loads(row['payload'])) for row in rows[:limit]]
         return {'items': items, 'next_before_seq': items[-1]['sequence'] if len(rows) > limit else None}
 
+    def day_cash_events(self, owner, day, max_revision):
+        # Usually zero or two rows; the owner book revision bounds concurrent postings.
+        with self.db.connection() as conn:
+            rows=conn.execute("SELECT payload FROM research_records WHERE namespace='paper_corporate' AND owner=?",(owner,)).fetchall()
+        events=[json.loads(row['payload']) for row in rows]
+        return [event for event in events if event['corporate_revision']<=max_revision and event['effective_at'][:10]==day]
+
     @staticmethod
     def _public(trade):
         return {key: value for key, value in trade.items() if key != 'intent'}
@@ -96,6 +103,11 @@ class PaperStore:
                 from .quant.buffered_peg import update_fill_state
                 update_fill_state(state,account,updated,trade)
                 self._put(conn,'peg_b_state','state',owner,state)
+            n2_state=self._get(conn,'n2_state','state',owner,None)
+            if n2_state is not None:
+                from .quant.n2_book import update_manual_state
+                update_manual_state(n2_state,account,updated,trade)
+                self._put(conn,'n2_state','state',owner,n2_state)
             saved = {**trade, 'request_id': request_id, 'sequence': sequence, 'intent': intent}
             self._put(conn, 'paper_account', 'account', owner, updated)
             self._put(conn, 'paper_trade', request_id, owner, saved)

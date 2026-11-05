@@ -16,6 +16,8 @@ from .store import QuantStore
 from .strategy import StrategyRegistry
 from .peg_strategy import PEG_STRATEGY_ID, price_change_limit
 from .buffered_peg import BUFFERED_PEG_ID
+from .n2_live import N2InputService, initialize_state as initialize_n2, run_n2, settle_n2_cash
+from .n2_policy import N2_STRATEGY_ID
 from .user_store import UserStrategyStore
 
 log=logging.getLogger(__name__)
@@ -27,6 +29,7 @@ class QuantService:
         self.clock=clock or (lambda:datetime.now(SHANGHAI));self.enabled=enabled;self.task=None
         self.history_loader=self.load_histories
         self.users=UserStrategyStore(self.store)
+        self.n2_inputs=N2InputService(self.store.records,clock=lambda:self.clock())
 
     def start(self):
         if self.enabled: self.task=asyncio.create_task(self.loop())
@@ -34,6 +37,7 @@ class QuantService:
     async def close(self):
         if self.task:
             self.task.cancel();await asyncio.gather(self.task,return_exceptions=True)
+        await self.n2_inputs.close()
 
     async def loop(self):
         while True:
@@ -56,7 +60,9 @@ class QuantService:
         opening=self.opening_pending(owner,config,self.clock())
         if latest and latest[0].get('revision')==config['revision'] and latest[0].get('date')==self.clock().date().isoformat() and latest[0]['status']!='running':opening=False
         return {**config,'scheduler_enabled':self.enabled,'runtime':runtime,'last_decision':latest[0] if latest else None,
-                'next_check':('交易日10:00决策；10:02–10:06卖出、10:07–10:11买入；错过窗口次日重新评估' if config.get('strategy_id')==BUFFERED_PEG_ID else
+                'replay':self.store.records.get('paper_replay','active',owner,default=None),
+                'next_check':('交易日10:00固定目标；闭合分钟卖出至10:06、买入至10:11；次日按实际持仓评估' if config.get('strategy_id')==N2_STRATEGY_ID else
+                    '交易日10:00决策；10:02–10:06卖出、10:07–10:11买入；错过窗口次日重新评估' if config.get('strategy_id')==BUFFERED_PEG_ID else
                     '重置后首次PEG建仓：今日09:30后每分钟检查，有效报价就绪后执行；之后恢复10:00' if opening else '交易日北京时间10:00后，每分钟检查；每日一次决策')}
 
     def strategy(self,owner,strategy_id):
@@ -84,6 +90,8 @@ class QuantService:
                     self.users.from_record(record)
             elif strategy_id==BUFFERED_PEG_ID:
                 validator=lambda conn:self.store.initialize_buffered(conn,owner)
+            elif strategy_id==N2_STRATEGY_ID:
+                validator=lambda conn:initialize_n2(self.store,conn,owner)
         return self.store.configure(owner,mode,strategy_id,expected_revision,validator=validator,strategy_config=normalized)
 
     async def load_histories(self,codes,signal):
@@ -117,9 +125,12 @@ class QuantService:
 
     async def tick(self):
         now=self.clock()
-        if not session_state(now)['can_trade']: return
         configs=await asyncio.to_thread(self.store.active)
+        await self.n2_inputs.maybe_prepare(configs)
+        cash_failed=await settle_n2_cash(self,configs,now)
+        if not session_state(now)['can_trade']: return
         for owner,cfg in configs:
+            if owner in cash_failed:continue
             opening=self.opening_pending(owner,cfg,now)
             if now.hour<10 and not opening:continue
             runtime=await asyncio.to_thread(self.store.records.get,'quant_runtime','state',owner,default={})
@@ -135,7 +146,7 @@ class QuantService:
                 await self.run_owner(owner,cfg,key,lease)
                 await asyncio.to_thread(self.save_runtime,owner,cfg['revision'],{'status':'ok','checked_at':self.clock().isoformat()})
             except (AuthError,PaperError,ValueError,KeyError,providers.ProviderError) as exc:
-                delay=60 if opening and isinstance(exc,PaperError) and exc.code in ('QUOTE_STALE','QUOTE_UNAVAILABLE') else 300
+                delay=60 if (opening or cfg['strategy_id']==N2_STRATEGY_ID) and isinstance(exc,PaperError) and exc.code in ('QUOTE_STALE','QUOTE_UNAVAILABLE') else 300
                 await asyncio.to_thread(self.save_runtime,owner,cfg['revision'],
                     {'status':'waiting','reason':str(exc),'checked_at':self.clock().isoformat(),'retry_at':time.time()+delay})
             except asyncio.CancelledError: raise
@@ -146,6 +157,8 @@ class QuantService:
             finally: await asyncio.to_thread(self.store.records.release,'quant:'+owner,lease)
 
     async def run_owner(self,owner,cfg,key,token):
+        if cfg['strategy_id']==N2_STRATEGY_ID:
+            return await run_n2(self,owner,cfg,key,token)
         if cfg['strategy_id']==BUFFERED_PEG_ID:
             from .buffered_execution import run_buffered
             return await run_buffered(self,owner,cfg,key,token)

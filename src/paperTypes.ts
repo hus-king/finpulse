@@ -2,7 +2,7 @@ import type { Stock } from './types';
 
 export interface PaperRules { board: string; min_quantity: number; quantity_step: number; max_quantity: number }
 export interface PaperMarket { can_trade: boolean; label: string; server_time: string; reason: string | null; reason_code: string | null }
-export interface PaperFees { commission_fen: number; transfer_fen: number; stamp_fen: number; fees_fen: number }
+export interface PaperFees { commission_fen: number; transfer_fen: number; stamp_fen: number; friction_fen?: number; fees_fen: number }
 export interface PaperPosition {
   code: string; name: string; quantity: number; sellable: number; locked: number;
   cost_fen: number; average_cost_fen: number; price_fen: number; price_as_of: string;
@@ -14,7 +14,7 @@ export interface PaperAccount {
   daily_pnl_fen?: number | null; daily_return_percent?: number | null;
   daily_pnl_date?: string | null; daily_reference_date?: string | null;
   daily_pnl_status?: 'available' | 'pending' | 'unavailable'; daily_pnl_reason?: string;
-  initial_cash_fen: number; cash_fen: number; market_value_fen: number; equity_fen: number;
+  initial_cash_fen: number; cash_fen: number; receivable_fen?: number; market_value_fen: number; equity_fen: number;
   realized_pnl_fen: number; unrealized_pnl_fen: number; total_pnl_fen: number;
   return_percent: number; total_fees_fen: number; positions: PaperPosition[]; market: PaperMarket;
 }
@@ -26,6 +26,7 @@ export interface PaperQuote {
 }
 export interface PaperTrade extends PaperFees {
   actor?: 'manual' | 'algorithm'; strategy_id?: string; model_version?: string;
+  execution_mode?: 'daily_open_replay' | 'live_minute' | 'handover';
   request_id: string; sequence: number; code: string; name: string; side: 'buy' | 'sell';
   quantity: number; price_fen: number; gross_fen: number; cash_after_fen: number;
   realized_pnl_fen: number; executed_at: string; quote_as_of: string; quote_fetched_at: string; source: string;
@@ -34,7 +35,7 @@ export interface PaperHistory { items: PaperTrade[]; next_before_seq: number | n
 export interface PaperIntent { request_id: string; code: string; side: 'buy' | 'sell'; quantity: number }
 
 export interface QuantMetrics { total_return: number; annualized_return: number; max_drawdown: number; trades: number; start: string; end: string }
-export interface PaperStrategy { id: string; name: string; available: boolean; kind?: 'peg'; origin?: 'official' | 'user'; revision?: number; digest?: string; description?: string; reason?: string; version?: string; universe?: string[]; rules_summary?: { top_n: number; per_stock_weight: number; max_total_weight: number }; report?: { limits?: string[]; test?: { model: QuantMetrics; momentum: QuantMetrics; equal_weight: QuantMetrics } } }
+export interface PaperStrategy { id: string; name: string; available: boolean; kind?: 'peg' | 'n2'; origin?: 'official' | 'user'; revision?: number; digest?: string; description?: string; reason?: string; version?: string; universe?: string[]; rules_summary?: { top_n: number; per_stock_weight: number; max_total_weight: number }; report?: { limits?: string[]; test?: { model: QuantMetrics; momentum: QuantMetrics; equal_weight: QuantMetrics } } }
 export interface UserStrategyRecord { id: string; revision: number; digest: string; strategy: Record<string, unknown> }
 export interface StrategySubmissionSchema { schema_version: string; json_schema: Record<string, unknown>; example: Record<string, unknown>; features: Record<string, string>; limits: { max_package_bytes: number; max_strategies: number; max_nodes: number; max_depth: number; writes_per_minute: number } }
 export interface QuantDecision {
@@ -47,6 +48,7 @@ export interface QuantDecision {
   results?: { request_id: string; code: string; status: string; sequence?: number; reason?: string }[];
 }
 export interface PaperAutomationState {
+  replay?: { start_date: string; end_date: string; fills: number; trading_days: number; execution_mode: string; note: string; imported_at: string } | null;
   mode: 'manual' | 'algorithm'; revision: number; strategy_id: string | null; scheduler_enabled: boolean;
   strategy_config?: { top_n?: number; group?: string };
   reason: string | null; next_check: string; last_decision: QuantDecision | null;
