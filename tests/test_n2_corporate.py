@@ -1,6 +1,7 @@
 import copy
 from datetime import datetime
 import unittest
+import uuid
 
 from backend.news_cleaning import SHANGHAI
 from backend.paper_rules import new_account, daily_performance
@@ -28,6 +29,8 @@ class CashDividendTests(unittest.TestCase):
         self.assertEqual(settle('2026-10-08','14'),[])
         ex=settle('2026-10-09','09')
         self.assertEqual(ex[0]['quantity_entitled'],100)
+        self.assertLessEqual(len(ex[0]['event_id']),64)
+        self.assertEqual(str(uuid.UUID(ex[0]['event_id'])),ex[0]['event_id'])
         self.assertEqual(account['receivable_fen'],2120)
         self.assertEqual(account['cash_fen'],20_000_000)
         trades.append(dict(code='600000',side='sell',quantity=100,executed_at='2026-10-09T10:00:00+08:00'))

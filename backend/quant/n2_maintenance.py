@@ -10,7 +10,7 @@ from ..news_cleaning import SHANGHAI
 from ..paper_rules import PaperError, apply_trade, new_account
 from .n2_book import digest, model_fees
 from .n2_policy import N2_STRATEGY_ID, N2_VERSION
-from .n2_corporate import apply_cash_event, cash_amounts, entitlement
+from .n2_corporate import apply_cash_event, cash_amounts, entitlement, cash_event_id
 
 NAMESPACES = ('paper_account', 'paper_trade', 'quant_config', 'quant_decision',
               'quant_day', 'quant_runtime', 'quant_opening', 'peg_b_state',
@@ -43,7 +43,8 @@ def verify_replay(payload, *, now=None):
             gross,net=cash_amounts(event['quantity_entitled'],event['cash_per_share'])
             expected_at=event['pay_date' if paid else 'ex_date']+('T15:00:00+08:00' if paid else 'T09:00:00+08:00')
             key=(event['claim_id'],event['type'])
-            if (key in claims_seen or event['effective_at']!=expected_at or not start<=day<=end
+            if (key in claims_seen or event['event_id']!=cash_event_id(event['claim_id'],event['type'])
+                    or event['effective_at']!=expected_at or not start<=day<=end
                     or not event['ann_date']<=event['record_date']<event['ex_date']<=event['pay_date']
                     or event['quantity_entitled']!=entitlement(payload['trades'],event['code'],event['record_date'])
                     or event['book_sequence']!=account['sequence'] or event['gross_fen']!=gross

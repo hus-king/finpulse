@@ -1,5 +1,6 @@
 """Cash dividend entitlements, using the frozen research 20% withholding rule."""
 import copy
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -24,6 +25,11 @@ def cash_amounts(quantity, per_share):
     gross = int((amount*quantity*100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     net = int((amount*quantity*100*Decimal('.8')).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     return gross, net
+
+
+def cash_event_id(claim_id, kind):
+    # research_records.record_key is VARCHAR(64) in the production MySQL schema.
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, 'finpulse:cash:'+claim_id+':'+kind))
 
 
 def apply_cash_event(account, event):
@@ -101,7 +107,7 @@ def settle_cash_actions(account, state, trades, dividends, now):
     for effective, _, kind, flag, claim, scheduled in sorted(pending, key=lambda x:x[:2]):
         net = claim['net_fen']; paid = kind == 'cash_dividend'
         event = {k:v for k,v in claim.items() if k not in ('active', 'paid')}
-        event.update(event_id=claim['claim_id']+':'+kind, type=kind, effective_at=effective,
+        event.update(event_id=cash_event_id(claim['claim_id'],kind), type=kind, effective_at=effective,
                      cash_delta_fen=net if paid else 0, receivable_delta_fen=-net if paid else net,
                      income_fen=net if paid else 0, corporate_revision=result.get('corporate_revision',0)+1,
                      book_sequence=result['sequence'])
