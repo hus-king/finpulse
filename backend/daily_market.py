@@ -5,6 +5,8 @@ from datetime import datetime
 from . import providers
 from .news_cleaning import SHANGHAI
 from .trading_calendar import market_state
+from .daily_history import HISTORY_START, LocalDailyHistory, merge_daily_bars
+from .instruments import is_index
 
 
 def quote_order(quote):
@@ -19,13 +21,28 @@ class DailyMarketService:
         self.tasks = {}
         self.capacity = asyncio.Semaphore(2)
         self.closed = False
+        self.history = LocalDailyHistory()
 
     def cached(self, code):
         record = self.store.get('daily_market', code, default={})
         dashboard = self.store.get('dashboard', code, default={})
         if dashboard.get('candles') and (not record.get('candles') or quote_order(dashboard.get('quote', {})) > quote_order(record.get('quote', {}))):
             quote = dashboard.get('quote', {})
-            record = {**record, 'candles': dashboard['candles'], 'quote': quote}
+            record = {**record, 'candles': merge_daily_bars(record.get('candles', []), dashboard['candles']), 'quote': quote}
+        history = self.history.read(code, self.clock().date().isoformat())
+        if history.get('configured'):
+            bars = merge_daily_bars(history['candles'], record.get('candles', []))
+            quote = {**record.get('quote', {})}
+            if bars and bars[-1]['date'] > (quote.get('as_of_date') or ''):
+                last, previous = bars[-1], bars[-2] if len(bars) > 1 else None
+                quote.update(status='ok', source=history.get('source', '本地日线档案'), is_realtime=False,
+                             adjustment='none', volume_unit='shares', as_of_date=last['date'], price=last['close'],
+                             change=round((last['close'] / previous['close'] - 1) * 100, 2) if previous else None,
+                             collected_at=self.clock().isoformat())
+            quote.update(history_start=bars[0]['date'] if bars else None,
+                         history_end=bars[-1]['date'] if bars else None,
+                         history_rows=len(bars), history_source=history.get('source') if history['candles'] else quote.get('history_source'), history_error=history.get('error'))
+            record = {**record, 'candles': bars, 'quote': quote}
         return record
 
     def _due(self, record, state, force=False):
@@ -48,6 +65,8 @@ class DailyMarketService:
 
     async def snapshot(self, stock, force=False, schedule=True):
         record = await asyncio.to_thread(self.cached, stock['code'])
+        if is_index(stock['code']) and record.get('quote', {}).get('history_requested_start') != HISTORY_START:
+            force = True
         state = market_state(self.clock())
         busy = False
         if schedule and not self.closed and self._due(record, state, force) and stock['code'] not in self.tasks:
@@ -92,13 +111,26 @@ class DailyMarketService:
                     # Look up the callable at request time so adapters can be
                     # replaced/tested without recreating the service.
                     fetcher = self.fetcher or providers.daily_market
-                    result = await asyncio.wait_for(fetcher(stock, self.clock().date().isoformat()), 95)
+                    extend_index = self.fetcher is None and is_index(code) and record.get('quote', {}).get('history_requested_start') != HISTORY_START
+                    if extend_index:
+                        result = await asyncio.wait_for(fetcher(stock, self.clock().date().isoformat(), start=HISTORY_START), 95)
+                        result['history_requested_start'] = HISTORY_START
+                    else:
+                        result = await asyncio.wait_for(fetcher(stock, self.clock().date().isoformat()), 95)
                     if not result.get('candles'):
                         raise providers.ProviderError('行情源未返回有效日线')
                     quote = {key: value for key, value in result.items() if key != 'candles'}
                     quote.setdefault('as_of_date', result['candles'][-1]['date'])
                     quote.setdefault('collected_at', self.clock().isoformat())
-                    record = {'candles': result['candles'], 'quote': quote, 'attempted_at': attempted, 'error': None, 'retry_at': 0, 'failures': 0}
+                    # Refresh the recent tail without ever truncating the local
+                    # history previously shown/persisted for this instrument.
+                    bars = merge_daily_bars(record.get('candles', []), result['candles'])
+                    if bars[-1]['date'] > quote['as_of_date']:
+                        quote = {**record.get('quote', {}), 'status': 'stale'}
+                    quote.update({key: value for key, value in record.get('quote', {}).items() if key.startswith('history_') and key not in quote})
+                    if quote.get('history_source'):
+                        quote.update(history_start=bars[0]['date'], history_end=bars[-1]['date'], history_rows=len(bars))
+                    record = {'candles': bars, 'quote': quote, 'attempted_at': attempted, 'error': None, 'retry_at': 0, 'failures': 0}
                 except Exception as exc:
                     failures = min(record.get('failures', 0) + 1, 4)
                     record = {**record, 'attempted_at': attempted, 'failures': failures,

@@ -9,7 +9,7 @@ export function initialChartRange(dates: readonly string[], period: string, mode
   if (period === '分时') return { from: -.5, to: dates.length - 1 };
   const last = dates.at(-1)!;
   const cutoff = new Date(chartTimestamp(last.slice(0, 10)) * 1000);
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - (mode === '近 1 月' ? 1 : 3));
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - (mode === '近 1 月' ? 1 : mode === '近 1 年' ? 12 : 3));
   const days = [...new Set(dates.map(date => date.slice(0, 10)))];
   const from = period.endsWith('分钟') ? mode === '当日' ? days.at(-1)! : days.slice(-5)[0] : cutoff.toISOString().slice(0, 10);
   const first = mode === '全部' ? 0 : Math.max(0, dates.findIndex(date => date >= from));

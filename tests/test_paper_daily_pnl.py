@@ -126,7 +126,7 @@ class DailyPnlServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_close_returns_immediately_then_backfills_shared_daily_cache(self):
         gate=asyncio.Event()
         async def source(*args):
-            await gate.wait();return {'candles':[{'date':'2026-10-23','close':11}]}
+            await gate.wait();return {'candles':[{'date':'2026-10-23','open':11,'high':11,'low':11,'close':11,'volume':100}]}
         self.fetch.side_effect=source
         first=await self.paper.snapshot(self.owner)
         self.assertIsNone(first['daily_pnl_fen']);self.assertEqual(first['daily_pnl_status'],'pending')

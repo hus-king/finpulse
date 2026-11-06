@@ -34,6 +34,8 @@ from .auth import AuthError, auth_error_handler, authorize_model_request, router
 from .database import create_auth_store
 from .minute_market import MinuteMarketService
 from .market_bundle import MarketBundleService
+from .chart_history import ChartHistoryService
+from .chart_history_api import router as chart_history_router
 from .paper_store import PaperStore
 from .paper_trading import PaperTradingService
 from .paper_rules import PaperError
@@ -64,6 +66,7 @@ async def lifespan(application):
     async def invoke(messages, max_tokens=1100):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)
+    application.state.chart_history = ChartHistoryService(application.state.research.daily_market)
     application.state.hot_news = HotNewsBoardService(research_store, invoke)
     application.state.hot_stock_impact = HotStockImpactService(application.state.research, application.state.hot_news)
     application.state.hot_news_matches = HotNewsMatchService(application.state.hot_stock_impact)
@@ -87,6 +90,7 @@ async def lifespan(application):
             await application.state.hot_news.resume_interrupted()
         yield
     finally:
+        await application.state.chart_history.close()
         await application.state.paper_performance.close()
         await application.state.hot_news_matches.close()
         await application.state.hot_news.close()
@@ -106,6 +110,7 @@ app.add_exception_handler(PaperError, paper_error_handler)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(research_router)
+app.include_router(chart_history_router)
 app.include_router(hot_news_router)
 app.include_router(paper_router)
 app.include_router(paper_performance_router)

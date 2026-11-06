@@ -4,6 +4,12 @@ export interface Stock {
   industry: string; price: number | null; change: number | null;
 }
 export interface Candle { date: string; open: number; close: number; low: number; high: number; volume: number; partial?: boolean }
+export type MarketAdjustment = 'none' | 'qfq' | 'hfq';
+export interface AdjustedMarketHistory {
+  code: string; adjustment: Exclude<MarketAdjustment, 'none'>; status: 'ready' | 'loading' | 'unavailable';
+  candles: Candle[]; from_date: string | null; to_date: string | null; anchor_date: string | null;
+  factor_through: string | null; source: string; message: string | null; next_poll_seconds: number;
+}
 export interface MinuteMarket {
   code: string; period: number; candles: Candle[]; as_of: string | null; fetched_at: string | null;
   source: string; status: 'ok' | 'stale' | 'unavailable'; refreshing: boolean; forming: boolean;
@@ -59,7 +65,7 @@ export interface Dashboard {
   industry_profile?: IndustryProfile;
   daily_request?: { refreshing: boolean; error: string | null; next_poll_seconds: number; market: { label: string } };
   stock: Stock; candles: Candle[]; news: News[]; as_of: string | null; revision?: string; pipeline: Pipeline | null;
-  quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string; price?: number | null; change?: number | null; open?: number | null; high?: number | null; low?: number | null; volume?: number | null; error?: string | null };
+  quote: { status: string; source?: string; is_realtime: boolean; as_of_date?: string; collected_at?: string; volume_unit?: string; price?: number | null; change?: number | null; open?: number | null; high?: number | null; low?: number | null; volume?: number | null; error?: string | null; history_start?: string | null; history_end?: string | null; history_rows?: number; history_source?: string | null; history_error?: string | null };
   market_sentiment?: MarketSentiment;
   sentiment: { status: string; bull: number | null; bear: number | null; neutral: number | null; sample_count: number; keywords: string[]; alert?: string; alert_level?: 'overheated' | 'frozen' | 'normal' | null; weighting_method?: string; note?: string; error?: string; source?: string; collected_at?: string; warnings?: string[]; diagnostics?: { direct?: { status?: string; listed?: number; eligible?: number; retained?: number; detail_failed?: number }; tavily?: { status?: string; listed?: number; retained?: number } }; posts: { id: string; title: string; url: string; date: string; stance?: string; content?: string; text_source?: string; views?: number | null; replies?: number | null; weight?: number }[] };
   backtest: { items: { news_id: string; title: string; score: number | null; publication_date: string; base_date: string | null; return_3d: number | null; return_5d: number | null }[]; note: string };

@@ -224,8 +224,8 @@ async def akshare_news(stock, start, end):
     return {'results': [{'title': row.get('新闻标题', ''), 'content': row.get('新闻内容', ''), 'url': row.get('新闻链接', ''), 'published_date': row.get('发布时间'), 'provider': 'AkShare / 东方财富', 'source_name': row.get('文章来源', '')} for row in result['rows']]}
 
 
-async def daily_market(stock, end):
-    start = (date.fromisoformat(end) - timedelta(days=220)).isoformat()
+async def daily_market(stock, end, start=None):
+    start = start or (date.fromisoformat(end) - timedelta(days=220)).isoformat()
     result = await akshare_worker('index_history' if is_index(stock['code']) else 'history', stock['code'], start, end)
     candles = []
     for row in result['rows']:

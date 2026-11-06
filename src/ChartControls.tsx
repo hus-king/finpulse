@@ -1,6 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ChevronRight, Eye, EyeOff, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 import type { ChartOverlay, ChartStyle } from './chartMath';
+import type { MarketAdjustment } from './types';
+
+export const chartAdjustments: { value: MarketAdjustment; label: string }[] = [
+  { value: 'none', label: '不复权' }, { value: 'qfq', label: '前复权' }, { value: 'hfq', label: '后复权' },
+];
 
 export const chartStyles: { value: ChartStyle; label: string }[] = [
   { value: 'candles', label: '标准 K 线' }, { value: 'hollow', label: '空心 K 线' },
@@ -22,10 +27,11 @@ function Choices<T extends string>({ label, options, value, onChange }: {
 }
 
 export default function ChartControls({ visible, toggleVisible, chartStyle, setChartStyle, overlay, setOverlay,
-  period, setPeriod, mode, modes, setMode, busy, refresh, add }: {
+  period, setPeriod, mode, modes, setMode, adjustment, setAdjustment, busy, refresh, add }: {
   visible: boolean; toggleVisible: () => void; chartStyle: ChartStyle; setChartStyle: (value: ChartStyle) => void;
   overlay: ChartOverlay; setOverlay: (value: ChartOverlay) => void; period: string; setPeriod: (value: string) => void;
   mode: string; modes: string[]; setMode: (value: string) => void;
+  adjustment?: MarketAdjustment; setAdjustment?: (value: MarketAdjustment) => void;
   busy: boolean; refresh: () => void; add: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -73,6 +79,12 @@ export default function ChartControls({ visible, toggleVisible, chartStyle, setC
         {value.replace(' ', '')}
       </button>)}
     </div>
+    {adjustment && setAdjustment && <label className="chart-period-shortcuts" title="复权仅调整日K、周K与技术指标；报价仍为真实价格">
+      <select aria-label="复权方式" value={adjustment} onChange={event => setAdjustment(event.target.value as MarketAdjustment)}
+        style={{ minHeight: 28, maxWidth: 90, border: 0, padding: '4px 6px', background: 'transparent', color: 'var(--theme-text, #202a3a)', fontFamily: 'inherit', fontSize: 11 }}>
+        {chartAdjustments.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>}
     <button type="button" ref={trigger} className={`chart-controls-trigger ${visible ? '' : 'is-collapsed'}`}
       aria-label="图表工具" title={visible ? '图表工具' : '图表工具 · 图表已隐藏'}
       aria-expanded={open} aria-haspopup="dialog" aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)}>

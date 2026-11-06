@@ -745,7 +745,7 @@ class ResearchService:
             pipeline=result.get('pipeline')
             if pipeline:
                 pipeline.setdefault('counts',{}).update(retained=len(eligible),excluded_materials=len(excluded))
-        daily = self.store.get('daily_market', code, default={})
+        daily = self.daily_market.cached(code) if self.daily_market.history.directory else self.store.get('daily_market', code, default={})
         if daily.get('candles') and (not result.get('candles') or quote_order(daily.get('quote', {})) >= quote_order(result.get('quote', {}))):
             result['quote'], result['candles'] = daily['quote'], daily['candles']
             result['stock'] = {**result.get('stock', stock), 'price': daily['quote'].get('price'), 'change': daily['quote'].get('change')}
