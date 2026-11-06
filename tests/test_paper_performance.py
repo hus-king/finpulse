@@ -208,6 +208,78 @@ class PerformanceServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(p['trading_date']<='2026-10-09' for p in result['points']))
         self.assertEqual(result['summary']['benchmark_return_percent'],-10.)
 
+    def closing_minute(self,code,close,*,clock='15:00:00',fetched='2026-10-12T15:00:00+08:00',adjustment='none'):
+        self.records.put('minute_market',code+':1',dict(fetched_at=fetched,adjustment=adjustment,candles=[
+            dict(date='2026-10-12 09:31:00',open=90 if code=='sh000300' else 11,close=91 if code=='sh000300' else 11),
+            dict(date='2026-10-12 '+clock,open=close,close=close)]))
+
+    def hold_one_stock(self):
+        account,trades=self.put()
+        account.update(cash_fen=trades[0]['cash_after_fen'],sequence=1,realized_pnl_fen=0,total_fees_fen=200,
+                       positions={'000001':dict(quantity=100,cost_fen=100200)})
+        self.records.put('paper_account','account',account,'alice')
+
+    async def test_close_boundary_uses_confirmed_minutes_when_daily_history_lags(self):
+        self.hold_one_stock()
+        async def lagged(kind,*_):return {'rows':INDEX[:2] if kind=='index_history' else
+            [dict(date='2026-10-08',close=10.5),dict(date='2026-10-09',close=10.9)]}
+        self.service.fetcher=lagged
+        self.closing_minute('sh000300',120);self.closing_minute('000001',11.5)
+        self.now=datetime(2026,10,12,14,59,59,tzinfo=SHANGHAI)
+        before=await self.result()
+        self.assertEqual(before['as_of'],'2026-10-09')
+        self.now=datetime(2026,10,12,15,tzinfo=SHANGHAI)
+        after=await self.result()
+        self.assertEqual(after['as_of'],'2026-10-12')
+        self.assertEqual(after['summary']['strategy_profit_fen'],14800)
+        self.assertEqual(after['summary']['benchmark_return_percent'],20.)
+        self.assertEqual(after['points'][-1]['trading_date'],'2026-10-12')
+        self.assertEqual(self.paper.store.get_account('alice')['sequence'],1)
+
+    async def test_forming_or_adjusted_minutes_cannot_be_used_as_a_close(self):
+        self.put();self.now=datetime(2026,10,12,15,1,tzinfo=SHANGHAI)
+        async def lagged(kind,*_):return {'rows':INDEX[:2] if kind=='index_history' else [dict(date='2026-10-08',close=10.5)]}
+        self.service.fetcher=lagged
+        for options in [dict(fetched='2026-10-12T14:59:50+08:00'),dict(clock='14:59:00'),dict(adjustment='qfq')]:
+            with self.subTest(options=options):
+                self.closing_minute('sh000300',120,**options)
+                with self.auth.transaction() as conn:
+                    conn.execute("DELETE FROM research_records WHERE namespace='paper_performance'")
+                result=await self.result()
+                self.assertEqual(result['as_of'],'2026-10-09')
+
+    async def test_missing_close_requests_existing_minute_service_after_market_close(self):
+        self.put();self.now=datetime(2026,10,12,15,1,tzinfo=SHANGHAI)
+        async def lagged(kind,*_):return {'rows':INDEX[:2] if kind=='index_history' else [dict(date='2026-10-08',close=10.5)]}
+        self.service.fetcher=lagged
+        async def snapshot(stock,period,**kwargs):
+            self.closing_minute(stock['code'],120)
+            return {'refreshing':False}
+        market=SimpleNamespace(snapshot=AsyncMock(side_effect=snapshot),tasks={})
+        self.paper.minute_market=market
+        result=await self.result()
+        self.assertEqual(result['as_of'],'2026-10-12')
+        market.snapshot.assert_awaited_once_with({'code':'sh000300','name':'sh000300'},1,force=True)
+
+    async def test_first_day_benchmark_anchor_uses_opening_minute_not_closing_minute_open(self):
+        account,trades=self.put();trades[0]['executed_at']='2026-10-12T10:07:00+08:00'
+        self.records.put('paper_trade',trades[0]['request_id'],trades[0],'alice')
+        account.update(cash_fen=trades[0]['cash_after_fen'],sequence=1,positions={'000001':dict(quantity=100)})
+        self.records.put('paper_account','account',account,'alice')
+        self.now=datetime(2026,10,12,15,1,tzinfo=SHANGHAI)
+        self.service.fetcher=AsyncMock(return_value={'rows':[]})
+        self.closing_minute('sh000300',120);self.closing_minute('000001',11.5)
+        result=await self.result()
+        self.assertEqual(result['status'],'ready')
+        self.assertEqual(result['as_of'],'2026-10-12')
+        self.assertAlmostEqual(result['summary']['benchmark_return_percent'],(120/90-1)*100)
+
+    async def test_confirmed_daily_close_wins_over_minute_cache(self):
+        self.put();self.now=datetime(2026,10,12,15,1,tzinfo=SHANGHAI)
+        self.closing_minute('sh000300',999)
+        result=await self.result()
+        self.assertEqual(result['summary']['benchmark_return_percent'],20.)
+
     async def test_saved_nav_cannot_reference_future_prices(self):
         self.put();self.nav();self.now=datetime(2026,10,12,10,tzinfo=SHANGHAI)
         row=self.records.get('n2_daily_nav','2026-10-08','alice')

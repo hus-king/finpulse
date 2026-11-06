@@ -287,6 +287,44 @@ class PaperPerformanceService:
             except (ValueError,TypeError,KeyError,PerformanceDataError):continue
         return result
 
+    @staticmethod
+    def _closing_bars(cached,start,end,now):
+        """Only a raw 15:00 bar fetched after its close can supplement daily data."""
+        if cached.get('adjustment','none')!='none':return {}
+        try:fetched=_stamp(cached.get('fetched_at'))
+        except PerformanceDataError:return {}
+        if fetched>now:return {}
+        closes={};opens={}
+        for row in cached.get('candles',[]):
+            try:
+                stamp=_stamp(row['date']);day=stamp.date().isoformat()
+                if not start<=day<=end or stamp>now or stamp>fetched or is_trade_day(stamp.date()) is not True:continue
+                clock=stamp.strftime('%H:%M:%S')
+                if clock in ('09:30:00','09:31:00'):
+                    opening=float(row['open'])
+                    if math.isfinite(opening) and opening>0:
+                        if day not in opens or stamp<opens[day][0]:opens[day]=(stamp,opening)
+                if clock=='15:00:00' and stamp.microsecond==0:
+                    close=float(row['close'])
+                    if math.isfinite(close) and close>0:closes[day]=dict(date=day,close=close,open=None)
+            except (PerformanceDataError,ValueError,KeyError,TypeError):continue
+        for day,row in closes.items():
+            if day in opens:row['open']=opens[day][1]
+        return closes
+
+    async def _minute_closes(self,code,start,end, *, refresh):
+        now=self.paper.clock().astimezone(SHANGHAI);key=code+':1'
+        cached=await asyncio.to_thread(self.records.get,'minute_market',key,default={})
+        closes=self._closing_bars(cached,start,end,now)
+        market=getattr(self.paper,'minute_market',None)
+        if refresh and end not in closes and market is not None:
+            await market.snapshot({'code':code,'name':code},1,force=True)
+            task=market.tasks.get(key)
+            if task:await asyncio.shield(task)
+            cached=await asyncio.to_thread(self.records.get,'minute_market',key,default={})
+            closes=self._closing_bars(cached,start,end,self.paper.clock().astimezone(SHANGHAI))
+        return closes
+
     async def _prices(self,code,start,end, *, index=False, required=()):
         kind='index' if index else 'stock';key=kind+':'+code;now=self.paper.clock().timestamp()
         record=await asyncio.to_thread(self.records.get,'paper_performance_prices',key,default={})
@@ -295,6 +333,11 @@ class PaperPerformanceService:
             daily=await asyncio.to_thread(self.records.get,'daily_market',code,default={})
             if daily.get('quote',{}).get('adjustment','none')=='none':
                 bars.update(self._bars(daily.get('candles',[]),start,end))
+        missing=set(required)-bars.keys()
+        if missing:
+            closed=await self._minute_closes(code,start,end,refresh=end in missing)
+            for day,row in closed.items():bars.setdefault(day,row)
+        if not index:
             if set(required).issubset(bars):return bars
         elif (start in bars and bars[start].get('open') is not None and set(required).issubset(bars)):
             return bars
