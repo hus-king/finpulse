@@ -35,13 +35,13 @@ import java.net.URL;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
-    static final String CAMPUS = "http://202.114.212.116:8000/";
+    static final String PUBLIC_SERVER = "http://8.148.79.227:16800/";
     private static final int PICK_FILE = 10, SAVE_FILE = 11, MAX_EXPORT = 16 * 1024 * 1024;
     private WebView web;
     private ProgressBar progress;
     private LinearLayout errorPanel;
     private TextView errorText;
-    private String server = CAMPUS;
+    private String server = PUBLIC_SERVER;
     private boolean pageFailed;
     private ValueCallback<Uri[]> fileCallback;
     private byte[] pendingExport;
@@ -49,13 +49,13 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        // Release builds always use the campus server, including upgrades with old saved settings.
+        // Release builds always use the public server, including upgrades with old saved settings.
         if (BuildConfig.DEBUG) {
             String fixture = getSharedPreferences("finpulse-test", MODE_PRIVATE).getString("server", "");
             try {
                 String normalized = normalizeServer(fixture);
                 if ("127.0.0.1".equals(URI.create(normalized).getHost())) server = normalized;
-            } catch (IllegalArgumentException ignored) { /* Use the campus server. */ }
+            } catch (IllegalArgumentException ignored) { /* Use the public server. */ }
         }
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -101,7 +101,8 @@ public class MainActivity extends Activity {
         root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
         configureWeb();
-        if (state == null || web.restoreState(state) == null || !sameOrigin(web.getUrl())) loadHome();
+        if (state == null || !server.equals(state.getString("finpulse-server"))
+                || web.restoreState(state) == null || !sameOrigin(web.getUrl())) loadHome();
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -157,7 +158,7 @@ public class MainActivity extends Activity {
                 }
             }
             @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
-                if (r.isForMainFrame()) fail("无法连接服务器，请检查手机是否已连接可访问校园服务器的网络。");
+                if (r.isForMainFrame()) fail("无法连接服务器，请检查网络后重试。");
             }
             @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse e) {
                 if (r.isForMainFrame()) fail("服务器返回 HTTP " + e.getStatusCode() + "。请稍后重试。");
@@ -269,7 +270,7 @@ public class MainActivity extends Activity {
         }
     }
     private void toast(String text) { Toast.makeText(this, text, Toast.LENGTH_LONG).show(); }
-    @Override protected void onSaveInstanceState(Bundle state) { web.saveState(state); super.onSaveInstanceState(state); }
+    @Override protected void onSaveInstanceState(Bundle state) { state.putString("finpulse-server", server); web.saveState(state); super.onSaveInstanceState(state); }
     @Override public void onBackPressed() {
         if (!pageFailed && web.canGoBack()) { web.goBack(); return; }
         long now = android.os.SystemClock.elapsedRealtime();
