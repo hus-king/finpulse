@@ -135,13 +135,27 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
       pane.priceScale('right').applyOptions({ scaleMargins: { top: index ? .37 : .2, bottom: .1 }, minimumWidth: 66 });
     });
     if (range) chart.timeScale().setVisibleLogicalRange(range);
+    const readouts = canvas.current?.parentElement?.querySelectorAll<HTMLElement>('.chart-readout');
     const syncHeaders = () => {
       let top = 0;
-      const tops = chart.panes().map(pane => { const value = top; top += pane.getHeight() + 1; return value; });
+      const tops = chart.panes().map((pane, index) => {
+        const value = top;
+        top += pane.getHeight() + 1;
+        // Wrapped values need actual plot space, including after a resize or
+        // crosshair move changes the number of displayed digits.
+        const height = readouts?.[index]?.getBoundingClientRect().height ?? 50;
+        const margin = Math.min(.8, Math.max(index ? .37 : .2, (height + 12) / Math.max(1, pane.getHeight())));
+        const scale = pane.priceScale('right');
+        if (Math.abs(scale.options().scaleMargins.top - margin) > .001) {
+          scale.applyOptions({ scaleMargins: { top: margin, bottom: .1 } });
+        }
+        return value;
+      });
       setPaneTops(previous => previous.join(',') === tops.join(',') ? previous : tops);
     };
     const observer = new ResizeObserver(syncHeaders);
     chart.panes().forEach(pane => { const element = pane.getHTMLElement(); if (element) observer.observe(element); });
+    readouts?.forEach(readout => observer.observe(readout));
     syncHeaders();
     return () => observer.disconnect();
   }, [structure]);
