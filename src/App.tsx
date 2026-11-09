@@ -1,5 +1,5 @@
 import { headlineIndices } from './instruments';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Activity, ExternalLink, FlaskConical, Github, LoaderCircle, Search, X } from 'lucide-react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
@@ -31,6 +31,63 @@ const navigation = [
   { id: 'lab', label: '连接状态', english: 'CONNECTIONS' },
   { id: 'admin', label: '管理中心', english: 'ADMINISTRATION' },
 ];
+
+function FinanceNav({ view, isAdmin, onSelect }: { view: string; isAdmin: boolean; onSelect: (view: string) => void }) {
+  const row = useRef<HTMLDivElement>(null);
+  const previousButton = useRef<HTMLButtonElement>(null);
+  const filterId = useId();
+
+  useLayoutEffect(() => {
+    const active = row.current?.querySelector<HTMLButtonElement>('button[aria-current="page"]') ?? null;
+    const previous = previousButton.current;
+    previousButton.current = active;
+    if (!active || !previous?.isConnected || active === previous || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const marker = active.querySelector('svg')!;
+    const drop = marker.querySelector('circle')!;
+    const from = previous.getBoundingClientRect();
+    const to = active.getBoundingClientRect();
+    const distance = from.left - to.left;
+    const tail = Math.sign(distance) * 14;
+    const timing = { duration: 440, easing: 'cubic-bezier(.22,.65,.32,1)' };
+    const slide = marker.animate([
+      { transform: `translateX(${distance}px) scaleX(${from.width / to.width})` },
+      { transform: `translateX(${distance * .22}px) scaleX(1.14)`, offset: .48 },
+      { transform: 'none' },
+    ], timing);
+    const merge = drop.animate([
+      { transform: 'scale(.45)', opacity: 1 },
+      { transform: `translate(${tail}px, -6px)`, opacity: 1, offset: .36 },
+      { transform: `translate(${tail / 2}px, -1px) scale(.65)`, opacity: 1, offset: .72 },
+      { transform: 'scale(.35)', opacity: 0 },
+    ], timing);
+    return () => { slide.cancel(); merge.cancel(); };
+  }, [view]);
+
+  return <nav className="finance-nav" aria-label="主导航"><div ref={row}>
+    {navigation.filter(item => item.id !== 'admin' || isAdmin).map((item, index) => {
+      const active = view === item.id;
+      return <button key={item.id} type="button" className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={() => onSelect(item.id)}>
+        <small aria-hidden="true">{String(index + 1).padStart(2, '0')}</small>{item.label}
+        {active && <svg className="finance-nav-marker" viewBox="0 0 80 17" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            {/* Adapted from GoopUI's SVG filter. See public/licenses/goopui.txt. */}
+            <filter id={filterId} x="-20%" y="-50%" width="140%" height="200%" colorInterpolationFilters="sRGB">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="blur" />
+              <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -6.84" result="goo" />
+              <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+            </filter>
+          </defs>
+          <g filter={`url(#${filterId})`} fill="currentColor">
+            <rect x="1" y="12" width="78" height="4" rx="2" />
+            <circle cx="40" cy="12" r="4.4" />
+          </g>
+        </svg>}
+      </button>;
+    })}
+    <span>沪深 A 股 / RESEARCH</span>
+  </div></nav>;
+}
 
 const normalizeTime = (s?: string | null) => {
   if (!s) return 0;
@@ -395,7 +452,7 @@ export default function App() {
   return <div className="finance-shell">
     <a className="skip-link" href="#workspace-content">跳至主要内容</a>
     <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /><small className="brand-caption">财经研究</small></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票、指数名称或代码</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
-    <nav className="finance-nav" aria-label="主导航"><div>{navigation.filter(item => item.id !== 'admin' || user?.role === 'admin').map((item, index) => <button key={item.id} className={view === item.id ? 'active' : ''} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><small aria-hidden="true">{String(index + 1).padStart(2, '0')}</small>{item.label}</button>)}<span>沪深 A 股 / RESEARCH</span></div></nav>
+    <FinanceNav view={view} isAdmin={user?.role === 'admin'} onSelect={setView} />
     <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>主要指数 · 行情快照</span></div>{headlineIndices.flatMap(code => catalog.find(stock => stock.code === code) ?? []).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span><strong key={cached?.stock.price ?? stock.price} className="mono quote-update">{number(cached?.stock.price ?? stock.price)}</strong><span className={tone(cached?.stock.change ?? stock.change)}>{percent(cached?.stock.change ?? stock.change)}</span></button>; })}</div></div>
     <main className="finance-main" id="workspace-content" tabIndex={-1}><div className="finance-heading"><div><p className="eyebrow"><span className="heading-mark" />{currentPage.english}</p><h1>{view === 'hot-news' ? '看见热点，识别市场影响。' : view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'hot-news' ? '汇集全领域平台热榜，筛选可能影响股市与产业的事件。' : view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><div className="workspace-meta" aria-hidden="true"><span>{String(navigation.indexOf(currentPage) + 1).padStart(2, '0')}</span><div><strong>{currentPage.label}</strong><small>FINPULSE / RESEARCH</small></div></div></div>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
