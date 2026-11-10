@@ -45,6 +45,7 @@ from .paper_performance_api import router as paper_performance_router
 
 from .peg_service import PegService
 from .peg_api import router as peg_router
+from .cb_research_api import router as cb_research_router
 
 from .quant.service import QuantService
 from .quant.api import router as quant_router
@@ -115,6 +116,7 @@ app.include_router(hot_news_router)
 app.include_router(paper_router)
 app.include_router(paper_performance_router)
 app.include_router(peg_router)
+app.include_router(cb_research_router)
 app.include_router(quant_router)
 app.include_router(user_strategy_router)
 

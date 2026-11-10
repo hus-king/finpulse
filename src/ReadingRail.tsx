@@ -18,6 +18,12 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
     { selector: '.peg-intro', title: '筛选方法' },
     { selector: '.peg-table-wrap', title: '股票榜单' },
   ],
+  'convertible-bonds': [
+    { selector: '.finance-heading', title: '可转债研究' },
+    { selector: '#cb-current-decision', title: '本周决策' },
+    { selector: '#cb-candidate-heading', title: '合格候选' },
+    { selector: '#cb-history-heading', title: '决策历史' },
+  ],
   paper: [
     { selector: '.finance-heading', title: '模拟交易' },
     { selector: '.paper-stats', title: '账户资产' },
