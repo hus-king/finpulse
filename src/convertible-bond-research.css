@@ -6,6 +6,69 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cb-metric-guide {
+  min-width: 0;
+  padding: clamp(12px, 1.8vw, 20px) 0;
+  border-block: 1px solid var(--theme-border);
+}
+
+.cb-metric-guide h2 {
+  margin: 0;
+  color: var(--theme-heading);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.cb-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin: 12px 0;
+}
+
+.cb-metric-grid > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: var(--theme-panel);
+}
+
+.cb-metric-grid dt {
+  color: var(--theme-heading);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cb-metric-grid dd, .cb-metric-guide > p {
+  margin: 6px 0 0;
+  color: var(--theme-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.cb-metric-grid dd > strong {
+  display: block;
+  color: var(--theme-text);
+  font-weight: 500;
+}
+
+.cb-metric-grid dd > span {
+  display: block;
+  margin-top: 4px;
+}
+
+.cb-metric-guide > p > strong {
+  margin-right: 5px;
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+@media (max-width: 680px) {
+  .cb-metric-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+
 .cb-panel {
   padding: clamp(14px, 2.2vw, 28px);
   min-width: 0;

@@ -308,6 +308,34 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
       {(previousPosition || candidate) && <Comparison decision={decision} position={previousPosition} candidate={candidate} asOf={research?.as_of} slot="current" expansion={expansion} />}
     </section>}
 
+    <section className="cb-metric-guide" aria-labelledby="cb-metric-guide-heading">
+      <h2 id="cb-metric-guide-heading">指标怎么读</h2>
+      <dl className="cb-metric-grid">
+        <div>
+          <dt>相对低估</dt>
+          <dd>
+            <strong>（同类参考价 − 债价）÷ 债价</strong>
+            <span>参考价用同评级、转股价值和期限相近的券的溢价率中位数估算。正值表示债价低于参考价。</span>
+          </dd>
+        </div>
+        <div>
+          <dt>正股相对行业收益</dt>
+          <dd>
+            <strong>（1 + 正股收益）÷（1 + 行业收益）− 1</strong>
+            <span>对比近 20 个交易日。正值表示跑赢行业，正股本身也可能下跌。</span>
+          </dd>
+        </div>
+        <div>
+          <dt>上涨 / 下跌情景</dt>
+          <dd>
+            <strong>（情景参考价 − 当前参考价）÷ 债价</strong>
+            <span>固定当期转股价，分别假设正股涨、跌 10% 后重估参考价，用来比较转债弹性。</span>
+          </dd>
+        </div>
+      </dl>
+      <p><strong>入围规则</strong> 先检查成交、信用和强赎状态，再从低估排名前 30% 中保留低估为正、正股跑赢行业且两种情景可测的券。入围后按上涨情景排序。</p>
+    </section>
+
     <section className="cb-panel" aria-labelledby="cb-candidate-heading">
       <header className="cb-section-header"><div><p className="cb-kicker">{replay ? '历史复算' : '候选筛选'}</p><h2 id="cb-candidate-heading">候选榜</h2>
         <p>按正股上涨 10% 的转债情景排序，展示前 5 只。点击券名查看估值依据。</p></div>
