@@ -480,7 +480,7 @@ export default function App() {
       </WorkspaceView>
       <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>分钟行情按需更新 · AI 研判需要结合原文核验</span></footer>
     </main>
-    <ReadingRail view={view} />
+    {view !== 'convertible-bonds' && <ReadingRail view={view} />}
     {drawer && <AiDrawer key={`${user?.id}-${drawer.stock.code}-${drawer.news?.id ?? 'chat'}`} stock={drawer.stock} news={drawer.news} onClose={() => setDrawer(null)} onResult={reply => { setLastReply(reply); void loadSnapshot(code).catch(e => setError(e.message)); }} />}
     {adding && <Dialog title="查找与管理自选股" close={() => setAdding(false)}><StockSearch watchlist={watchlist} disabled={!watchReady || savingWatch} add={addStock} remove={target => updateWatchlist(watchlist.filter(row => row !== target))} select={stock => { mergeCatalog([stock]); setCode(stock.code); setView('dashboard'); setAdding(false); }} /></Dialog>}
     {audit && <Dialog title="新闻清洗与去重记录" close={() => setAudit(null)}><p className="supported-caption">保留 {audit.summary.retained ?? 0} · 过滤 {audit.summary.filtered ?? 0} · 合并 {audit.summary.merged ?? 0}</p><div className="audit-records">{audit.audit?.map(row => <article key={row.id}><span className={`audit-status ${row.status}`}>{row.status === 'retained' ? '保留' : row.status === 'merged' ? '合并' : '过滤'}</span><h3>{row.title}</h3><p>{row.reasons.join('；') || '通过主体、日期、内容与来源检查'}</p>{row.url && <a href={row.url} target="_blank" rel="noopener noreferrer">查看原文<ExternalLink size={12} /></a>}</article>)}</div></Dialog>}

@@ -240,43 +240,46 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
   const previousPosition = activeHistory?.position ?? findEntry(decision?.position_code);
   const incompletePreview = research?.preview && !eligible.length && entries.some(entry =>
     entry.risk === 'unknown' || !numeric(entry.relative_return) || !numeric(entry.turnover_20d));
-  const decisionLabel = decision ? decisionLabels[decision.action] : research?.preview ? '行情预览'
-    : research?.status === 'data_error' ? '数据待核实' : '等待研究快照';
+  const replay = research?.preview && research.close_confirmed && eligible.length > 0;
+  const quoteSession = research?.close_confirmed === true ? '收盘' : research?.close_confirmed === false ? '盘中' : '';
 
   return <div className="cb-research" aria-busy={loading}>
-    <section className="cb-panel cb-decision" aria-labelledby="cb-current-decision">
-      <header className="cb-section-header"><div><p className="cb-kicker">周度研究 · 模拟跟踪</p>
-        <h2 id="cb-current-decision">{decisionLabel}</h2></div>
-        <button className="cb-button" type="button" disabled={loading} onClick={() => setReload(value => value + 1)}>
-          {loading ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}重新读取
-        </button>
-      </header>
-      <div className="cb-meta"><span>信号日期 <strong>{decision ? research?.as_of || '—' : '尚未生成'}</strong></span>
-        <span>行情日期 <strong>{research?.as_of || '—'}</strong></span>
-        <span>{research?.collected_at ? '行情采集' : '快照生成'} <strong>{formatTime(research?.collected_at ?? research?.generated_at)}</strong></span>
+    {decision && <section className="cb-panel cb-decision" aria-labelledby="cb-current-decision">
+      <header className="cb-section-header"><div><p className="cb-kicker">本周决策 · 模拟跟踪</p>
+        <h2 id="cb-current-decision">{decisionLabels[decision.action]}</h2></div></header>
+      <div className="cb-meta"><span>信号日期 <strong>{research?.as_of || '—'}</strong></span>
         <span>下次复核 <strong>{research?.next_review || '每周最后一交易日收盘后'}</strong></span></div>
-      {error && <p className="cb-notice" role="alert">{error}{research ? '，下方保留上次读取的快照。' : ''}</p>}
-      {incompletePreview && <p className="cb-notice" role="status">数据未齐 · 排名暂不可用</p>}
-      {research?.preview && <p className="cb-empty">{research.close_confirmed ? '行情已确认收盘，等待周度决策。' : '当前行情仅供预览，等待核验收盘数据。'}</p>}
-      {research?.status === 'no_data' && <p className="cb-notice">暂无可用研究快照。待行情和条款数据核验后展示候选与决策。</p>}
-      {research?.status === 'data_error' && <p className="cb-notice" role="status">研究数据暂无法核验，请查看下方的数据说明。</p>}
-      {research && <div className="cb-holdings">
-        <div><span>当前研究持仓</span><strong><EntryButton entry={currentPosition} code={research.position_code} empty={research.history.length ? '空仓' : '尚未建仓'} onSelect={selectCurrent} /></strong></div>
-        <div><span>{research.preview ? '预览首选' : '首选候选'}</span><strong><EntryButton entry={candidate} code={decision?.candidate_code} empty="暂无合格券" onSelect={selectCurrent} /></strong></div>
-      </div>}
-      {decision && <p className="cb-decision-reason">{decision.reason}</p>}
+      <div className="cb-holdings">
+        <div><span>当前研究持仓</span><strong><EntryButton entry={currentPosition} code={research?.position_code} empty="空仓" onSelect={selectCurrent} /></strong></div>
+        <div><span>首选候选</span><strong><EntryButton entry={candidate} code={decision.candidate_code} empty="暂无合格券" onSelect={selectCurrent} /></strong></div>
+      </div>
+      <p className="cb-decision-reason">{decision.reason}</p>
       {research?.execution && <ExecutionDetails execution={research.execution} />}
-      {decision && (previousPosition || candidate) && <Comparison decision={decision} position={previousPosition} candidate={candidate} onSelect={selectCurrent} />}
-      {(research?.warnings.length || research?.sources.length) ? <details className="cb-disclosure">
-        <summary>数据来源与说明{research.warnings.length > 0 ? ` · ${research.warnings.length} 项提示` : ''}</summary>
-        <ul className="cb-reasons">{[...research.warnings, ...research.sources].map((item, index) => <li key={index}>{item}</li>)}</ul>
-      </details> : null}
-    </section>
+      {(previousPosition || candidate) && <Comparison decision={decision} position={previousPosition} candidate={candidate} onSelect={selectCurrent} />}
+    </section>}
 
     <section className="cb-panel" aria-labelledby="cb-candidate-heading">
-      <header className="cb-section-header"><div><p className="cb-kicker">候选筛选</p><h2 id="cb-candidate-heading">合格候选</h2>
-        <p>通过低估与正股筛选后，按上行情景展示前 5 只。点击券名查看估值依据。</p></div>
-        {research && <span className="cb-state">{eligible.length} 只入围</span>}</header>
+      <header className="cb-section-header"><div><p className="cb-kicker">{replay ? '历史复算' : '候选筛选'}</p><h2 id="cb-candidate-heading">候选榜</h2>
+        <p>按正股上涨 10% 的转债情景排序，展示前 5 只。点击券名查看估值依据。</p></div>
+        <div className="cb-candidate-actions">
+          {research && <span className="cb-state">{eligible.length} 只入围</span>}
+          <button className="cb-button" type="button" disabled={loading} onClick={() => setReload(value => value + 1)}>
+            {loading ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}重新读取
+          </button>
+        </div>
+      </header>
+      {research?.as_of && <div className="cb-meta"><span>行情截点 <strong>{research.as_of} {quoteSession}</strong></span>
+        {research.collected_at && !research.close_confirmed && <span>行情采集 <strong>{formatTime(research.collected_at)}</strong></span>}
+      </div>}
+      {error && <p className="cb-notice" role="alert">{error}{research ? '，下方保留上次读取的快照。' : ''}</p>}
+      {incompletePreview && <p className="cb-notice" role="status">数据未齐 · 排名暂不可用</p>}
+      {research?.preview && research.close_confirmed === false && <p className="cb-empty">当前为盘中行情预览，等待核验收盘数据。</p>}
+      {research?.status === 'no_data' && <p className="cb-notice">暂无可用研究快照。待行情和条款数据核验后展示候选。</p>}
+      {research?.status === 'data_error' && <p className="cb-notice" role="status">研究数据暂无法核验，请查看下方的数据说明。</p>}
+      {!decision && candidate && <div className="cb-incumbent"><span>{replay ? '复算首选' : '预览首选'}</span>
+        <EntryButton entry={candidate} empty="暂无" onSelect={selectCurrent} />
+        <span>相对低估 {change(candidate.discount)} · 上行情景 {change(candidate.upside)}</span>
+      </div>}
       {currentPosition && <div className="cb-incumbent"><span>当前持仓</span>
         <EntryButton entry={currentPosition} empty="空仓" onSelect={selectCurrent} />
         <span>低估 {change(currentPosition.discount)} · 上行情景 {change(currentPosition.upside)}</span>
@@ -285,12 +288,16 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
         : <p className="cb-empty">{loading ? '正在读取候选。' : research?.status === 'ready' ? '当前没有合格候选。' : '暂无候选数据。'}</p>}
       {excluded.length > 0 && <details className="cb-disclosure"><summary>查看未入围 · {excluded.length} 只</summary>
         <CandidateTable entries={excluded} blocked onSelect={selectCurrent} /></details>}
+      {(research?.warnings.length || research?.sources.length) ? <details className="cb-disclosure">
+        <summary>数据来源与说明{research.warnings.length > 0 ? ` · ${research.warnings.length} 项提示` : ''}</summary>
+        <ul className="cb-reasons">{[...research.warnings, ...research.sources].map((item, index) => <li key={index}>{item}</li>)}</ul>
+      </details> : null}
     </section>
 
-    <section className="cb-panel" aria-labelledby="cb-history-heading">
+    {!!research?.history.length && <section className="cb-panel" aria-labelledby="cb-history-heading">
       <header className="cb-section-header"><div><p className="cb-kicker">可追溯记录</p><h2 id="cb-history-heading">决策历史</h2>
         <p>每条记录保留当时的候选、换仓依据和模拟成交状态。</p></div></header>
-      {research?.history.length ? <div className="cb-history">{research.history.map(record => <details className="cb-disclosure" key={record.as_of}>
+      <div className="cb-history">{research.history.map(record => <details className="cb-disclosure" key={record.as_of}>
         <summary><time dateTime={record.as_of}>{record.as_of}</time><strong>{decisionLabels[record.decision.action]}</strong>
           <span>{labels(record.position, record.decision.position_code, '空仓')} · 首选 {labels(record.candidate, record.decision.candidate_code, '暂无')}</span>
           {record.execution && <span className="cb-state">{executionLabels[record.execution.status]}</span>}</summary>
@@ -298,8 +305,8 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
         {record.execution && <ExecutionDetails execution={record.execution} />}
         {(record.position || record.candidate) && <Comparison decision={record.decision} position={record.position} candidate={record.candidate}
           onSelect={entry => setSelected({ entry, asOf: record.as_of })} />}
-      </details>)}</div> : <p className="cb-empty">暂无已保存的周度决策。</p>}
-    </section>
+      </details>)}</div>
+    </section>}
     {selected && <BondDetails entry={selected.entry} asOf={selected.asOf} onClose={() => setSelected(null)} onOpenStock={onOpenStock} />}
   </div>;
 }

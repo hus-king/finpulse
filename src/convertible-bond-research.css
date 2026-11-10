@@ -57,6 +57,13 @@
 
 .cb-meta strong { color: var(--theme-text); font-weight: 500; }
 
+.cb-candidate-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .cb-button, .cb-entry-button, .cb-source {
   display: inline-flex;
   align-items: center;
