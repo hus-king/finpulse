@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ChevronRight, ExternalLink, LoaderCircle, RefreshCw, X } from 'lucide-react';
+import { Fragment, useEffect, useState } from 'react';
+import { ArrowRight, ChevronDown, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
 import { api } from './api';
 import './convertible-bond-research.css';
 
@@ -72,9 +72,24 @@ function sourceLink(value: string | null | undefined) {
   }
 }
 
-function EntryButton({ entry, code, empty, onSelect }: { entry?: Entry | null; code?: string | null; empty: string; onSelect: (entry: Entry) => void }) {
+type BondExpansion = {
+  openId: string | null;
+  toggle: (id: string) => void;
+  close: () => void;
+  openStock: (code: string) => Promise<void>;
+};
+
+function bondDetailId(slot: string, entry?: Entry | null) {
+  return `cb-detail-${slot}-${entry?.code ?? 'empty'}`;
+}
+
+function EntryButton({ entry, code, empty, detailId, expansion }: {
+  entry?: Entry | null; code?: string | null; empty: string; detailId: string; expansion: BondExpansion;
+}) {
   if (!entry) return <span>{code || empty}</span>;
-  return <button className="cb-entry-button" type="button" onClick={() => onSelect(entry)}>{entry.name}<ChevronRight size={13} aria-hidden="true" /></button>;
+  return <button className="cb-entry-button" type="button" id={`${detailId}-trigger`}
+    aria-expanded={expansion.openId === detailId} aria-controls={expansion.openId === detailId ? detailId : undefined}
+    onClick={() => expansion.toggle(detailId)}>{entry.name}<ChevronDown size={14} aria-hidden="true" /></button>;
 }
 
 function Status({ entry }: { entry: Entry }) {
@@ -83,9 +98,11 @@ function Status({ entry }: { entry: Entry }) {
   </span>;
 }
 
-function Comparison({ decision, position, candidate, onSelect }: {
-  decision: Decision; position: Entry | null; candidate: Entry | null; onSelect: (entry: Entry) => void;
+function Comparison({ decision, position, candidate, asOf, slot, expansion }: {
+  decision: Decision; position: Entry | null; candidate: Entry | null; asOf?: string | null; slot: string; expansion: BondExpansion;
 }) {
+  const positionId = bondDetailId(`${slot}-position`, position);
+  const candidateId = bondDetailId(`${slot}-candidate`, candidate);
   const { upside_edge: edge, downside_deterioration: deterioration, switch_threshold: threshold, switch_cost: cost, downside_limit: downsideLimit } = decision;
   const comparesTwo = decision.position_code && decision.candidate_code && decision.position_code !== decision.candidate_code;
   const rows: [string, Metric | undefined, Metric | undefined][] = [
@@ -97,8 +114,8 @@ function Comparison({ decision, position, candidate, onSelect }: {
   return <div className="cb-compare">
     <div className="cb-table-scroll">
       <table className="cb-table cb-compare-table">
-        <thead><tr><th scope="col">决策时比较</th><th scope="col"><small>原持仓</small><EntryButton entry={position} code={decision.position_code} empty="空仓" onSelect={onSelect} /></th>
-          <th scope="col"><small>首选候选</small><EntryButton entry={candidate} code={decision.candidate_code} empty="暂无" onSelect={onSelect} /></th></tr></thead>
+        <thead><tr><th scope="col">决策时比较</th><th scope="col"><small>原持仓</small><EntryButton entry={position} code={decision.position_code} empty="空仓" detailId={positionId} expansion={expansion} /></th>
+          <th scope="col"><small>首选候选</small><EntryButton entry={candidate} code={decision.candidate_code} empty="暂无" detailId={candidateId} expansion={expansion} /></th></tr></thead>
         <tbody>{rows.map(([name, previous, next]) => <tr key={name}><th scope="row">{name}</th>
           <td className={sign(previous)}>{change(previous)}</td><td className={sign(next)}>{change(next)}</td>
         </tr>)}
@@ -107,6 +124,8 @@ function Comparison({ decision, position, candidate, onSelect }: {
         </tbody>
       </table>
     </div>
+    <BondDetails entry={position} asOf={asOf} detailId={positionId} expansion={expansion} />
+    <BondDetails entry={candidate} asOf={asOf} detailId={candidateId} expansion={expansion} />
     {comparesTwo && (numeric(edge) && numeric(threshold) || numeric(deterioration) && numeric(downsideLimit)) &&
       <section className="cb-criteria" aria-label="常规换仓门槛"><h3>常规换仓门槛</h3>
         {decision.action === 'switch' && decision.thesis_failures >= 2 && <p className="cb-empty">本次换仓由原持仓逻辑失效触发。</p>}
@@ -119,14 +138,18 @@ function Comparison({ decision, position, candidate, onSelect }: {
   </div>;
 }
 
-function BondDetails({ entry, asOf, onClose, onOpenStock }: {
-  entry: Entry; asOf?: string | null; onClose: () => void; onOpenStock: (code: string) => Promise<void>;
+function BondDetails({ entry, asOf, detailId, expansion }: {
+  entry?: Entry | null; asOf?: string | null; detailId: string; expansion: BondExpansion;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  if (!entry || expansion.openId !== detailId) return null;
+  return <ExpandedBond key={detailId} entry={entry} asOf={asOf} detailId={detailId} expansion={expansion} />;
+}
+
+function ExpandedBond({ entry, asOf, detailId, expansion }: {
+  entry: Entry; asOf?: string | null; detailId: string; expansion: BondExpansion;
+}) {
   const [stockError, setStockError] = useState('');
   const [opening, setOpening] = useState(false);
-  useEffect(() => { dialog.current?.showModal(); }, []);
-
   const officialLink = sourceLink(entry.source_url);
   const facts = [
     ['债价', money(entry.price)], ['债券行情时间', formatTime(entry.quote_at)], ['正股价', money(entry.stock_price)], ['当日转股价', money(entry.conversion_price)],
@@ -140,37 +163,36 @@ function BondDetails({ entry, asOf, onClose, onOpenStock }: {
     setOpening(true);
     setStockError('');
     try {
-      await onOpenStock(entry.stock_code);
-      dialog.current?.close();
+      await expansion.openStock(entry.stock_code);
     } catch (error) {
       setStockError((error as Error).message);
     } finally {
       setOpening(false);
     }
   }
-  return <dialog className="cb-dialog" ref={dialog} onClose={onClose} aria-labelledby="cb-detail-heading">
-    <header className="cb-detail-header"><div><p className="cb-kicker">单券研究</p><h2 id="cb-detail-heading">{entry.name}</h2><p>{entry.code} · {entry.stock_name || entry.stock_code}{asOf ? ` · ${asOf} 快照` : ''}</p></div>
-      <button className="cb-button" type="button" aria-label="关闭单券明细" onClick={() => dialog.current?.close()}><X size={18} /></button></header>
+  return <section className="cb-inline-detail" id={detailId} aria-labelledby={`${detailId}-heading`}>
+    <header className="cb-detail-header"><div><h3 id={`${detailId}-heading`}>{entry.name}明细</h3><p>{entry.code} · {entry.stock_name || entry.stock_code}{asOf ? ` · ${asOf} 快照` : ''}</p></div>
+      <button className="cb-button" type="button" onClick={expansion.close}>收起明细 <ChevronDown size={14} className="cb-chevron-up" aria-hidden="true" /></button></header>
     <div className="cb-detail-content">
       <div className="cb-section-header"><Status entry={entry} />{/^\d{6}$/.test(entry.stock_code) &&
         <button className="cb-button" type="button" disabled={opening} onClick={() => { void openStock(); }}>查看正股行情 <ArrowRight size={14} /></button>}</div>
       {stockError && <p className="cb-notice" role="alert">{stockError}</p>}
       <dl className="cb-facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-      <section className="cb-detail-section"><h3>债价情景测算</h3>
+      <section className="cb-detail-section"><h4>债价情景测算</h4>
         <dl className="cb-facts cb-scenarios">
           <div><dt>正股上涨 10%</dt><dd className={sign(entry.upside)}>{change(entry.upside)}</dd><small>参考价 {money(entry.up_reference)}</small></div>
           <div><dt>正股下跌 10%</dt><dd className={sign(entry.downside)}>{change(entry.downside)}</dd><small>参考价 {money(entry.down_reference)}</small></div>
         </dl>
         <p>情景按转股价值变化重估同类券参考价。表中涨跌幅以参考价的变化除以当前债价，当前折价单独列示。</p>
       </section>
-      <section className="cb-detail-section"><h3>可比券{numeric(entry.peer_count) ? ` · ${entry.peer_count} 只` : ''}</h3>
+      <section className="cb-detail-section"><h4>可比券{numeric(entry.peer_count) ? ` · ${entry.peer_count} 只` : ''}</h4>
         {entry.peers.length ? <div className="cb-table-scroll"><table className="cb-table"><thead><tr>
           <th scope="col">转债</th><th scope="col">转股价值</th><th scope="col">转股溢价率</th></tr></thead><tbody>
           {entry.peers.map(peer => <tr key={peer.code}><th scope="row">{peer.name || peer.code} <small>{peer.code}</small></th>
             <td>{money(peer.conversion_value)}</td><td>{change(peer.premium)}</td></tr>)}
         </tbody></table></div> : <p>暂无可展示的可比券。</p>}
       </section>
-      <section className="cb-detail-section"><h3>交易与条款</h3>
+      <section className="cb-detail-section"><h4>交易与条款</h4>
         {entry.risk_reason && <p>{entry.risk_reason}</p>}
         <dl className="cb-facts cb-scenarios">
           <div><dt>已知最后交易日</dt><dd>{entry.last_trade_date || '—'}</dd></div>
@@ -180,23 +202,35 @@ function BondDetails({ entry, asOf, onClose, onOpenStock }: {
         {officialLink && <a className="cb-source" href={officialLink} target="_blank" rel="noopener noreferrer">查看来源 <ExternalLink size={13} /></a>}
       </section>
     </div>
-  </dialog>;
+  </section>;
 }
 
-function CandidateTable({ entries, blocked, onSelect }: { entries: Entry[]; blocked?: boolean; onSelect: (entry: Entry) => void }) {
-  return <div className="cb-table-scroll"><table className="cb-table cb-candidate-table">
+function CandidateTable({ entries, blocked, asOf, expansion }: {
+  entries: Entry[]; blocked?: boolean; asOf?: string | null; expansion: BondExpansion;
+}) {
+  return <div className="cb-table-scroll cb-candidate-scroll"><table className="cb-table cb-candidate-table">
     <thead><tr><th scope="col">转债 / 正股</th><th scope="col">债价</th><th scope="col">相对低估</th><th scope="col">正股 20 日相对行业</th>
       <th scope="col">上涨情景</th><th scope="col">下跌情景</th><th scope="col">{blocked ? '未入围原因' : '交易状态'}</th></tr></thead>
-    <tbody>{entries.map(entry => <tr key={entry.code}>
-      <th scope="row"><span className="cb-row-name">{entry.rank !== null && !blocked && <small className="cb-rank">{entry.rank}</small>}
-        <EntryButton entry={entry} empty="—" onSelect={onSelect} /></span><small className="cb-row-code">{entry.code} · {entry.stock_name || entry.stock_code || '—'}</small></th>
-      <td>{money(entry.price)}</td>
-      <td className={sign(entry.discount)}>{change(entry.discount)}</td>
-      <td className={sign(entry.relative_return)}>{change(entry.relative_return)}</td>
-      <td className={sign(entry.upside)}>{change(entry.upside)}</td>
-      <td className={sign(entry.downside)}>{change(entry.downside)}</td>
-      <td>{blocked ? <span className="cb-block-reason">{entry.reasons.join(' · ') || entry.risk_reason || '暂无说明'}</span> : <Status entry={entry} />}</td>
-    </tr>)}</tbody>
+    <tbody>{entries.map(entry => {
+      const detailId = bondDetailId(blocked ? 'excluded' : 'candidate', entry);
+      const expanded = expansion.openId === detailId;
+      return <Fragment key={entry.code}>
+        <tr className={expanded ? 'cb-expanded-row' : undefined}>
+          <th scope="row"><span className="cb-row-name">{entry.rank !== null && !blocked && <small className="cb-rank">{entry.rank}</small>}
+            <EntryButton entry={entry} empty="—" detailId={detailId} expansion={expansion} /></span>
+            <small className="cb-row-code">{entry.code} · {entry.stock_name || entry.stock_code || '—'}</small></th>
+          <td>{money(entry.price)}</td>
+          <td className={sign(entry.discount)}>{change(entry.discount)}</td>
+          <td className={sign(entry.relative_return)}>{change(entry.relative_return)}</td>
+          <td className={sign(entry.upside)}>{change(entry.upside)}</td>
+          <td className={sign(entry.downside)}>{change(entry.downside)}</td>
+          <td>{blocked ? <span className="cb-block-reason">{entry.reasons.join(' · ') || entry.risk_reason || '暂无说明'}</span> : <Status entry={entry} />}</td>
+        </tr>
+        {expanded && <tr className="cb-detail-row"><td colSpan={7}>
+          <BondDetails entry={entry} asOf={asOf} detailId={detailId} expansion={expansion} />
+        </td></tr>}
+      </Fragment>;
+    })}</tbody>
   </table></div>;
 }
 
@@ -216,7 +250,7 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<{ entry: Entry; asOf: string | null } | null>(null);
+  const [openDetailId, setOpenDetailId] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -231,31 +265,47 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
   const entries = research?.entries ?? [];
   const eligible = entries.filter(entry => entry.eligible).sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
   const excluded = entries.filter(entry => !entry.eligible);
-  const selectCurrent = (entry: Entry) => setSelected({ entry, asOf: research?.as_of ?? null });
+  const expansion: BondExpansion = {
+    openId: openDetailId,
+    toggle: id => setOpenDetailId(current => current === id ? null : id),
+    close: () => {
+      if (openDetailId) document.getElementById(`${openDetailId}-trigger`)?.focus();
+      setOpenDetailId(null);
+    },
+    openStock: onOpenStock,
+  };
   const decision = research?.decision;
   const activeHistory = research?.history.find(record => record.as_of === research.as_of);
   const findEntry = (code?: string | null) => code ? entries.find(entry => entry.code === code) ?? null : null;
   const currentPosition = findEntry(research?.position_code);
   const candidate = findEntry(decision?.candidate_code) ?? (decision?.candidate_code ? activeHistory?.candidate : eligible[0]) ?? null;
   const previousPosition = activeHistory?.position ?? findEntry(decision?.position_code);
+  const holdingId = bondDetailId('holding', currentPosition);
+  const decisionCandidateId = bondDetailId('decision', candidate);
+  const previewCandidateId = bondDetailId('preview', candidate);
+  const incumbentId = bondDetailId('incumbent', currentPosition);
   const incompletePreview = research?.preview && !eligible.length && entries.some(entry =>
     entry.risk === 'unknown' || !numeric(entry.relative_return) || !numeric(entry.turnover_20d));
   const replay = research?.preview && research.close_confirmed && eligible.length > 0;
   const quoteSession = research?.close_confirmed === true ? '收盘' : research?.close_confirmed === false ? '盘中' : '';
 
-  return <div className="cb-research" aria-busy={loading}>
+  return <div className="cb-research" aria-busy={loading} onKeyDown={event => {
+    if (event.key === 'Escape' && openDetailId) expansion.close();
+  }}>
     {decision && <section className="cb-panel cb-decision" aria-labelledby="cb-current-decision">
       <header className="cb-section-header"><div><p className="cb-kicker">本周决策 · 模拟跟踪</p>
         <h2 id="cb-current-decision">{decisionLabels[decision.action]}</h2></div></header>
       <div className="cb-meta"><span>信号日期 <strong>{research?.as_of || '—'}</strong></span>
         <span>下次复核 <strong>{research?.next_review || '每周最后一交易日收盘后'}</strong></span></div>
       <div className="cb-holdings">
-        <div><span>当前研究持仓</span><strong><EntryButton entry={currentPosition} code={research?.position_code} empty="空仓" onSelect={selectCurrent} /></strong></div>
-        <div><span>首选候选</span><strong><EntryButton entry={candidate} code={decision.candidate_code} empty="暂无合格券" onSelect={selectCurrent} /></strong></div>
+        <div><span>当前研究持仓</span><strong><EntryButton entry={currentPosition} code={research?.position_code} empty="空仓" detailId={holdingId} expansion={expansion} /></strong></div>
+        <div><span>首选候选</span><strong><EntryButton entry={candidate} code={decision.candidate_code} empty="暂无合格券" detailId={decisionCandidateId} expansion={expansion} /></strong></div>
       </div>
+      <BondDetails entry={currentPosition} asOf={research?.as_of} detailId={holdingId} expansion={expansion} />
+      <BondDetails entry={candidate} asOf={research?.as_of} detailId={decisionCandidateId} expansion={expansion} />
       <p className="cb-decision-reason">{decision.reason}</p>
       {research?.execution && <ExecutionDetails execution={research.execution} />}
-      {(previousPosition || candidate) && <Comparison decision={decision} position={previousPosition} candidate={candidate} onSelect={selectCurrent} />}
+      {(previousPosition || candidate) && <Comparison decision={decision} position={previousPosition} candidate={candidate} asOf={research?.as_of} slot="current" expansion={expansion} />}
     </section>}
 
     <section className="cb-panel" aria-labelledby="cb-candidate-heading">
@@ -276,18 +326,18 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
       {research?.preview && research.close_confirmed === false && <p className="cb-empty">当前为盘中行情预览，等待核验收盘数据。</p>}
       {research?.status === 'no_data' && <p className="cb-notice">暂无可用研究快照。待行情和条款数据核验后展示候选。</p>}
       {research?.status === 'data_error' && <p className="cb-notice" role="status">研究数据暂无法核验，请查看下方的数据说明。</p>}
-      {!decision && candidate && <div className="cb-incumbent"><span>{replay ? '复算首选' : '预览首选'}</span>
-        <EntryButton entry={candidate} empty="暂无" onSelect={selectCurrent} />
+      {!decision && candidate && <><div className="cb-incumbent"><span>{replay ? '复算首选' : '预览首选'}</span>
+        <EntryButton entry={candidate} empty="暂无" detailId={previewCandidateId} expansion={expansion} />
         <span>相对低估 {change(candidate.discount)} · 上行情景 {change(candidate.upside)}</span>
-      </div>}
-      {currentPosition && <div className="cb-incumbent"><span>当前持仓</span>
-        <EntryButton entry={currentPosition} empty="空仓" onSelect={selectCurrent} />
+      </div><BondDetails entry={candidate} asOf={research?.as_of} detailId={previewCandidateId} expansion={expansion} /></>}
+      {currentPosition && <><div className="cb-incumbent"><span>当前持仓</span>
+        <EntryButton entry={currentPosition} empty="空仓" detailId={incumbentId} expansion={expansion} />
         <span>低估 {change(currentPosition.discount)} · 上行情景 {change(currentPosition.upside)}</span>
-      </div>}
-      {eligible.length ? <CandidateTable entries={eligible.slice(0, 5)} onSelect={selectCurrent} />
+      </div><BondDetails entry={currentPosition} asOf={research?.as_of} detailId={incumbentId} expansion={expansion} /></>}
+      {eligible.length ? <CandidateTable entries={eligible.slice(0, 5)} asOf={research?.as_of} expansion={expansion} />
         : <p className="cb-empty">{loading ? '正在读取候选。' : research?.status === 'ready' ? '当前没有合格候选。' : '暂无候选数据。'}</p>}
       {excluded.length > 0 && <details className="cb-disclosure"><summary>查看未入围 · {excluded.length} 只</summary>
-        <CandidateTable entries={excluded} blocked onSelect={selectCurrent} /></details>}
+        <CandidateTable entries={excluded} blocked asOf={research?.as_of} expansion={expansion} /></details>}
       {(research?.warnings.length || research?.sources.length) ? <details className="cb-disclosure">
         <summary>数据来源与说明{research.warnings.length > 0 ? ` · ${research.warnings.length} 项提示` : ''}</summary>
         <ul className="cb-reasons">{[...research.warnings, ...research.sources].map((item, index) => <li key={index}>{item}</li>)}</ul>
@@ -304,9 +354,8 @@ export default function ConvertibleBondResearch({ onOpenStock }: { onOpenStock: 
         <p className="cb-decision-reason">{record.decision.reason}</p>
         {record.execution && <ExecutionDetails execution={record.execution} />}
         {(record.position || record.candidate) && <Comparison decision={record.decision} position={record.position} candidate={record.candidate}
-          onSelect={entry => setSelected({ entry, asOf: record.as_of })} />}
+          asOf={record.as_of} slot={`history-${record.as_of}`} expansion={expansion} />}
       </details>)}</div>
     </section>}
-    {selected && <BondDetails entry={selected.entry} asOf={selected.asOf} onClose={() => setSelected(null)} onOpenStock={onOpenStock} />}
   </div>;
 }

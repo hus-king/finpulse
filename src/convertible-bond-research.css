@@ -33,7 +33,7 @@
   letter-spacing: .09em;
 }
 
-.cb-section-header h2, .cb-detail-header h2 {
+.cb-section-header h2, .cb-detail-header h3 {
   margin: 5px 0 0;
   font-size: 21px;
   line-height: 1.3;
@@ -87,6 +87,7 @@
 .cb-entry-button { padding: 0; }
 .cb-entry-button:hover, .cb-source:hover { text-decoration: underline; text-underline-offset: 3px; }
 .cb-entry-button svg, .cb-source svg { flex-shrink: 0; }
+.cb-entry-button[aria-expanded="true"] svg, .cb-chevron-up { transform: rotate(180deg); }
 
 .cb-holdings, .cb-checks {
   display: grid;
@@ -248,34 +249,37 @@
   overflow-wrap: anywhere;
 }
 
-.cb-dialog {
-  position: fixed;
-  inset: 0 0 0 auto;
-  margin: 0;
-  padding: 0;
-  width: min(540px, 100%);
-  max-width: none;
-  height: 100dvh;
-  max-height: 100dvh;
+/* Keep the expanded row readable inside the table's horizontal scroller. */
+.cb-candidate-scroll { container-type: inline-size; }
+.cb-table .cb-expanded-row > * { background: var(--theme-raised); }
+.cb-table .cb-detail-row > td { padding: 0; white-space: normal; }
+
+.cb-inline-detail {
+  box-sizing: border-box;
+  min-width: 0;
+  margin-top: 8px;
   border: 1px solid var(--theme-border);
+  border-radius: 8px;
   background: var(--theme-panel);
   color: var(--theme-text);
-  overflow-y: auto;
-  font-variant-numeric: tabular-nums;
 }
 
-.cb-dialog::backdrop { background: rgb(0 0 0 / 52%); }
+.cb-detail-row .cb-inline-detail {
+  position: sticky;
+  left: 0;
+  width: 100%;
+  width: min(100%, 100cqw);
+  margin: 0;
+  border-radius: 0;
+}
 
 .cb-detail-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 16px 20px;
-  background: var(--theme-panel);
+  padding: 14px 20px;
   border-bottom: 1px solid var(--theme-border);
 }
 
-.cb-detail-content { padding: 16px 20px 24px; }
+.cb-detail-header h3 { margin-top: 0; font-size: 17px; }
+.cb-detail-content { padding: 14px 20px 18px; }
 
 .cb-facts {
   display: grid;
@@ -311,7 +315,7 @@
   border-top: 1px solid var(--theme-border);
 }
 
-.cb-detail-section h3 { margin: 0 0 6px; font-size: 15px; }
+.cb-detail-section h4 { margin: 0 0 6px; font-size: 15px; }
 .cb-source { margin-top: 5px; font-size: 12px; }
 
 @media (max-width: 520px) {
