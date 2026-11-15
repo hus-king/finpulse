@@ -36,6 +36,7 @@ export interface HotStockImpact {
   direction: 'positive' | 'negative' | 'mixed' | 'unclear'; confidence: 'high' | 'medium' | 'low';
   news_evidence: string[]; business_evidence: string; mechanism: string; uncertainty: string;
   score: number | null;
+  project_evidence?: { from: string; relation: string; to: string; quote: string; url?: string; published_at?: string }[];
   relationship_evidence?: { id: string; quote: string; source: string; url: string }[];
 }
 export interface HotImpactRow {

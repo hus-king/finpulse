@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from backend.auth import AuthStore
 from backend.hot_stock_impact import NAMESPACE, VERSION, HotStockImpactService, retrieve_business_cards
 from backend.hot_news_board import digest
+from backend.hot_stock_memory import EPISODES, PROJECT_EPISODES, project_evidence, seed_project_memory, store_project_episode
 from backend.research import ResearchService
 from backend.research_store import ResearchStore
 
@@ -63,6 +64,68 @@ class ImpactTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(material), {'news', 'sources', 'stocks', 'sector_hypotheses', 'attention'})
         self.assertNotIn('market', material['stocks'][0]); self.assertNotIn('historical_cases', material)
         self.assertTrue(material['stocks'][0]['business_cards'])
+
+    async def test_project_memory_supplies_historical_paths_to_private_analysis(self):
+        seed_project_memory(self.store)
+        seed_project_memory(self.store)
+        memory = [row['value'] for row in self.store.list(PROJECT_EPISODES)]
+        self.assertEqual(len(memory), 2)
+        self.assertEqual(len({row['project']['id'] for row in memory}), 1)
+        self.assertEqual(len({row['event']['id'] for row in memory}), 2)
+
+        project = '萨拉戈萨磷酸铁锂电池工厂'
+        title = project + '建设延期'
+        self.topic['title'] = title
+        self.topic['summary'] = '原有施工计划向后顺延。'
+        self.topic['screening']['event'].update(actor=project, action='建设延期', new_fact=title)
+        self.topic['sources'][0]['published_at'] = '2026-10-26'
+        self.research.catalog.items['300750'] = {'code': '300750', 'name': '宁德时代', 'exchange': 'SZ'}
+        for owner in ('alice', 'bob'):
+            self.store.put('watchlist', 'list', ['300750'], owner)
+
+        evidence = project_evidence(self.topic, '300750', memory)
+        self.assertEqual(evidence['path'][-1]['to'], '宁德时代')
+        self.assertEqual(evidence['path'][-1]['published_at'], '2025-11-26')
+        old_topic = {**self.topic, 'sources': [{'published_at': '2025-01-01'}]}
+        self.assertEqual(project_evidence(old_topic, '300750', memory)['path'][-1]['published_at'], '2024-12-10')
+        same_day = {**self.topic, 'sources': [{'published_at': '2024-12-10'}]}
+        self.assertIsNone(project_evidence(same_day, '300750', memory))
+        unnamed = {**self.topic, 'title': '萨拉戈萨某电池工厂建设延期'}
+        self.assertIsNone(project_evidence(unnamed, '300750', memory))
+        ambiguous = {**memory[0], 'project': {**memory[0]['project'], 'id': 'different-project'}}
+        self.assertIsNone(project_evidence(self.topic, '300750', [*memory, ambiguous]))
+
+        async def complete(messages, **kwargs):
+            payload = json.loads(messages[1]['content'])
+            stock = payload['stocks'][0]
+            self.assertNotIn('_project_memory', stock)
+            self.assertEqual(stock['project_path'], evidence['path'])
+            card = evidence['cards'][-1]
+            self.assertIn(card, stock['relationships'])
+            scored = {**analysis(stock), 'news_evidence': [title],
+                      'relationship_evidence': [{'id': card['id'], 'quote': card['text']}]}
+            return {'content': json.dumps({'items': [scored]}, ensure_ascii=False), 'model': 'fixture'}
+
+        self.completion.side_effect = complete
+        result = await self.service.analyze('topic1', 'alice')
+        row = result['items'][0]
+        self.assertEqual(row['status'], 'ok', row)
+        self.assertEqual(row['analysis']['relation'], 'indirect')
+        self.assertEqual(row['analysis']['project_evidence'], evidence['path'])
+        self.assertEqual(self.service.snapshot('topic1', 'bob')['items'][0]['status'], 'pending')
+        await self.service.analyze('topic1', 'alice')
+        self.assertEqual(self.completion.await_count, 1)
+        episodes = self.store.list(EPISODES)
+        self.assertEqual(len(episodes), 1)
+        self.assertEqual(episodes[0]['value']['sources'][0]['observed_at'], '2026-10-26T12:00:00+08:00')
+
+    async def test_project_import_rejects_quotes_missing_from_source(self):
+        seed_path = Path(__file__).resolve().parents[1] / 'backend/knowledge/hot_stock_projects.json'
+        draft = json.loads(seed_path.read_text(encoding='utf-8'))[0]
+        draft['participants'][0]['quote'] = '原文没有的宁德时代引文'
+        with self.assertRaises(ValueError):
+            store_project_episode(self.store, draft)
+        self.assertEqual(self.store.list(PROJECT_EPISODES), [])
 
     async def test_private_reads_also_reject_unpublished_candidates(self):
         self.topic['screening']['decision'] = 'review'

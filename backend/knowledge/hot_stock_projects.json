@@ -1,0 +1,38 @@
+[
+  {
+    "episode": {
+      "source": "宁德时代官网",
+      "url": "https://www.catl.com/news/8190.html",
+      "published_at": "2024-12-10",
+      "title": "宁德时代与Stellantis集团将合资建厂 总投资高达41亿欧元",
+      "content": "12月10日，宁德时代与Stellantis集团共同宣布——双方将各持股50%成立一家合资企业，在西班牙萨拉戈萨建设一座大型磷酸铁锂电池工厂，投资高达41亿欧元。"
+    },
+    "project_id": "zaragoza-catl-stellantis-lfp-plant",
+    "project_name": "萨拉戈萨磷酸铁锂电池工厂",
+    "aliases": ["萨拉戈萨建设一座大型磷酸铁锂电池工厂", "萨拉戈萨 LFP 电池工厂"],
+    "event_key": "2024-12-10-joint-venture-announcement",
+    "event": "宁德时代与 Stellantis 宣布合资建厂",
+    "project_quote": "在西班牙萨拉戈萨建设一座大型磷酸铁锂电池工厂",
+    "participants": [
+      {"code": "300750", "name": "宁德时代", "mention": "宁德时代", "quote": "宁德时代与Stellantis集团共同宣布——双方将各持股50%成立一家合资企业"}
+    ]
+  },
+  {
+    "episode": {
+      "source": "宁德时代官网",
+      "url": "https://www.catl.com/en/news/6614.html",
+      "published_at": "2025-11-26",
+      "title": "CATL, Stellantis break ground on battery plant in Spain",
+      "content": "Contemporary Star Energy, S.L., the joint venture created by Stellantis and CATL, today celebrated the groundbreaking of its lithium iron phosphate (LFP) battery gigafactory in Zaragoza."
+    },
+    "project_id": "zaragoza-catl-stellantis-lfp-plant",
+    "project_name": "萨拉戈萨磷酸铁锂电池工厂",
+    "aliases": ["萨拉戈萨 LFP 电池工厂", "lithium iron phosphate (LFP) battery gigafactory in Zaragoza"],
+    "event_key": "2025-11-26-groundbreaking",
+    "event": "萨拉戈萨磷酸铁锂电池工厂动工",
+    "project_quote": "lithium iron phosphate (LFP) battery gigafactory in Zaragoza",
+    "participants": [
+      {"code": "300750", "name": "宁德时代", "mention": "CATL", "quote": "the joint venture created by Stellantis and CATL"}
+    ]
+  }
+]

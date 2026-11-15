@@ -24,6 +24,7 @@ from .research_store import ResearchStore
 from .research_api import router as research_router
 from .hot_news_board import HotNewsBoardService
 from .hot_stock_impact import HotStockImpactService
+from .hot_stock_memory import seed_project_memory
 from .hot_news_matches import HotNewsMatchService
 from .hot_news_api import router as hot_news_router
 from .briefing import start_scheduler
@@ -64,6 +65,7 @@ async def lifespan(application):
     application.state.auth_store.cleanup_expired()
     research_store = ResearchStore(application.state.auth_store)
     research_store.initialize()
+    await asyncio.to_thread(seed_project_memory, research_store)
     async def invoke(messages, max_tokens=1100):
         return await completion(messages, max_tokens)
     application.state.research = ResearchService(research_store, invoke)

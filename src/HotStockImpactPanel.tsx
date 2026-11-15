@@ -100,6 +100,13 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
                 <p>{row.business.status === 'stale' ? '沿用旧资料 · ' : ''}{row.business.fetched_at ? dateTime(new Date(row.business.fetched_at * 1000).toISOString()) : '资料时间未知'}</p></div>}
             </details>
             <p className="hot-stock-uncertainty">成立条件与局限：{row.analysis.uncertainty}</p>
+            {!!row.analysis.project_evidence?.length && <details>
+              <summary>候选项目关系证据</summary>
+              <ol>{row.analysis.project_evidence.map((edge, index) => <li key={index}>
+                <div>{edge.from} → {edge.relation} → {edge.to}</div>
+                {edge.url ? <a href={edge.url} target="_blank" rel="noreferrer">{edge.quote}</a> : <span>{edge.quote}</span>}
+              </li>)}</ol>
+            </details>}
             <small className="hot-stock-saved">{row.model} · {dateTime(row.analyzed_at ?? null)}</small>
           </> : <p className="hot-stock-uncertainty">{row.error ?? '尚未分析这只自选股。'}</p>}
         </article>)}

@@ -203,6 +203,19 @@ npm run build
 
 后端测试覆盖账号注册登录、会话撤销和过期、来源及 CSRF 校验、20 个账号并发注册、管理员权限隔离、停用用户、修改密码，以及新闻清洗规则。测试使用临时数据库和模拟模型响应，不需要真实 API 密钥，也不会请求收费模型接口。真实共享 MySQL 的显式验证另见管理员操作说明。
 
+### 热点关联的项目图记忆
+
+启动后端时会导入两份宁德时代项目资料。单条分析和一键匹配都会保存所分析的热点内容版本，并尝试从热点标题中的完整项目别名和进展词检索历史参与关系。项目有歧义时跳过这条检索路径。按披露日比较，只有早于热点发布日期的资料可参与检索。热点无发布日期时使用采集日期。命中后，现有分析模型使用候选路径和原文判断关联。单条分析可展开「候选项目关系证据」查看每一跳及其出处。
+
+图记录保存在现有 `research_records`。新增资料时，先准备一份含 `source`、`url`、`published_at`（`YYYY-MM-DD`）、`title`、`content` 的 JSON，再运行以下命令。
+
+```bash
+python -m backend.hot_stock_memory_cli draft episode.json > review.json
+python -m backend.hot_stock_memory_cli import-reviewed review.json
+```
+
+第一条命令调用已配置的模型生成草案。核对原文、公司代码和参与角色之后再执行第二条命令。描述同一项目的资料复用 `project_id`，报道同一次事件的资料同时复用 `event_key`。可参考 [种子数据](backend/knowledge/hot_stock_projects.json)。首版的项目检索面向不超过 500 份已审核资料的语料库。
+
 ## 4. 用户数据与账号鉴权
 
 - SQLite 模式首次启动自动创建 `data/finpulse.db`；MySQL 模式连接 `config.local.json` 指定的共享数据库，表结构由管理员提前建立。`users` 保存用户资料、角色及 Argon2id 密码哈希，`sessions` 保存会话令牌哈希、有效期和活动时间，`auth_rate_limits` 保存短期请求次数，`admin_audit` 保存管理操作。

@@ -15,6 +15,7 @@ from .hot_news_events import validate_event
 from .news_cleaning import SHANGHAI, get_stock_aliases
 from .providers import read_config
 from .company_knowledge import curated_relationships
+from .hot_stock_memory import MAX_PROJECT_EPISODES, PROJECT_EPISODES, project_evidence, store_hot_episode
 
 VERSION = 'hot-stock-price-impact-v2-score'
 NAMESPACE = 'hot_stock_impact'
@@ -69,6 +70,9 @@ class HotStockImpactService:
     def stocks(self, owner):
         codes = self.store.get('watchlist', 'list', owner, DEFAULT_WATCHLIST)
         result = []
+        memory = [row['value'] for row in self.store.list(PROJECT_EPISODES, owner='', limit=MAX_PROJECT_EPISODES + 1)]
+        if len(memory) > MAX_PROJECT_EPISODES:
+            memory = []
         for code in codes[:20]:
             stock = self.research.catalog.get(code)
             if stock and stock.get('asset_type') == 'index': continue
@@ -81,6 +85,7 @@ class HotStockImpactService:
             cards = list({card['id']: card for card in cards}.values())[:3]
             result.append({'code': code, 'name': stock['name'], 'exchange': stock['exchange'],
                            'relationships': cards,
+                           **({'_project_memory': memory} if memory else {}),
                            'aliases': get_stock_aliases(stock['name'], {'code': code}),
                            'business': {'main_business': (data.get('main_business') or '')[:2400], 'source': data.get('source'),
                                         'url': data.get('url'), 'fetched_at': record.get('fetched_at'), 'status': status}})
@@ -97,7 +102,19 @@ class HotStockImpactService:
         # Rank, heat and crawl time are not new event evidence; avoid repeat paid calls.
         evidence = {'article': self.article(topic), 'urls': sorted({s['url'] for s in topic['sources']}),
                     'sectors': self.sectors(topic)}
+        stock = self.stock_with_project_evidence(topic, stock)
         return digest([VERSION, IMPACT_SYSTEM, evidence, stock, config.get('model'), config.get('base_url')])
+
+    @staticmethod
+    def stock_with_project_evidence(topic, stock):
+        if '_project_memory' not in stock:
+            return stock
+        evidence = project_evidence(topic, stock['code'], stock['_project_memory'])
+        stock = {key: value for key, value in stock.items() if key != '_project_memory'}
+        if evidence:
+            stock['project_path'] = evidence['path']
+            stock['relationships'] = [*stock['relationships'], *evidence['cards']]
+        return stock
 
     @staticmethod
     def sectors(topic):
@@ -132,9 +149,14 @@ class HotStockImpactService:
                 'note': '确认关联后给出−10至+10非零股价影响评分；为模型净影响判断，不代表涨跌幅或概率。'}
 
     def messages(self, topic, stocks):
+        stocks = [self.stock_with_project_evidence(topic, stock) for stock in stocks]
         payload = {'news': self.article(topic), 'sources': [{'name': s['name'], 'url': s['url']} for s in topic['sources']],
                    'sector_hypotheses': self.sectors(topic), 'attention': topic.get('attention', {}),
                    'stocks': [{**stock, 'business_cards': retrieve_business_cards(topic['title'], topic.get('summary') or '', stock)} for stock in stocks]}
+        if any(stock.get('project_path') for stock in stocks):
+            payload['project_path_guidance'] = (
+                'project_path是候选历史证据。先核对新闻确在报道同一个项目及当前事件，'
+                '再使用有原文支持的参与关系。历史参与不能直接证明当前持股、责任或影响方向。')
         return [{'role': 'system', 'content': IMPACT_SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
 
     async def analyze(self, topic_id, owner, *, _topic=None, _codes=None, _refresh_business=True, _wait=False):
@@ -157,11 +179,13 @@ class HotStockImpactService:
             stocks = await asyncio.to_thread(self.stocks, owner)
             if _codes is not None and sorted(stock['code'] for stock in stocks) != sorted(_codes):
                 raise HTTPException(409, '自选股已变化，请重新开始匹配。')
+            await asyncio.to_thread(store_hot_episode, self.store, self.article(topic), topic['sources'])
             pending = []
             for stock in stocks:
                 key = self.key(topic, stock)
                 record = await asyncio.to_thread(self.store.get, NAMESPACE, key, owner)
-                if not record or record['status'] != 'ok': pending.append(stock)
+                if not record or record['status'] != 'ok':
+                    pending.append(self.stock_with_project_evidence(topic, stock))
 
             async def batch(group):
                 async with self.capacity:
@@ -183,6 +207,8 @@ class HotStockImpactService:
                         return
                     for analysis in analyses:
                         stock = next(stock for stock in group if stock['code'] == analysis['code'])
+                        if stock.get('project_path'):
+                            analysis['project_evidence'] = stock['project_path']
                         await asyncio.to_thread(self.store.put, NAMESPACE, self.key(topic, stock), {
                             'status': 'ok', 'analysis': analysis, 'model': reply.get('model'),
                             'analyzed_at': datetime.fromtimestamp(self.clock(), SHANGHAI).isoformat()}, owner)
