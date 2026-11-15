@@ -202,9 +202,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.completion = AsyncMock()
         self.service = HotNewsBoardService(self.store, self.completion, clock=lambda: NOW)
         self.config = patch('backend.hot_news_board.read_config', return_value={}); self.config.start()
+        self.source_config = patch('backend.hot_news_board.configured_sources', return_value={}); self.source_config.start()
 
     async def asyncTearDown(self):
-        self.config.stop(); self.directory.cleanup()
+        self.source_config.stop(); self.config.stop(); self.directory.cleanup()
 
     async def fetch(self, source):
         return [board_row('美国宣布加征进口关税'), board_row('明星红毯同框', 2), board_row('某地普通生活话题', 3)]
@@ -218,10 +219,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch('backend.hot_news_board.fetch_board', new=AsyncMock(side_effect=self.fetch)) as fetch:
             result = await self.service.refresh()
             await self.service.refresh()
-        self.assertEqual(fetch.await_count, 2)
+        self.assertEqual(fetch.await_count, len(SOURCES))
         self.assertEqual(result['status'], 'ok')
         self.assertEqual(result['counts'], {'keep': 1, 'review': 1, 'exclude': 1})
-        self.assertEqual(len(result['items'][0]['sources']), 2)
+        self.assertEqual(len(result['items'][0]['sources']), len(SOURCES))
         self.completion.assert_not_awaited()
 
     async def test_partial_source_failure_is_explicit_with_working_source(self):
@@ -260,7 +261,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.refresh()
         record = self.store.get('hot_news_board', FEED_KEY)
         for item in record['topics']:
-            item['sources'][1]['observed_timestamp'] = NOW - MAX_STALE
+            for source in item['sources'][1:]: source['observed_timestamp'] = NOW - MAX_STALE
         self.store.put('hot_news_board', FEED_KEY, record)
         result = self.service.feed()
         self.assertEqual(len(result['items'][0]['sources']), 1)
@@ -290,6 +291,19 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.screen([topic()])
         self.assertEqual(self.completion.await_count, 3)
 
+    async def test_model_cache_separates_platform_summary_from_reported_excerpt(self):
+        async def complete(messages, **kwargs):
+            data = json.loads(messages[1]['content'])['topics']
+            return {'content': json.dumps({'items': [model_row(item) for item in data]}), 'model': 'fixture'}
+        self.completion.side_effect = complete
+        plain = topic()
+        reported = {**topic(), 'sources': [{'id': 'tushare_cls', 'kind': 'news'}]}
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            await self.service.screen([plain])
+            await self.service.screen([reported])
+            await self.service.screen([plain])
+        self.assertEqual(self.completion.await_count, 2)
+
     async def test_invalid_model_output_falls_back_without_losing_review_items(self):
         self.completion.return_value = {'content': '{invalid'}
         with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'not-a-real-key'}):
@@ -298,6 +312,37 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(warnings)
         self.assertTrue(all(item['screening']['method'] == 'rules' for item in result))
         self.assertEqual(self.store.list('hot_news_screen'), [])
+        self.assertEqual(self.completion.await_count, 2)
+        self.assertEqual(self.store.list('hot_news_screen_errors')[0]['value']['attempts'], 2)
+
+    async def test_one_structure_repair_preserves_valid_model_result(self):
+        item = topic()
+        self.completion.side_effect = [{'content': '{invalid'}, {'content': json.dumps({'items': [model_row(item)]})}]
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            rows, _ = await self.service.screen([item])
+        self.assertEqual(self.completion.await_count, 2)
+        self.assertEqual(rows[0]['screening']['method'], 'model')
+        self.assertTrue(rows[0]['screening']['repair_attempted'])
+        self.assertEqual(self.store.list('hot_news_screen_errors'), [])
+
+    async def test_rate_limit_is_not_retried_as_a_structure_failure(self):
+        self.completion.side_effect = HTTPException(429, 'fixture rate limit')
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            rows, _ = await self.service.screen([topic()])
+        self.assertEqual(self.completion.await_count, 1)
+        self.assertEqual(rows[0]['screening']['method'], 'rules')
+
+    async def test_unselected_material_needs_no_fabricated_rubric_evidence(self):
+        item = topic()
+        reply = {**model_row(item), 'decision': 'review', 'channels': [], 'rubric': None}
+        self.completion.return_value = {'content': json.dumps({'items': [reply]})}
+        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}):
+            rows, warnings = await self.service.screen([item])
+        self.assertEqual(rows[0]['screening']['decision'], 'review')
+        self.assertIsNone(rows[0]['screening']['rubric'])
+        self.assertEqual(rows[0]['screening']['method'], 'model')
+        self.assertFalse(warnings)
+        self.assertEqual(self.completion.await_count, 1)
 
     async def test_batches_are_bounded_and_complete(self):
         sizes = []

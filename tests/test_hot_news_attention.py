@@ -3,7 +3,7 @@ import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
-from backend.hot_news_attention import attach_attention, cluster_events, group_reports, validate_groups
+from backend.hot_news_attention import attach_attention, cluster_events, group_reports, validate_groups, retain_valid_groups
 from tests.test_hot_news_board import topic, model_row
 
 
@@ -72,6 +72,52 @@ class AttentionTests(unittest.TestCase):
 
 
 class GroupProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_proposal_does_not_discard_other_valid_groups(self):
+        fixture = AttentionTests(); fixture.setUp()
+        rows = fixture.topics + [topic('某机构宣布新的独立事件')]
+        groups, rejected = retain_valid_groups(json.dumps({'groups': [
+            {'label': '有效测试组', 'anchor': '姆巴佩', 'topic_ids': [rows[0]['id'], rows[1]['id']]},
+            {'label': '无效测试组', 'anchor': '不存在主体', 'topic_ids': [rows[2]['id'], rows[3]['id']]}
+        ]}), rows)
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(sum(len(group['topic_ids']) for group in groups), 4)
+        self.assertEqual(sum(len(group['topic_ids']) > 1 for group in groups), 1)
+
+    async def test_cached_checked_subset_keeps_warning_without_new_model_calls(self):
+        fixture = AttentionTests(); fixture.setUp()
+        rows = fixture.topics
+        for row in rows: row.pop('screening')
+        cached = {'groups': [], 'split_unverified': True}
+        model = AsyncMock()
+        result, warning = await cluster_events(rows, model, SimpleNamespace(get=Mock(return_value=cached)), ['fixture'])
+        self.assertTrue(warning)
+        self.assertEqual(len(result), len(rows))
+        model.assert_not_awaited()
+
+    async def test_invalid_shared_anchor_gets_one_repair(self):
+        fixture = AttentionTests(); fixture.setUp()
+        rows = fixture.topics
+        for row in rows: row.pop('screening')
+        invalid = {'groups': [{'label': '测试事件', 'anchor': '不存在主体', 'topic_ids': ['t0', 't1']}]}
+        valid = {'groups': [{'label': '测试事件', 'anchor': '姆巴佩', 'topic_ids': ['t0', 't1']}]}
+        model = AsyncMock(side_effect=[{'content': json.dumps(invalid)}, {'content': json.dumps(valid)}])
+        store = SimpleNamespace(get=Mock(return_value=None), put=Mock())
+        result, warning = await cluster_events(rows, model, store, ['fixture'])
+        self.assertIsNone(warning)
+        self.assertEqual(model.await_count, 2)
+        self.assertEqual(sum(len(row['members']) for row in result), 3)
+
+    async def test_two_invalid_outputs_preserve_all_original_topics(self):
+        fixture = AttentionTests(); fixture.setUp()
+        rows = fixture.topics
+        for row in rows: row.pop('screening')
+        model = AsyncMock(return_value={'content': '{invalid'})
+        store = SimpleNamespace(get=Mock(return_value=None), put=Mock())
+        result, warning = await cluster_events(rows, model, store, ['fixture'])
+        self.assertEqual(result, rows)
+        self.assertTrue(warning)
+        self.assertEqual(model.await_count, 2)
+
     async def test_compact_ids_are_resolved_and_reasoning_has_a_bounded_budget(self):
         fixture = AttentionTests(); fixture.setUp()
         rows = fixture.topics

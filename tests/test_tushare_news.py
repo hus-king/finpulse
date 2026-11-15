@@ -27,7 +27,7 @@ class NewsProviderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(str(request.url), 'http://provider.example:8030/')
             self.assertEqual(sent['token'], 'fixture-private-token')
             self.assertEqual(sent['api_name'], 'news'); self.assertEqual(sent['params']['src'], 'cls')
-            self.assertEqual(sent['params']['limit'], 100)
+            self.assertEqual(sent['params']['limit'], 20)
             return httpx.Response(200, json=payload())
         with patch('backend.tushare_news.read_config', return_value=CFG), patch('backend.tushare_news.httpx.AsyncClient', return_value=httpx.AsyncClient(transport=httpx.MockTransport(handler))):
             rows = await fetch_news('tushare_cls', NOW)
@@ -47,10 +47,10 @@ class NewsProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_url_or_missing_config_never_sends_credentials(self):
         for cfg in ({}, {'tushare_news': {'token': 's', 'base_url': 'http://user:pass@host/?token=s'}}):
-            with patch('backend.tushare_news.read_config', return_value=cfg), patch('backend.tushare_news.httpx.AsyncClient') as client:
+            with patch('backend.tushare_news.settings', return_value=cfg.get('tushare_news') or {}), patch('backend.tushare_news.httpx.AsyncClient') as client:
                 with self.assertRaises(ProviderError): await fetch_news('tushare_sina', NOW)
                 client.assert_not_called()
-        with patch('backend.tushare_news.read_config', return_value={}): self.assertEqual(configured_sources(), {})
+        with patch('backend.tushare_news.settings', return_value={}): self.assertEqual(configured_sources(), {})
 
     async def test_news_feed_has_no_fake_heat_and_public_payload_excludes_full_paid_body(self):
         rows = parse_news(payload(), 'tushare_cls', NOW)
@@ -96,7 +96,7 @@ class NewsParsingTests(unittest.TestCase):
     def test_missing_schema_fails_explicitly_and_candidates_are_bounded(self):
         with self.assertRaises(ProviderError): parse_news({'code': 0, 'data': {'fields': [], 'items': []}}, 'tushare_cls', NOW)
         rows = [['2026-10-26 22:30:00', f'市场资讯{i}', '报道正文，材料仍需核实。', ''] for i in range(100)]
-        self.assertEqual(len(parse_news(payload(rows), 'tushare_cls', NOW)), 15)
+        self.assertEqual(len(parse_news(payload(rows), 'tushare_cls', NOW)), 20)
 
 
 if __name__ == '__main__': unittest.main()

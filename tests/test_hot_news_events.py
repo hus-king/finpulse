@@ -9,7 +9,7 @@ from backend.auth import AuthStore
 from backend.research_store import ResearchStore
 from backend.providers import ProviderError
 from backend.hot_news_events import editorial_reason, rule_event, validate_event
-from backend.hot_news_board import HotNewsBoardService, FEED_KEY, REFRESH_KEY, VERSION, MAX_STALE, digest, public_board, rule_screen
+from backend.hot_news_board import SOURCES, HotNewsBoardService, FEED_KEY, REFRESH_KEY, VERSION, MAX_STALE, digest, public_board, rule_screen
 from tests.test_hot_news_board import topic, board_row, NOW, query_fixture, model_row
 
 
@@ -58,7 +58,7 @@ class NewsValueTests(unittest.TestCase):
 
     def test_schema_requires_new_fact_and_significance_not_just_market_path(self):
         item = topic(); good = model_row(item)
-        from backend.hot_news_board import validate_screening
+        from backend.hot_news_board import SOURCES, validate_screening
         for change in ({'novelty': 'background'}, {'importance': 'minor'}, {'actor': '不存在的公司'}, {'new_fact': '材料以外的重要事件已发生'}):
             row = {**good, 'event': {**good['event'], **change}}
             with self.subTest(change=change), self.assertRaises(ValueError):
@@ -96,9 +96,10 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
         self.store = ResearchStore(auth); self.store.initialize()
         self.service = HotNewsBoardService(self.store, AsyncMock(), clock=lambda: NOW)
         self.config = patch('backend.hot_news_board.read_config', return_value={}); self.config.start()
+        self.source_config = patch('backend.hot_news_board.configured_sources', return_value={}); self.source_config.start()
 
     async def asyncTearDown(self):
-        await self.service.close(); self.config.stop(); self.tmp.cleanup()
+        await self.service.close(); self.source_config.stop(); self.config.stop(); self.tmp.cleanup()
 
     async def test_slow_collection_returns_immediately_and_joiners_do_not_duplicate_work(self):
         gate = asyncio.Event()
@@ -113,7 +114,7 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(joined['refresh']['status'], 'running')
             self.assertIsNone(other.task)
             gate.set(); await asyncio.wait_for(self.service.task, 3)
-        self.assertEqual(fetch.await_count, 2)
+        self.assertEqual(fetch.await_count, len(SOURCES))
         result = public_board(self.service.feed())
         self.assertEqual(result['refresh']['status'], 'completed')
         self.assertEqual([r['title'] for r in result['items']], ['美国宣布加征进口关税'])
@@ -163,7 +164,7 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             self.store.put('hot_news_board', REFRESH_KEY, {'status': 'error', 'stage': 'interrupted'})
             await self.service.resume_interrupted()
             await self.service.task
-        self.assertEqual(fetch.await_count, 2)
+        self.assertEqual(fetch.await_count, len(SOURCES))
         self.assertEqual(self.service.refresh_status()['status'], 'completed')
 
     async def test_recovery_joins_existing_owner_without_duplicate_requests(self):
@@ -179,7 +180,7 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             await self.service.request_refresh(); await self.service.task
             self.assertEqual(self.service.refresh_status()['status'], 'error')
             await self.service.request_refresh(); await self.service.task
-        self.assertEqual(fetch.await_count, 4)
+        self.assertEqual(fetch.await_count, 2 * len(SOURCES))
         self.assertEqual(self.service.feed()['status'], 'unavailable')
 
     async def test_checkpoint_does_not_replace_usable_completed_snapshot(self):
@@ -202,7 +203,7 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             record = self.store.get('hot_news_board', FEED_KEY); record['version'] = 'old'
             self.store.put('hot_news_board', FEED_KEY, record)
             await self.service.request_refresh(); await self.service.task
-        self.assertEqual(fetch.await_count, 4)
+        self.assertEqual(fetch.await_count, 2 * len(SOURCES))
 
     async def test_configured_refresh_groups_raw_context_before_screening_and_publishes_progress(self):
         stages = []
@@ -238,7 +239,7 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             record = self.store.get('hot_news_board', FEED_KEY); record.pop('grouping_version')
             self.store.put('hot_news_board', FEED_KEY, record)
             await self.service.request_refresh(); await self.service.task
-        self.assertEqual(fetch.await_count, 4)
+        self.assertEqual(fetch.await_count, 2 * len(SOURCES))
 
 
 if __name__ == '__main__': unittest.main()

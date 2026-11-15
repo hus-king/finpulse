@@ -48,11 +48,11 @@ async def match(payload: MatchRequest, response: Response, user=Depends(authoriz
 @router.get('')
 async def feed(response: Response,
                decision: Literal['all', 'keep', 'review', 'exclude'] = 'keep',
-               source: Literal['all', 'baidu', 'weibo', 'tushare_cls', 'tushare_sina', 'tushare_wallstreetcn', 'tushare_major'] = 'all',
+               source: Literal['all', 'baidu', 'weibo', 'bilibili', 'zhihu', 'toutiao', 'douyin', 'tushare_cls', 'tushare_sina', 'tushare_wallstreetcn', 'tushare_major'] = 'all',
                channel: Literal['all', 'trade', 'supply', 'cost', 'demand', 'regulation', 'funding', 'risk'] = 'all',
                q: str = Query(default='', max_length=80),
                sort: Literal['hot', 'latest'] = 'hot',
-               limit: int = Query(default=100, ge=1, le=100),
+               limit: int = Query(default=6, ge=1, le=100),
                news=Depends(service)):
     response.headers['Cache-Control'] = 'no-store'
     def read():

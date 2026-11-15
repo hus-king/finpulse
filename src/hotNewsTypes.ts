@@ -11,6 +11,11 @@ export interface HotSource {
 export interface HotTopic {
   id: string; title: string; summary: string; sources: HotSource[]; rank: number; rank_score: number;
   sector_impacts: SectorImpact[];
+  newsworthiness?: { total_score: number; decision: 'core' | 'hot' | 'candidate' | 'exclude';
+    specificity_score: number; repetition_score: number; importance_score: number; opinion_score: number; event_score: number;
+    major_event_supplement: boolean; method: 'model' | 'rules'; opinion_evidence_status: string;
+    repetition_detail: { same_platform_count: number; same_platform_score: number; platform_count: number; cross_platform_score: number };
+    rubric: { evidence: Record<string, string> }; note: string };
   attention?: { mentions: number; platforms: number; snapshots: number; best_rank: number | null; priority: boolean; related_reports: number; score: number };
   members?: { id: string; title: string; sources: HotSource[] }[];
   screening: { event?: { kind: string; actor: string; action: string; new_fact: string; novelty: string; importance: string; attribution: string }; id: string; decision: 'keep' | 'review' | 'exclude'; channels: MarketChannel[];

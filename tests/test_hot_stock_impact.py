@@ -15,7 +15,7 @@ from backend.research import ResearchService
 from backend.research_store import ResearchStore
 
 TOPIC = {'id': 'topic1', 'title': '国际原油价格大幅上涨', 'summary': '国际原油价格大幅上涨，原油生产者和航空运输企业面临不同的收入和成本变化。',
-         'sources': [{'id': 'baidu', 'name': '百度热搜', 'url': 'https://www.baidu.com/s?wd=oil', 'rank': 1, 'heat': '1000', 'observed_at': '2026-10-26T12:00:00+08:00'}]}
+         'sources': [{'id': 'baidu', 'name': '百度热搜', 'url': 'https://www.baidu.com/s?wd=oil', 'rank': 1, 'heat': '1000', 'observed_at': '2026-10-26T12:00:00+08:00', 'observed_timestamp': 1792987200}]}
 STOCKS = [
     {'code': '601857', 'name': '中国石油', 'exchange': 'SH', 'business': '原油勘探、生产和销售'},
     {'code': '601111', 'name': '中国国航', 'exchange': 'SH', 'business': '国内及国际航空旅客运输'},
