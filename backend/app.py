@@ -44,6 +44,7 @@ from .paper_api import router as paper_router, paper_error_handler
 from .paper_performance import PaperPerformanceService
 from .paper_performance_api import router as paper_performance_router
 
+from .etf_funds import EtfFundsService, router as etf_funds_router
 from .peg_service import PegService
 from .peg_api import router as peg_router
 from .cb_research_api import router as cb_research_router
@@ -73,6 +74,8 @@ async def lifespan(application):
     application.state.hot_news = HotNewsBoardService(research_store, hot_news_completion)
     application.state.hot_stock_impact = HotStockImpactService(application.state.research, application.state.hot_news)
     application.state.hot_news_matches = HotNewsMatchService(application.state.hot_stock_impact)
+    application.state.etf_funds = EtfFundsService(research_store, application.state.research.daily_market)
+    application.state.etf_funds.start()
     application.state.peg = PegService(research_store)
     application.state.peg.start()
     application.state.minute_market = MinuteMarketService(research_store)
@@ -97,6 +100,7 @@ async def lifespan(application):
         await application.state.paper_performance.close()
         await application.state.hot_news_matches.close()
         await application.state.hot_news.close()
+        application.state.etf_funds.close()
         await application.state.peg.close()
         await application.state.quant.close()
         await application.state.market_bundle.close()
@@ -118,6 +122,7 @@ app.include_router(hot_news_router)
 app.include_router(paper_router)
 app.include_router(paper_performance_router)
 app.include_router(peg_router)
+app.include_router(etf_funds_router)
 app.include_router(cb_research_router)
 app.include_router(quant_router)
 app.include_router(user_strategy_router)

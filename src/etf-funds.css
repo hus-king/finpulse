@@ -1,0 +1,146 @@
+.etf-funds-card {
+  margin-bottom: 24px;
+  padding: 18px 24px;
+  min-width: 0;
+}
+
+.etf-funds-heading,
+.etf-funds-trend-heading,
+.etf-funds-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.etf-funds-heading,
+.etf-funds-trend-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.etf-funds-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--theme-text);
+  font-size: 15px;
+}
+
+.etf-funds-heading h2 svg { color: var(--theme-accent-text); }
+.etf-funds-status, .etf-funds-note, .etf-funds-legend,
+.etf-funds-summary-alerts, .etf-funds-notice, .etf-funds-empty {
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.etf-funds-status button { min-width: 30px; min-height: 30px; }
+
+.etf-funds-body {
+  display: grid;
+  grid-template-columns: minmax(290px, .85fr) minmax(0, 1.5fr);
+  align-items: center;
+  gap: 24px;
+  margin-top: 12px;
+}
+.etf-funds-summary, .etf-funds-trend { min-width: 0; }
+.etf-funds-groups, .etf-funds-summary-alerts, .etf-funds-legend, .etf-funds-alerts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.etf-funds-groups button {
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid var(--theme-border);
+  border-radius: 5px;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.etf-funds-groups button:hover { background: var(--theme-hover); }
+.etf-funds-groups button[aria-pressed="true"] {
+  color: var(--theme-accent-text);
+  background: var(--theme-raised);
+  border-color: var(--theme-accent-text);
+}
+.etf-funds-card :is(button, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 2px;
+}
+
+.etf-funds-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+.etf-funds-metrics > div { min-width: 0; }
+.etf-funds-metrics dt { color: var(--theme-muted); font-size: 11px; }
+.etf-funds-metrics dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+  font-size: clamp(14px, 1.6vw, 18px);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.etf-funds-metrics dd small { color: var(--theme-muted); font-size: 10px; font-weight: 400; }
+.etf-funds-summary-alerts strong { color: var(--theme-text); font-weight: 600; }
+.etf-funds-summary-alerts span + span { border-left: 1px solid var(--theme-border); padding-left: 8px; }
+
+.etf-funds-trend {
+  border-left: 1px solid var(--theme-border);
+  padding-left: 20px;
+}
+.etf-funds-trend h3 { margin: 0; font-size: 12px; }
+.etf-funds-legend { font-size: 11px; }
+.etf-funds-index-legend::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  margin-right: 4px;
+  vertical-align: .25em;
+  border-top: 2px solid var(--chart-marker-neutral);
+}
+.etf-funds-chart { width: 100%; height: 140px; }
+.etf-funds-empty, .etf-funds-notice { margin-top: 12px; line-height: 1.6; }
+
+.etf-funds-details {
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--theme-border);
+}
+.etf-funds-details summary {
+  width: fit-content;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--theme-text);
+}
+.etf-funds-details summary span { margin-left: 6px; color: var(--theme-muted); }
+.etf-funds-table { max-width: 100%; overflow: auto; margin-top: 6px; }
+.etf-funds-table table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.etf-funds-table th, .etf-funds-table td { padding: 7px 9px; border-bottom: 1px solid var(--theme-border); }
+.etf-funds-table thead th { color: var(--theme-muted); font-size: 11px; font-weight: 500; }
+.etf-funds-table td, .etf-funds-table thead th { text-align: right; font-variant-numeric: tabular-nums; }
+.etf-funds-table th:first-child, .etf-funds-table :is(th, td):last-child { text-align: left; }
+.etf-funds-table tbody th { font-weight: 500; }
+.etf-funds-table tbody small { display: block; color: var(--theme-muted); font-weight: 400; font-size: 11px; }
+.etf-funds-alerts { gap: 4px; }
+.etf-funds-alerts span { padding: 2px 5px; font-size: 11px; border: 1px solid currentColor; border-radius: 3px; }
+.etf-funds-volume { color: var(--theme-accent-text); }
+
+.etf-funds-events { margin: 6px 0 0; padding: 0; list-style: none; }
+.etf-funds-events li { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 5px 0; color: var(--theme-muted); font-size: 11px; }
+.etf-funds-events a { color: var(--theme-accent-text); }
+.etf-funds-events a svg { vertical-align: middle; }
+.etf-funds-note { margin-top: 8px; line-height: 1.6; font-size: 11px; }
+
+@media (max-width: 760px) {
+  .etf-funds-card { padding: 16px; }
+  .etf-funds-body { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .etf-funds-trend { border: 0; border-top: 1px solid var(--theme-border); padding: 12px 0 0; }
+  .etf-funds-chart { height: 155px; }
+}
