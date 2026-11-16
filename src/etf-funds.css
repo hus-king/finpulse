@@ -144,3 +144,18 @@
   .etf-funds-trend { border: 0; border-top: 1px solid var(--theme-border); padding: 12px 0 0; }
   .etf-funds-chart { height: 155px; }
 }
+
+.etf-holdings-controls {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 16px 0 8px;
+}
+.etf-holdings-controls small { color: var(--theme-muted); font: 10px var(--mono); }
+.etf-holdings-chart { width: 100%; height: clamp(315px, 34vw, 460px); }
+.etf-holdings-table { max-height: 350px; }
+.etf-holdings-table td:last-child { white-space: normal; overflow-wrap: anywhere; }
+.etf-holdings-card a { color: var(--theme-accent-text); }
+.etf-holdings-card a svg { vertical-align: middle; }
+.etf-holdings-conversions { display: flex; flex-wrap: wrap; gap: 3px 12px; }

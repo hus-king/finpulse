@@ -8,7 +8,11 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
     { selector: '.live-news', title: '新闻研判' },
     { selector: '.returns-panel', title: '消息复盘' },
   ],
-  'etf-funds': [{ selector: '.finance-heading', title: 'ETF 资金' }],
+  'etf-funds': [
+    { selector: '.finance-heading', title: 'ETF 资金' },
+    { selector: '#etf-holdings', title: '公开持仓' },
+    { selector: '.etf-funds-card:not(.etf-holdings-card)', title: '净申赎' },
+  ],
   'hot-news': [
     { selector: '.finance-heading', title: '热点榜单' },
     { selector: '.hot-source-grid', title: '热点来源' },
