@@ -8,6 +8,7 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
     { selector: '.live-news', title: '新闻研判' },
     { selector: '.returns-panel', title: '消息复盘' },
   ],
+  'etf-funds': [{ selector: '.finance-heading', title: 'ETF 资金' }],
   'hot-news': [
     { selector: '.finance-heading', title: '热点榜单' },
     { selector: '.hot-source-grid', title: '热点来源' },
