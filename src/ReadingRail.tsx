@@ -10,8 +10,9 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
   ],
   'etf-funds': [
     { selector: '.finance-heading', title: 'ETF 资金' },
-    { selector: '#etf-holdings', title: '公开持仓' },
+    { selector: '#etf-flow-indicator', title: '资金动向' },
     { selector: '.etf-funds-card:not(.etf-holdings-card)', title: '净申赎' },
+    { selector: '#etf-holdings', title: '公开持仓' },
   ],
   'hot-news': [
     { selector: '.finance-heading', title: '热点榜单' },

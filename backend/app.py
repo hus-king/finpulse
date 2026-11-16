@@ -45,6 +45,7 @@ from .paper_performance import PaperPerformanceService
 from .paper_performance_api import router as paper_performance_router
 
 from .etf_funds import EtfFundsService, router as etf_funds_router
+from .etf_flow_indicator import router as etf_flow_indicator_router
 from .peg_service import PegService
 from .peg_api import router as peg_router
 from .cb_research_api import router as cb_research_router
@@ -123,6 +124,7 @@ app.include_router(paper_router)
 app.include_router(paper_performance_router)
 app.include_router(peg_router)
 app.include_router(etf_funds_router)
+app.include_router(etf_flow_indicator_router)
 app.include_router(cb_research_router)
 app.include_router(quant_router)
 app.include_router(user_strategy_router)
