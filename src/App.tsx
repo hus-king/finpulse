@@ -25,6 +25,7 @@ import WorkspaceView from './WorkspaceView';
 const defaults = ['600519', '300750', '688981'];
 const EtfFundsCard = lazy(() => import('./EtfFundsCard'));
 const EtfFlowIndicator = lazy(() => import('./EtfFlowIndicator'));
+const StockBondOverview = lazy(() => import('./StockBondOverview'));
 const navigation = [
   { id: 'dashboard', label: '行情与新闻', english: 'MARKET INTELLIGENCE' },
   { id: 'etf-funds', label: 'ETF 资金', english: 'ETF FLOWS' },
@@ -479,6 +480,9 @@ export default function App() {
       {view === 'paper' && <PaperTradingPanel key={user?.id ?? 'guest'} initialCode={code} onOpenStock={target => { setCode(target); setView('dashboard'); }} />}
       {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯日线 / 新浪分钟行情</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
       {view === 'dashboard' && <MarketSentimentCard />}
+      {view === 'dashboard' && (
+        <Suspense fallback={<p role="status">正在打开股债联动…</p>}><StockBondOverview /></Suspense>
+      )}
       {view === 'etf-funds' && (
         <Suspense fallback={<p role="status">正在打开 ETF 资金动向…</p>}><EtfFlowIndicator /></Suspense>
       )}

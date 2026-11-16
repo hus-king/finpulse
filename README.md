@@ -843,3 +843,13 @@ ETF 页在浏览器缓存公开快照。重新打开时优先复用五分钟内�
 ```
 
 在同一命令中省略 `--export` 可采集指定日期范围。ETF 份额和净申赎覆盖所选产品，来源范围和口径见[上交所日度规模](https://www.sse.com.cn/market/funddata/volumn/etfvolumn/)和[深交所基金数据](https://fund.szse.cn/)。
+
+### 股债联动
+
+大盘概览的「股债联动」展示沪深 300、中债 10 年期国债收益率、股债收益差和国债 ETF 近 20 日净申赎率。股债收益差为 100 除以沪深 300 滚动市盈率，再减同日国债收益率（%）。净申赎率用连续 20 个交易日的份额变化乘当日单位净值，累计后除以窗口期初规模。缺失份额或净值会中断窗口。
+
+默认展示 511010 长历史样本，可切换 511010、511260、511020 的固定共同样本。页面报告月末信号在第二个交易日开盘后持有 20／60／120 个交易日的沪深 300 价格收益。利率和申赎强弱分别使用此前 756 和 252 个有效交易日的上下 20% 分位。页面同时显示每组的有效样本数。
+
+`GET /api/market/stock-bond` 返回长历史快照，`?basket=three` 返回共同样本快照。用 `python -m scripts.backfill_treasury_etf --calendar csi300.csv --output treasury_etf.csv` 续取逐日份额和净值。需要共同样本时加入 `--code 511010 --code 511260 --code 511020`。用 `python scripts/build_stock_bond.py --index csi300.csv --yield cn_gov10.csv --etf treasury_etf.csv` 重建快照，加入 `--basket three` 刷新共同样本。页面显示市场数据和净申赎率各自的截止日期。
+
+[上交所份额](https://www.sse.com.cn/assortment/fund/list/etfinfo/basic/index.shtml?FUNDID=511010) · [中债国债收益率](https://yield.chinabond.com.cn/cbweb-cbrc-web/cbrc/showHistory?locale=cn_ZH&mark=1) · [沪深 300 行情](https://www.csindex.com.cn/#/indices/family/detail?indexCode=000300)
