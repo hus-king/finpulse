@@ -39,3 +39,20 @@ class FlowIndicatorTests(TestCase):
             self.assertIsNone(series[day]['score'])
             self.assertIsNone(series[day]['net'])
         self.assertEqual(series[self.days[83]]['score'], 0)
+
+    def test_cumulative_applies_each_qualifying_day_once(self):
+        for day in self.days[81:]:
+            for code in self.codes[:2]:
+                self.records[day][code]['total_shares'] = 110
+        for day in self.days[84:]:
+            for code in self.codes[:2]:
+                self.records[day][code]['total_shares'] = 95
+        self.records[self.days[82]].pop('510500')
+        series = {row['date']: row for row in flow_indicator(self.days, self.records, self.groups)}
+        self.assertEqual(series[self.days[80]]['cumulative_amount'], 0)
+        self.assertEqual(series[self.days[81]]['cumulative_amount'], 40)
+        self.assertIsNone(series[self.days[82]]['cumulative_amount'])
+        self.assertEqual(series[self.days[84]]['daily_counted_flow'], -60)
+        self.assertEqual(series[self.days[84]]['cumulative_amount'], -20)
+        self.assertEqual(series[self.days[85]]['amount'], -20)
+        self.assertEqual(series[self.days[85]]['cumulative_amount'], -20)

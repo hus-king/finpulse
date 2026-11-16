@@ -1,6 +1,7 @@
 """Estimate unusual broad ETF subscriptions as a share of basket assets."""
 import asyncio
 import csv
+import json
 from collections import deque
 from datetime import date, timedelta
 from functools import lru_cache
@@ -31,6 +32,7 @@ def flow_indicator(sessions, records, groups):
     prior = [deque(maxlen=60) for _ in groups]
     window = deque(maxlen=20)
     history = []
+    cumulative = 0.0
 
     for previous_day, day in zip(sessions, sessions[1:]):
         today, previous = records.get(day, {}), records.get(previous_day, {})
@@ -50,18 +52,23 @@ def flow_indicator(sessions, records, groups):
         net = sum(group_flows) if len(group_flows) == len(groups) else None
         ready = net is not None and 'warming' not in alerts
         votes = None
-        value, amount = None, None
+        value, amount, counted_flow = None, None, None
         if ready:
             votes = alerts.count('in' if net > 0 else 'out') if net else 0
-            window.append((net if votes >= 2 else 0, sum(group_assets)))
+            counted_flow = net if votes >= 2 else 0
+            window.append((counted_flow, sum(group_assets)))
             if len(window) == 20:
                 amount = sum(flow for flow, _ in window)
                 value = amount * 100 / window[0][1]
 
         if value is not None or history:
+            if counted_flow is not None:
+                cumulative += counted_flow
             history.append(dict(date=day, score=round(value, 4) if value is not None else None,
                                 amount=round(amount, 2) if amount is not None else None,
                                 net=round(net, 2) if net is not None else None,
+                                daily_counted_flow=round(counted_flow, 2) if counted_flow is not None else None,
+                                cumulative_amount=round(cumulative, 2) if counted_flow is not None else None,
                                 agreeing_groups=votes))
     return history
 
@@ -70,6 +77,37 @@ def flow_indicator(sessions, records, groups):
 def index_archive():
     with (ROOT / 'public/market-archives/sse-composite-close.csv').open() as source:
         return {row['date']: float(row['close']) for row in csv.DictReader(source)}
+
+
+@lru_cache(maxsize=1)
+def holding_reports():
+    with (ROOT / 'public/market-archives/etf-holdings-anchor-2025.json').open() as source:
+        return {report['code']: report for report in json.load(source)}
+
+
+def inventory_context(funds, history, sessions, stored):
+    reports = [holding_reports()[code] for code in funds]
+    anchor_day = reports[0]['report_date']
+    anchor_value = sum(report['unit_nav'] * sum(holder['shares'] for holder in report['holders'])
+                       for report in reports)
+    after = [point['daily_counted_flow'] for point in history if point['date'] > anchor_day]
+    cap = None
+    for day in reversed(sessions):
+        rows = stored.get(day, {})
+        if all(code in rows and rows[code]['unit_nav'] is not None for code in funds):
+            cap = dict(date=day, amount=round(sum(rows[code]['total_shares'] * rows[code]['unit_nav']
+                                                   for code in funds), 2))
+            break
+
+    return dict(
+        disclosed=dict(date=anchor_day, amount=round(anchor_value, 2), sources=[
+            {field: report[field] for field in ('code', 'publication_date', 'source_url')} for report in reports
+        ]),
+        sample_assets=cap,
+        since_disclosure=round(sum(amount for amount in after if amount is not None), 2)
+        if any(amount is not None for amount in after) else None,
+        omitted_days=after.count(None),
+    )
 
 
 @lru_cache(maxsize=4)
@@ -88,8 +126,10 @@ def indicator_snapshot(store, basket, end, _cache_bucket):
     history = flow_indicator(sessions, stored, groups)
     for point in history:
         point['index_close'] = closes.get(point['date'])
+    funds = [code for group in groups for code in group]
     return dict(
-        funds=[code for group in groups for code in group], group_count=len(groups),
+        funds=funds, group_count=len(groups),
+        inventory=inventory_context(funds, history, sessions, stored),
         expected_date=end.isoformat(), history=history,
         announcements=sorted(ANNOUNCEMENTS, key=lambda event: event['date']),
     )

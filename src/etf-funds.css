@@ -159,3 +159,8 @@
 .etf-holdings-card a { color: var(--theme-accent-text); }
 .etf-holdings-card a svg { vertical-align: middle; }
 .etf-holdings-conversions { display: flex; flex-wrap: wrap; gap: 3px 12px; }
+
+.etf-inventory-metrics { margin: 14px 0; }
+.etf-inventory-metrics > div { border-top: 1px solid var(--theme-border); padding-top: 10px; }
+.etf-inventory-metrics div > small { color: var(--theme-muted); font-size: 10px; }
+.etf-inventory-source { margin-left: 8px; display: inline-block; }

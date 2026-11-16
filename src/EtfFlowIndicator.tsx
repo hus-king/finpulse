@@ -12,20 +12,36 @@ import './etf-funds.css';
 echarts.use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
 type Basket = 'wide' | 'long';
+type View = 'flow' | 'inventory';
 type Point = {
   date: string;
   score: number | null;
   amount: number | null;
   net: number | null;
   agreeing_groups: number | null;
+  daily_counted_flow: number | null;
+  cumulative_amount: number | null;
   index_close: number | null;
 };
 type Announcement = { date: string; entity: string; title: string; url: string };
-type Snapshot = { funds: string[]; group_count: number; expected_date: string; history: Point[]; announcements: Announcement[] };
+type HoldingAmount = { date: string; amount: number };
+type Inventory = {
+  disclosed: HoldingAmount & { sources: { code: string; publication_date: string; source_url: string }[] };
+  sample_assets: HoldingAmount | null;
+  since_disclosure: number | null;
+  omitted_days: number;
+};
+type Snapshot = {
+  funds: string[]; group_count: number; expected_date: string; history: Point[];
+  announcements: Announcement[]; inventory: Inventory;
+};
 
-const cash = (amount: number) => `${amount > 0 ? '+' : ''}${number(amount / 1e8)} 亿元`;
+const cash = (amount: number | null | undefined, signed = true) =>
+  amount == null ? '—' : `${signed && amount > 0 ? '+' : ''}${number(amount / 1e8)} 亿元`;
 
-function FlowChart({ snapshot }: { snapshot: Snapshot }) {
+function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
+  const showInventory = view === 'inventory';
+  const metricLabel = showInventory ? '累计异常净申赎' : '资金动向';
   const root = useRef<HTMLDivElement>(null);
   const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
   const { theme } = useTheme();
@@ -50,6 +66,9 @@ function FlowChart({ snapshot }: { snapshot: Snapshot }) {
     const first = snapshot.history[0].date;
     const last = snapshot.history.at(-1)!.date;
     const events = snapshot.announcements.filter(event => first <= event.date && event.date <= last);
+    const disclosure = snapshot.inventory.disclosed;
+    const markerDates = new Set(events.map(event => event.date));
+    if (showInventory && first <= disclosure.date && disclosure.date <= last) markerDates.add(disclosure.date);
 
     chart.current?.setOption({
       useUTC: true,
@@ -64,8 +83,13 @@ function FlowChart({ snapshot }: { snapshot: Snapshot }) {
           const day = new Date(timestamp).toISOString().slice(0, 10);
           const point = points.get(day);
           if (!point) return day;
-          const lines = [day, `资金动向 ${percent(point.score)}`];
-          if (point.amount != null) lines.push(`窗口内异常日净申赎 ${cash(point.amount)}`);
+          const lines = [day, `${metricLabel} ${showInventory ? cash(point.cumulative_amount) : percent(point.score)}`];
+          if (showInventory) {
+            if (point.daily_counted_flow) lines.push(`当日计入 ${cash(point.daily_counted_flow)}`);
+            if (day === disclosure.date) lines.push(`年报具名持仓 ${cash(disclosure.amount, false)}`);
+          } else if (point.amount != null) {
+            lines.push(`窗口内异常日净申赎 ${cash(point.amount)}`);
+          }
           if (point.net != null) lines.push(`当日样本净申赎 ${cash(point.net)}`);
           if (point.agreeing_groups != null) lines.push(`同向异常 ${point.agreeing_groups}/${snapshot.group_count} 类宽基`);
           if (point.index_close != null) lines.push(`上证指数 ${number(point.index_close)} 点`);
@@ -77,7 +101,7 @@ function FlowChart({ snapshot }: { snapshot: Snapshot }) {
         axisLine: { lineStyle: { color: border } }, axisTick: { show: false },
         axisLabel: { ...axisLabel, color: color('--chart-text') } },
       yAxis: [
-        { type: 'value', name: '资金动向（%）', nameTextStyle: { color: indicatorColor, align: 'left', fontSize: 11 },
+        { type: 'value', name: showInventory ? '累计净申赎（亿元）' : '资金动向（%）', nameTextStyle: { color: indicatorColor, align: 'left', fontSize: 11 },
           axisLabel: { ...axisLabel, color: indicatorColor }, splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
         { type: 'value', name: '上证指数（点）', scale: true, nameTextStyle: { color: indexColor, align: 'right', fontSize: 11 },
           axisLabel: { ...axisLabel, color: indexColor }, splitLine: { show: false } },
@@ -93,24 +117,27 @@ function FlowChart({ snapshot }: { snapshot: Snapshot }) {
           lineStyle: { color: indexColor, width: 1.5 }, data: snapshot.history.map(point => [Date.parse(point.date), point.index_close]),
         },
         {
-          type: 'line', name: '资金动向', showSymbol: false, connectNulls: false,
-          lineStyle: { color: indicatorColor, width: 2 }, data: snapshot.history.map(point => [Date.parse(point.date), point.score]),
+          type: 'line', name: metricLabel, showSymbol: false, connectNulls: false,
+          lineStyle: { color: indicatorColor, width: 2 },
+          data: snapshot.history.map(point => [Date.parse(point.date),
+            showInventory ? (point.cumulative_amount == null ? null : point.cumulative_amount / 1e8) : point.score]),
           markLine: {
             silent: true, symbol: 'none', label: { show: false },
             lineStyle: { color: color('--chart-crosshair'), type: 'dashed', opacity: .65 },
-            data: [{ yAxis: 0 }, ...events.map(event => ({ xAxis: Date.parse(event.date) }))],
+            data: [{ yAxis: 0 }, ...Array.from(markerDates, day => ({ xAxis: Date.parse(day) }))],
           },
         },
       ],
     }, { notMerge: true });
-  }, [snapshot, theme]);
+  }, [snapshot, theme, showInventory, metricLabel]);
 
-  return <div ref={root} className="etf-holdings-chart" role="img" aria-label="资金动向指标与上证指数走势" />;
+  return <div ref={root} className="etf-holdings-chart" role="img" aria-label={showInventory ? "累计异常净申赎与上证指数走势" : "资金动向指标与上证指数走势"} />;
 }
 
 export default function EtfFlowIndicator() {
   const title = useId();
   const [basket, setBasket] = useState<Basket>('wide');
+  const [view, setView] = useState<View>('flow');
   const [result, setResult] = useState<{ basket: Basket; snapshot: Snapshot }>();
   const [error, setError] = useState('');
 
@@ -124,14 +151,17 @@ export default function EtfFlowIndicator() {
   }, [basket]);
 
   const snapshot = result?.basket === basket ? result.snapshot : undefined;
-  const latest = snapshot?.history.filter(point => point.score != null).at(-1);
+  const showInventory = view === 'inventory';
+  const inventory = snapshot?.inventory;
+  const latest = snapshot?.history.filter(point => point[showInventory ? 'cumulative_amount' : 'score'] != null).at(-1);
+  const reading = showInventory ? latest?.cumulative_amount : latest?.score;
 
   return (
     <section id="etf-flow-indicator" className="panel etf-funds-card etf-holdings-card" aria-labelledby={title}>
       <header className="etf-funds-heading">
         <h2 id={title}><BarChart3 size={17} aria-hidden="true" />国家队资金动向（宽基 ETF 代理）</h2>
         {latest && <span className="etf-funds-status">
-          <strong className={latest.score ? tone(latest.score) : undefined}>{percent(latest.score)}</strong> · {latest.date}
+          <strong className={reading ? tone(reading) : undefined}>{showInventory ? cash(reading) : percent(reading)}</strong> · {latest.date}
         </span>}
       </header>
       <div className="etf-holdings-controls">
@@ -139,15 +169,40 @@ export default function EtfFlowIndicator() {
           <button type="button" aria-pressed={basket === 'wide'} onClick={() => setBasket('wide')}>完整样本 · 9 只</button>
           <button type="button" aria-pressed={basket === 'long'} onClick={() => setBasket('long')}>长历史 · 5 只</button>
         </div>
+        <div className="etf-funds-groups" role="group" aria-label="选择资金指标">
+          <button type="button" aria-pressed={view === 'flow'} onClick={() => setView('flow')}>20 日动向</button>
+          <button type="button" aria-pressed={showInventory} onClick={() => setView('inventory')}>累计变化</button>
+        </div>
         {snapshot?.history.length ? <span className="etf-funds-status">
           {snapshot.history[0].date} 至 {snapshot.history.at(-1)?.date}
         </span> : null}
       </div>
-      {snapshot?.history.length ? <FlowChart snapshot={snapshot} /> : (
+      {showInventory && inventory && (
+        <dl className="etf-funds-metrics etf-inventory-metrics">
+          <div>
+            <dt>最近具名持仓</dt>
+            <dd>{cash(inventory.disclosed.amount, false)}</dd>
+            <small>{inventory.disclosed.date} · 年报披露</small>
+          </div>
+          <div>
+            <dt>披露期末以来累计变化</dt>
+            <dd className={inventory.since_disclosure ? tone(inventory.since_disclosure) : undefined}>{cash(inventory.since_disclosure)}</dd>
+            <small>{latest?.date ?? '等待份额数据'}{inventory.omitted_days > 0 && ` · ${inventory.omitted_days} 日缺值`}</small>
+          </div>
+          <div>
+            <dt>当前样本场内总规模</dt>
+            <dd>{cash(inventory.sample_assets?.amount, false)}</dd>
+            <small>{inventory.sample_assets ? `${inventory.sample_assets.date} · 样本持仓上限` : '等待份额数据'}</small>
+          </div>
+        </dl>
+      )}
+      {snapshot?.history.length ? <FlowChart snapshot={snapshot} view={view} /> : (
         <p className="etf-funds-empty" role="status">{error || (snapshot ? '暂无足够的历史份额数据' : '正在读取资金指标…')}</p>
       )}
       <p className="etf-funds-note">
-        正值偏流入，负值偏流出。每个交易日早间更新上一交易日数据，竖虚线为已核对的公告或披露日期。
+        {showInventory
+          ? '金线从样本起点累加，符合条件的净申赎每天计一次。机构持仓以具名披露为准。'
+          : '正值偏流入，负值偏流出。每个交易日早间更新上一交易日数据，竖虚线为已核对的公告或披露日期。'}
       </p>
       <details className="etf-funds-details">
         <summary>计算口径与官方公告</summary>
@@ -161,6 +216,16 @@ export default function EtfFlowIndicator() {
           指标覆盖样本内全部参与者，机构身份依赖具名披露。大单和超大单反映场内成交，可用作独立佐证。
           {snapshot && ` 样本代码 ${snapshot.funds.join('、')}。`}
         </p>
+        {showInventory && inventory && (
+          <p className="etf-funds-note">
+            年报具名持仓按报告期末份额乘单位净值估算，当前样本规模按当日场内总份额乘单位净值估算。
+            累计变化按各日净申赎额加总。年报原文
+            {inventory.disclosed.sources.map(report => (
+              <a key={report.code} className="etf-inventory-source" href={report.source_url} target="_blank" rel="noreferrer"
+                title={`公告日 ${report.publication_date}`}>{report.code}</a>
+            ))}
+          </p>
+        )}
         <ul className="etf-funds-events">{snapshot?.announcements.map(event => (
           <li key={event.url}><time dateTime={event.date}>{event.date}</time><span>{event.entity}</span>
             <a href={event.url} target="_blank" rel="noreferrer">{event.title} <ExternalLink size={11} aria-hidden="true" /></a></li>
