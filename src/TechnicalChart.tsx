@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react';
 import { AreaSeries, CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, PriceScaleMode, createChart } from 'lightweight-charts';
 import type { AutoscaleInfo, IChartApi, IPriceLine, ISeriesApi, SeriesType, Time, UTCTimestamp } from 'lightweight-charts';
 import { useTheme } from './ThemeContext';
@@ -8,6 +7,7 @@ import { bollingerBands, exponentialMovingAverage, heikinAshi, movingAverage } f
 import type { ChartOverlay, ChartStyle } from './chartMath';
 import type { buildIntraday } from './intradayMath';
 import IndicatorPicker from './IndicatorPicker';
+import TradingChartToolbar from './TradingChartToolbar';
 import { displayedIndicators } from './indicatorCatalog';
 import type { IndicatorSelection } from './indicatorCatalog';
 import { calculateIndicator } from './technicalIndicators';
@@ -269,15 +269,11 @@ export default function TechnicalChart({ instrument, candles, mode, period, char
   }
   const empty = !latest;
   return <div className={`technical-chart${expanded ? ' is-expanded' : ''}`}>
-    <div className="chart-navigation" role="group" aria-label="图表交互工具">
-      <span className="chart-navigation-title">{instrument ?? (session ? '分时走势' : 'K 线图表')}<small>{period}</small></span>
-      <button type="button" onClick={() => zoom(.75)} aria-label="放大图表" title="放大"><Plus size={15} /></button>
-      <button type="button" onClick={() => zoom(1.33)} aria-label="缩小图表" title="缩小"><Minus size={15} /></button>
-      <button type="button" onClick={reset} aria-label="复位图表" title="恢复默认范围及自动价格刻度"><RotateCcw size={14} /></button>
-      <button type="button" onClick={latestView} aria-label="回到最新" title="回到最新行情"><ChevronRight size={16} /></button>
-      {intraday && <button type="button" className="chart-percentage-toggle" aria-label="显示百分比刻度" aria-pressed={percentage} disabled={intraday && !session.previousClose} onClick={() => setPercentage(value => !value)} title="相对昨收的涨跌幅">%</button>}
-      <button type="button" ref={fullScreenButton} onClick={() => setExpanded(value => !value)} aria-label={expanded ? '退出全屏图表' : '全屏图表'} title={expanded ? '退出全屏 · Esc' : '全屏图表'}>{expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
-    </div>
+    <TradingChartToolbar title={instrument ?? (session ? '分时走势' : 'K 线图表')} subtitle={period}
+      expanded={expanded} fullScreenButton={fullScreenButton} onZoom={zoom} onReset={reset}
+      onLatest={latestView} onFullScreen={() => setExpanded(value => !value)}>
+      {intraday && <button type="button" className="chart-percentage-toggle" aria-label="显示百分比刻度" aria-pressed={percentage} disabled={!session.previousClose} onClick={() => setPercentage(value => !value)} title="相对昨收的涨跌幅">%</button>}
+    </TradingChartToolbar>
     <div className="technical-chart-stage" style={{ height: layout.height }}>
       <div ref={canvas} className="technical-chart-canvas" role="img" aria-label={`${period}与${indicators.map(item => item.label).join('、')}，滚轮缩放、拖动平移、拖动坐标轴调整刻度，双击坐标轴复位${session ? '；完整交易日横轴，午休折叠' : ''}`} />
       <div className="chart-readout chart-main-readout" data-testid="chart-main-readout" style={{ top: (paneTops[0] ?? 0) + 4 }}>

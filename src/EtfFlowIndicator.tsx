@@ -1,15 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { BarChart3, ExternalLink } from 'lucide-react';
-import * as echarts from 'echarts/core';
-import { LineChart } from 'echarts/charts';
-import { DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
+import { ColorType, CrosshairMode, LineSeries, LineStyle, createChart } from 'lightweight-charts';
+import type { IChartApi, IPrimitivePaneRenderer, ISeriesApi, ISeriesPrimitive, Time, UTCTimestamp } from 'lightweight-charts';
+import TradingChartToolbar from './TradingChartToolbar';
+import { chartTimestamp } from './tradingChartData';
 import useEtfSnapshot from './useEtfSnapshot';
 import { number, percent, tone } from './format';
 import { useTheme } from './ThemeContext';
 import './etf-funds.css';
-
-echarts.use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
+import './technical-chart.css';
 
 type Basket = 'wide' | 'long';
 type View = 'overlay' | 'flow' | 'inventory';
@@ -39,137 +38,209 @@ type Snapshot = {
 const cash = (amount: number | null | undefined, signed = true) =>
   amount == null ? '—' : `${signed && amount > 0 ? '+' : ''}${number(amount / 1e8)} 亿元`;
 
+function flowAnnotations(chart: IChartApi, days: string[], color: string): ISeriesPrimitive<Time> {
+  const times = days.map(day => chartTimestamp(day) as UTCTimestamp);
+  const renderer: IPrimitivePaneRenderer = {
+    draw(target) {
+      target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+        context.save();
+        context.strokeStyle = color;
+        context.setLineDash([3, 4]);
+        context.beginPath();
+        for (const time of times) {
+          const x = chart.timeScale().timeToCoordinate(time);
+          if (x == null || x < 0 || x > mediaSize.width) continue;
+          context.moveTo(x, 0);
+          context.lineTo(x, mediaSize.height);
+        }
+        context.stroke();
+        context.restore();
+      });
+    },
+  };
+  const views = [{ zOrder: () => 'bottom' as const, renderer: () => renderer }];
+  return { paneViews: () => views };
+}
+
 function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
-  const overlay = view === 'overlay';
   const showFlow = view !== 'inventory';
   const showInventory = view !== 'flow';
-  const root = useRef<HTMLDivElement>(null);
-  const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
-  const plotted = useRef<Snapshot | null>(null);
+  const canvas = useRef<HTMLDivElement>(null);
+  const instance = useRef<IChartApi | null>(null);
+  const series = useRef<ISeriesApi<'Line'>[]>([]);
+  const lastIndex = useRef(0);
+  const fullScreenButton = useRef<HTMLButtonElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const { theme } = useTheme();
 
   useEffect(() => {
-    if (!root.current) return;
-    const instance = echarts.init(root.current);
-    chart.current = instance;
-    const observer = new ResizeObserver(() => instance.resize());
-    observer.observe(root.current);
-    return () => { observer.disconnect(); instance.dispose(); chart.current = null; };
+    if (!canvas.current) return;
+    const chart = createChart(canvas.current, {
+      autoSize: true,
+      layout: { attributionLogo: false, fontFamily: 'Inter, Segoe UI, Microsoft YaHei, sans-serif', fontSize: 11 },
+      crosshair: { mode: CrosshairMode.Normal },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+      kineticScroll: { mouse: true, touch: true },
+      timeScale: { minBarSpacing: .02, fixLeftEdge: true, fixRightEdge: true, lockVisibleTimeRangeOnResize: true },
+      localization: { locale: 'zh-CN', timeFormatter: (time: Time) => new Date(Number(time) * 1000).toISOString().slice(0, 10) },
+    });
+    instance.current = chart;
+    chart.subscribeCrosshairMove(({ point, time }) => {
+      setHoveredDay(point && typeof time === 'number' ? new Date(time * 1000).toISOString().slice(0, 10) : null);
+    });
+    return () => { chart.remove(); instance.current = null; series.current = []; };
   }, []);
 
   useEffect(() => {
-    const style = getComputedStyle(document.documentElement);
-    const color = (name: string) => style.getPropertyValue(name).trim();
-    const indicatorColor = color('--theme-warning');
-    const indexColor = color('--chart-marker-neutral');
-    const inventoryColor = color('--ink-violet');
-    const primaryColor = showFlow ? indicatorColor : inventoryColor;
-    const instance = chart.current;
-    if (!instance) return;
-    const zoom = plotted.current === snapshot
-      ? (instance.getOption()?.dataZoom as { start?: number; end?: number }[] | undefined)?.[0]
-      : undefined;
-    plotted.current = snapshot;
+    const chart = instance.current;
+    if (!chart) return;
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string) => styles.getPropertyValue(name).trim();
     const border = color('--chart-border');
-    const axisLabel = { fontSize: 10, hideOverlap: true };
-    const points = new Map(snapshot.history.map(point => [point.date, point]));
-    const first = snapshot.history[0].date;
-    const last = snapshot.history.at(-1)!.date;
-    const events = snapshot.announcements.filter(event => first <= event.date && event.date <= last);
-    const disclosure = snapshot.inventory.disclosed;
-    const markerDates = new Set(events.map(event => event.date));
-    if (showInventory && first <= disclosure.date && disclosure.date <= last) markerDates.add(disclosure.date);
+    const grid = color('--chart-grid');
+    const crosshair = color('--chart-crosshair');
+    const guide = { color: crosshair, style: LineStyle.Dashed, labelBackgroundColor: crosshair };
+    const axis = { borderColor: border, minimumWidth: 48, scaleMargins: { top: .1, bottom: .1 } };
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: color('--theme-panel') }, textColor: color('--chart-text') },
+      grid: { vertLines: { color: grid, style: LineStyle.Dotted }, horzLines: { color: grid, style: LineStyle.Dotted } },
+      crosshair: { vertLine: guide, horzLine: guide },
+      leftPriceScale: { ...axis, visible: true },
+      rightPriceScale: { ...axis, visible: true },
+      overlayPriceScales: { scaleMargins: axis.scaleMargins },
+      timeScale: { borderColor: border },
+    });
 
-    const annotations = {
-      silent: true, symbol: 'none', label: { show: false },
-      lineStyle: { color: color('--chart-crosshair'), type: 'dashed', opacity: .65 },
-      data: [...(overlay ? [] : [{ yAxis: 0 }]), ...Array.from(markerDates, day => ({ xAxis: Date.parse(day) }))],
+    const scale = chart.timeScale();
+    const range = scale.getVisibleLogicalRange();
+    series.current.forEach(item => chart.removeSeries(item));
+    series.current = [];
+    const history = snapshot.history;
+    const first = history[0].date;
+    const last = history.at(-1)!.date;
+    const marks = new Set(snapshot.announcements.filter(event => first <= event.date && event.date <= last).map(event => event.date));
+    const disclosure = snapshot.inventory.disclosed.date;
+    const anchorDates = new Set(marks);
+    if (first <= disclosure && disclosure <= last) {
+      anchorDates.add(disclosure);
+      if (showInventory) marks.add(disclosure);
+    }
+    const plotDates = new Set(history.map(point => point.date));
+    const timelineAnchors = [...anchorDates].filter(day => !plotDates.has(day)).map(day => ({ time: chartTimestamp(day) as UTCTimestamp }));
+
+    const addLine = (
+      valueOf: (point: Point) => number | null,
+      lineColor: string,
+      priceScaleId: string,
+      formatter: (value: number) => string,
+      width: 1 | 2,
+      anchors: { time: UTCTimestamp }[] = [],
+    ) => {
+      const line = chart.addSeries(LineSeries, {
+        priceScaleId, color: lineColor, lineWidth: width, crosshairMarkerRadius: 3,
+        crosshairMarkerBackgroundColor: lineColor, priceLineVisible: false,
+        lastValueVisible: priceScaleId !== 'cumulative', priceFormat: { type: 'custom', minMove: .01, formatter },
+      });
+      series.current.push(line);
+      const values = history.map(valueOf);
+      const lastValue = values.reduce<number>((last, value, index) => value == null ? last : index, -1);
+      const rows = history.map((point, index) => {
+        const time = chartTimestamp(point.date) as UTCTimestamp;
+        const value = values[index];
+        if (value == null) return { time };
+        // Lightweight Charts joins numeric points across whitespace. Hide that
+        // outgoing segment so missing ETF observations stay visibly blank.
+        return { time, value, color: index < lastValue && values[index + 1] == null ? 'transparent' : undefined };
+      });
+      line.setData(anchors.length ? [...rows, ...anchors].sort((a, b) => a.time - b.time) : rows);
+      return line;
     };
+    const ticks = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 1 });
+    const index = addLine(point => point.index_close, color('--chart-marker-neutral'), 'right', ticks, 1, timelineAnchors);
+    index.attachPrimitive(flowAnnotations(chart, [...marks], crosshair));
+    let flow: ISeriesApi<'Line'> | undefined;
+    let inventory: ISeriesApi<'Line'> | undefined;
+    if (showFlow) flow = addLine(point => point.score, color('--theme-warning'), 'left', value => ticks(value) + '%', 2);
+    if (showInventory) inventory = addLine(
+      point => point.cumulative_amount == null ? null : point.cumulative_amount / 1e8,
+      color('--ink-violet'), showFlow ? 'cumulative' : 'left', ticks, 2,
+    );
+    if (view !== 'overlay') (flow ?? inventory)?.createPriceLine({
+      price: 0, color: crosshair, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false,
+    });
+    lastIndex.current = history.length + timelineAnchors.length - 1;
+    if (range) scale.setVisibleLogicalRange(range);
+    else scale.fitContent();
+  }, [snapshot, theme, view, showFlow, showInventory]);
 
-    instance.setOption({
-      useUTC: true,
-      animation: false,
-      grid: overlay
-        ? { left: 38, right: 87, top: 13, bottom: 52, outerBoundsMode: 'none' }
-        : { left: 9, right: 9, top: 34, bottom: 52, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
-      tooltip: {
-        trigger: 'axis', renderMode: 'richText', confine: true, borderColor: border,
-        backgroundColor: color('--chart-tooltip-bg'), textStyle: { color: color('--chart-tooltip-text'), fontSize: 11 },
-        formatter: (items: unknown) => {
-          const timestamp = Number((items as { axisValue: number }[])[0]?.axisValue);
-          if (!Number.isFinite(timestamp)) return '';
-          const day = new Date(timestamp).toISOString().slice(0, 10);
-          const point = points.get(day);
-          if (!point) return day;
-          const lines = [day];
-          if (showFlow) lines.push(`20 日动向 ${percent(point.score)}`);
-          if (showInventory) {
-            lines.push(`累计异常净申赎 ${cash(point.cumulative_amount)}`);
-            if (point.daily_counted_flow) lines.push(`当日计入 ${cash(point.daily_counted_flow)}`);
-            if (day === disclosure.date) lines.push(`年报具名持仓 ${cash(disclosure.amount, false)}`);
-          }
-          if (showFlow && point.amount != null) {
-            lines.push(`窗口内异常日净申赎 ${cash(point.amount)}`);
-          }
-          if (point.net != null) lines.push(`当日样本净申赎 ${cash(point.net)}`);
-          if (point.agreeing_groups != null) lines.push(`同向异常 ${point.agreeing_groups}/${snapshot.group_count} 类宽基`);
-          if (point.index_close != null) lines.push(`上证指数 ${number(point.index_close)} 点`);
-          for (const event of events) if (event.date === day) lines.push(`${event.entity} · ${event.title}`);
-          return lines.join('\n');
-        },
-      },
-      xAxis: { type: 'time', min: Date.parse(first), max: Date.parse(last), boundaryGap: false,
-        axisLine: { lineStyle: { color: border } }, axisTick: { show: false },
-        axisLabel: { ...axisLabel, color: color('--chart-text') } },
-      yAxis: [
-        { type: 'value', position: 'left', name: overlay ? '' : showFlow ? '20 日动向（%）' : '累计净申赎（亿元）',
-          nameTextStyle: { color: primaryColor, align: 'left', fontSize: 11 },
-          axisLabel: { ...axisLabel, color: primaryColor }, splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
-        { type: 'value', position: 'right', name: overlay ? '' : '上证指数（点）', scale: true,
-          nameTextStyle: { color: indexColor, align: 'right', fontSize: 11 },
-          axisLabel: { ...axisLabel, color: indexColor }, splitLine: { show: false } },
-        ...(overlay ? [{
-          type: 'value', position: 'right', offset: 43,
-          axisLabel: { ...axisLabel, color: inventoryColor }, splitLine: { show: false },
-        }] : []),
-      ],
-      dataZoom: [{
-        type: 'slider', xAxisIndex: 0, start: zoom?.start ?? 0, end: zoom?.end ?? 100, bottom: 4, height: 18, filterMode: 'none', showDetail: false,
-        showDataShadow: false, borderColor: border, backgroundColor: color('--theme-panel'),
-        fillerColor: color('--theme-accent-soft'), handleStyle: { color: indexColor }, brushSelect: false,
-      }],
-      series: [
-        {
-          type: 'line', name: '上证指数', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
-          lineStyle: { color: indexColor, width: 1.5 }, data: snapshot.history.map(point => [Date.parse(point.date), point.index_close]),
-        },
-        ...(showFlow ? [{
-          type: 'line', name: '20 日动向', showSymbol: false, connectNulls: false,
-          lineStyle: { color: indicatorColor, width: 2 },
-          data: snapshot.history.map(point => [Date.parse(point.date), point.score]),
-          markLine: annotations,
-        }] : []),
-        ...(showInventory ? [{
-          type: 'line', name: '累计变化', yAxisIndex: overlay ? 2 : 0, showSymbol: false, connectNulls: false,
-          lineStyle: { color: inventoryColor, width: 2 },
-          data: snapshot.history.map(point => [Date.parse(point.date),
-            point.cumulative_amount == null ? null : point.cumulative_amount / 1e8]),
-          markLine: showFlow ? undefined : annotations,
-        }] : []),
-      ],
-    }, { notMerge: true });
-  }, [snapshot, theme, overlay, showFlow, showInventory]);
+  useEffect(() => {
+    if (!expanded) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setExpanded(false); fullScreenButton.current?.focus(); }
+    };
+    document.addEventListener('keydown', escape);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', escape); };
+  }, [expanded]);
 
-  return <>
-    {overlay && <ul className="etf-overlay-legend" aria-label="曲线与坐标轴">
-      <li className="etf-overlay-flow">20 日动向（%）</li>
-      <li className="etf-overlay-index">上证指数（点）</li>
-      <li className="etf-overlay-inventory">累计变化（亿元）</li>
-    </ul>}
-    <div ref={root} className="etf-holdings-chart" role="img" aria-label={overlay
-      ? '20 日动向、累计变化与上证指数叠加图'
-      : showInventory ? '累计异常净申赎与上证指数走势' : '资金动向指标与上证指数走势'} />
-  </>;
+  function zoom(factor: number) {
+    const scale = instance.current?.timeScale();
+    const range = scale?.getVisibleLogicalRange();
+    if (!scale || !range) return;
+    const center = (range.from + range.to) / 2;
+    const half = Math.max(2, (range.to - range.from) * factor / 2);
+    scale.setVisibleLogicalRange({ from: center - half, to: center + half });
+  }
+
+  function reset() {
+    instance.current?.timeScale().fitContent();
+    series.current.forEach(line => line.priceScale().setAutoScale(true));
+    setHoveredDay(null);
+  }
+
+  function latest() {
+    const scale = instance.current?.timeScale();
+    const range = scale?.getVisibleLogicalRange();
+    if (scale && range) scale.setVisibleLogicalRange({ from: lastIndex.current - (range.to - range.from), to: lastIndex.current });
+    setHoveredDay(null);
+  }
+
+  const point = hoveredDay ? snapshot.history.find(row => row.date === hoveredDay) : snapshot.history.at(-1);
+  const day = hoveredDay ?? point?.date;
+  const events = day ? snapshot.announcements.filter(event => event.date === day) : [];
+  const disclosure = snapshot.inventory.disclosed;
+  return <div className={`technical-chart etf-flow-trading-chart${expanded ? ' is-expanded' : ''}`}>
+    <TradingChartToolbar title="资金走势" expanded={expanded} fullScreenButton={fullScreenButton}
+      onZoom={zoom} onReset={reset} onLatest={latest} onFullScreen={() => setExpanded(value => !value)} />
+    <div className="etf-flow-chart-readout">
+      <ul className="etf-overlay-legend" aria-label="曲线与坐标轴">
+        {showFlow && <li className="etf-overlay-flow">20 日动向 <b className="mono">{percent(point?.score)}</b></li>}
+        {showInventory && <li className="etf-overlay-inventory">累计变化 <b className="mono">{cash(point?.cumulative_amount)}</b></li>}
+        <li className="etf-overlay-index">上证指数 <b className="mono">{number(point?.index_close)}{point?.index_close != null && ' 点'}</b></li>
+      </ul>
+      <time dateTime={day}>{day}{!hoveredDay && ' · 最新'}</time>
+    </div>
+    <div className="technical-chart-stage etf-flow-chart-stage">
+      <div ref={canvas} className="technical-chart-canvas" role="img" aria-label={view === 'overlay'
+        ? '20 日动向、累计变化与上证指数叠加图'
+        : showInventory ? '累计异常净申赎与上证指数走势' : '资金动向指标与上证指数走势'} />
+    </div>
+    {hoveredDay && <div className="etf-flow-chart-details">
+      {point?.net != null && <span>样本净申赎 {cash(point.net)}</span>}
+      {showFlow && point?.amount != null && <span>窗口内异常净申赎 {cash(point.amount)}</span>}
+      {showFlow && point?.agreeing_groups != null && <span>同向异常 {point.agreeing_groups}/{snapshot.group_count} 类宽基</span>}
+      {showInventory && !!point?.daily_counted_flow && <span>当日计入 {cash(point.daily_counted_flow)}</span>}
+      {showInventory && day === disclosure.date && <span>年报具名持仓 {cash(disclosure.amount, false)}</span>}
+      {events.map(event => <span key={event.url}>{event.entity} · {event.title}</span>)}
+    </div>}
+    <div className="chart-interaction-hint">
+      <span>滚轮缩放 · 拖动平移 · 双击坐标轴复位</span>
+      <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer" title="TradingView Lightweight Charts™">TradingView</a>
+    </div>
+  </div>;
 }
 
 export default function EtfFlowIndicator() {
@@ -225,7 +296,7 @@ export default function EtfFlowIndicator() {
           </div>
         </dl>
       )}
-      {snapshot?.history.length ? <FlowChart snapshot={snapshot} view={view} /> : (
+      {snapshot?.history.length ? <FlowChart key={basket} snapshot={snapshot} view={view} /> : (
         <p className="etf-funds-empty" role="status">{error || (snapshot ? '暂无足够的历史份额数据' : '正在读取资金指标…')}</p>
       )}
       {error && snapshot?.history.length ? <p className="etf-funds-notice" role="status">更新失败，显示上次加载的数据。</p> : null}

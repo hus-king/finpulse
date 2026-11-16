@@ -179,3 +179,38 @@
 .etf-overlay-flow { color: var(--theme-warning); }
 .etf-overlay-index { color: var(--chart-marker-neutral); }
 .etf-overlay-inventory { color: var(--ink-violet); }
+
+.etf-flow-chart-stage { height: clamp(295px, 34vw, 460px); }
+.etf-flow-chart-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 12px;
+}
+.etf-flow-chart-readout time { color: var(--theme-muted); font-size: 10px; }
+.etf-overlay-legend b { font-weight: 600; white-space: nowrap; }
+.etf-flow-chart-details {
+  position: absolute;
+  z-index: 2;
+  inset: auto 56px 58px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  width: fit-content;
+  max-width: calc(100% - 112px);
+  pointer-events: none;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--theme-panel);
+  color: var(--theme-muted);
+  font-size: 10px;
+}
+.etf-flow-chart-details:empty { display: none; }
+.etf-flow-chart-details span { min-width: 0; overflow-wrap: anywhere; }
+.etf-flow-trading-chart .chart-interaction-hint a { color: inherit; }
+
+@media (max-width: 560px) {
+  .etf-flow-chart-readout { padding-inline: 8px; }
+}
