@@ -5,6 +5,7 @@ import { LineChart } from 'echarts/charts';
 import { DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { api } from './api';
+import useEtfSnapshot from './useEtfSnapshot';
 import { number } from './format';
 import { useTheme } from './ThemeContext';
 import './etf-funds.css';
@@ -24,7 +25,7 @@ type Report = {
 type ShareConversion = { date: string; ratio: string; source_url: string };
 type Fund = { code: string; name: string; reports: Report[]; conversions?: ShareConversion[] };
 type Close = { date: string; close: number };
-type Period = Report & { matches: Holder[]; shares: number | null };
+type Period = Report & { matches: Holder[]; shares: number | null; ownershipPercent: number | null };
 type AxisPoint = { axisValue: number };
 
 const groups = [
@@ -49,6 +50,20 @@ async function indexArchive(signal: AbortSignal): Promise<Close[]> {
     const [date, close] = line.split(',');
     return { date, close: Number(close) };
   }).filter(row => /^\d{4}-\d{2}-\d{2}$/.test(row.date) && Number.isFinite(row.close) && row.close > 0);
+}
+
+async function loadHoldingsArchive(_key: string, signal: AbortSignal) {
+  const [funds, index] = await Promise.all([
+    api<Fund[]>('/market-archives/etf-holder-disclosures.json', undefined, signal),
+    indexArchive(signal),
+  ]);
+  if (!funds.length || !index.length) throw new Error('持仓或行情档案为空');
+  return { funds, index };
+}
+
+async function loadIndexCloses(key: string, signal: AbortSignal): Promise<Close[]> {
+  const { candles } = await api<{ candles: Close[] }>(key, undefined, signal);
+  return candles.filter(point => Number.isFinite(point.close) && point.close > 0).map(({ date, close }) => ({ date, close }));
 }
 
 function HoldingsChart({ index, periods, fund, first }: {
@@ -78,10 +93,8 @@ function HoldingsChart({ index, periods, fund, first }: {
     const reports = new Map(periods.map(period => [period.report_date, period]));
     const last = index.at(-1)?.date ?? first;
     const conversions = fund.conversions ?? [];
-    const holdingPoints: [number, number | null][] = periods.map(({ report_date, shares }) =>
-      [Date.parse(report_date), shares == null ? null : shares / 1e8]);
-    for (const conversion of conversions) holdingPoints.push([Date.parse(conversion.date), null]);
-    holdingPoints.sort(([a], [b]) => a - b);
+    const holdingPoints = periods.map(({ report_date, ownershipPercent }) =>
+      [Date.parse(report_date), ownershipPercent]);
 
     chart.current?.setOption({
       useUTC: true,
@@ -99,8 +112,13 @@ function HoldingsChart({ index, periods, fund, first }: {
           const lines = [day];
           if (close != null) lines.push(`上证指数 ${number(close)} 点`);
           if (report) {
-            const { shares, publication_date: published } = report;
-            lines.push(shares == null ? reportStatus(report) : `持有份额 ${units(shares)} 亿份`);
+            const { shares, ownershipPercent, publication_date: published } = report;
+            if (shares == null) {
+              lines.push(reportStatus(report));
+            } else {
+              if (ownershipPercent != null) lines.push(`持仓占比 ${number(ownershipPercent)}%`);
+              lines.push(`披露份额 ${shares.toLocaleString('zh-CN')} 份`);
+            }
             if (published) lines.push(`公告 ${published}`);
           }
           return lines.join('\n');
@@ -112,7 +130,7 @@ function HoldingsChart({ index, periods, fund, first }: {
         axisLabel: { ...axisLabel, color: color('--chart-text') },
       },
       yAxis: [
-        { type: 'value', min: 0, name: '持有份额（亿份）', nameTextStyle: { color: holdingColor, fontSize: 11, align: 'left' },
+        { type: 'value', min: 0, name: '持仓占比（%）', nameTextStyle: { color: holdingColor, fontSize: 11, align: 'left' },
           axisLabel: { ...axisLabel, color: holdingColor }, splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
         { type: 'value', scale: true, name: '上证指数（点）', nameTextStyle: { color: indexColor, fontSize: 11, align: 'right' },
           axisLabel: { ...axisLabel, color: indexColor }, splitLine: { show: false } },
@@ -130,7 +148,7 @@ function HoldingsChart({ index, periods, fund, first }: {
           data: index.map(point => [Date.parse(point.date), point.close]),
         },
         {
-          name: '持有份额', type: 'line', yAxisIndex: 0, connectNulls: false, symbol: 'circle', symbolSize: 6,
+          name: '持仓占比', type: 'line', yAxisIndex: 0, connectNulls: false, symbol: 'circle', symbolSize: 6,
           lineStyle: { color: holdingColor, width: 2 }, itemStyle: { color: holdingColor },
           data: holdingPoints,
           markLine: {
@@ -145,52 +163,40 @@ function HoldingsChart({ index, periods, fund, first }: {
     }, { notMerge: true });
   }, [first, fund, index, periods, theme]);
 
-  return <div className="etf-holdings-chart" ref={root} role="img" aria-label={`${fund.name}公开持有份额与上证指数`} />;
+  return <div className="etf-holdings-chart" ref={root} role="img" aria-label={`${fund.name}公开持仓占比与上证指数`} />;
 }
 
 export default function EtfHoldingsComparison() {
   const title = useId();
-  const [funds, setFunds] = useState<Fund[]>([]);
-  const [index, setIndex] = useState<Close[]>([]);
+  const { data: archive, loading, error } = useEtfSnapshot('holdings-archive', loadHoldingsArchive);
+  const { data: daily } = useEtfSnapshot('/api/market/sh000001/daily', loadIndexCloses);
   const [fundCode, setFundCode] = useState('');
   const [group, setGroup] = useState<(typeof groups)[number]['id']>('all');
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    Promise.all([api<Fund[]>('/market-archives/etf-holder-disclosures.json', undefined, signal), indexArchive(signal)])
-      .then(([snapshot, archive]) => {
-        if (signal.aborted) return;
-        if (!archive.length || !snapshot.length) throw new Error('持仓或行情档案为空');
-        setFunds(snapshot);
-        setIndex(archive);
-        return api<{ candles: Close[] }>('/api/market/sh000001/daily', undefined, signal).then(({ candles }) => {
-          if (signal.aborted) return;
-          const latest = archive.at(-1)!.date;
-          const tail = candles.filter(point => point.date > latest && Number.isFinite(point.close) && point.close > 0);
-          if (tail.length) setIndex([...archive, ...tail]);
-        }).catch(() => { /* The verified archive remains usable if the daily cache is unavailable. */ });
-      })
-      .catch(() => { if (!signal.aborted) setError(true); });
-    return () => controller.abort();
-  }, []);
-
+  const funds = archive?.funds ?? [];
   const fund = funds.find(item => item.code === fundCode) ?? funds[0];
   const first = fund?.reports.find(report => report.holders.length)?.report_date;
   const periods = useMemo<Period[]>(() => (fund?.reports ?? []).map(report => {
     const matches = group === 'all' ? report.holders : report.holders.filter(holder => holder.group === group);
-    return { ...report, matches, shares: matches.length ? matches.reduce((sum, holder) => sum + holder.shares, 0) : null };
+    const shares = matches.length ? matches.reduce((sum, holder) => sum + holder.shares, 0) : null;
+    const ownershipPercent = shares != null && report.total_shares && report.total_shares > 0
+      ? 100 * (shares / report.total_shares)
+      : null;
+    return { ...report, matches, shares, ownershipPercent };
   }), [fund, group]);
-  const indexWindow = useMemo(() => first ? index.filter(point => point.date >= first) : [], [first, index]);
+  const indexWindow = useMemo(() => {
+    if (!archive || !first) return [];
+    const last = archive.index.at(-1)!.date;
+    return [...archive.index.filter(point => point.date >= first), ...(daily ?? []).filter(point => point.date > last)];
+  }, [first, archive, daily]);
   const lastReport = periods.filter(period => period.shares != null).at(-1)?.report_date;
 
   return (
-    <section id="etf-holdings" className="panel etf-funds-card etf-holdings-card" aria-labelledby={title}>
+    <section id="etf-holdings" className="panel etf-funds-card etf-holdings-card" aria-labelledby={title} aria-busy={loading}>
       <header className="etf-funds-heading">
         <h2 id={title}><BarChart3 size={17} aria-hidden="true" />国家队公开持仓与上证指数</h2>
         {first && indexWindow.length > 0 && <span className="etf-funds-status">{first} 至 {indexWindow.at(-1)?.date}</span>}
       </header>
+      {error && archive && <p className="etf-funds-notice" role="status">更新失败，显示上次加载的数据。</p>}
       {fund && first && indexWindow.length ? (
         <>
           <div className="etf-holdings-controls">
@@ -205,7 +211,7 @@ export default function EtfHoldingsComparison() {
           </div>
           <HoldingsChart index={indexWindow} periods={periods} fund={fund} first={first} />
           <p className="etf-funds-note">
-            圆点为报告期末的持有份额，蓝线为上证指数日收盘。
+            圆点为报告期末的持仓占比，蓝线为上证指数日收盘。
             {lastReport ? `最近具名持仓 ${lastReport}。` : '当前机构暂无具名持仓记录。'}
             拖动滑块缩放。
           </p>
@@ -223,16 +229,14 @@ export default function EtfHoldingsComparison() {
               <table>
                 <thead><tr>
                   <th scope="col">报告期末</th><th scope="col">披露日</th>
-                  <th scope="col">持有份额（亿份）</th><th scope="col">持有人及来源</th>
+                  <th scope="col">占比 / 份额</th><th scope="col">持有人及来源</th>
                 </tr></thead>
                 <tbody>{periods.slice().reverse().map(period => (
                   <tr key={period.report_date}>
                     <th scope="row">{period.report_date}</th><td>{period.publication_date ?? '—'}</td>
-                    <td>
-                      {period.shares == null ? '—' : units(period.shares)}
-                      {period.shares != null && !!period.total_shares && (
-                        <small>占 {number(period.shares * 100 / period.total_shares)}%</small>
-                      )}
+                    <td title={period.shares == null ? undefined : `${period.shares.toLocaleString('zh-CN')} 份`}>
+                      {period.ownershipPercent == null ? '—' : `${number(period.ownershipPercent)}%`}
+                      {period.shares != null && <small>{units(period.shares)} 亿份</small>}
                     </td>
                     <td>
                       {period.matches.length
@@ -248,7 +252,7 @@ export default function EtfHoldingsComparison() {
             </div>
           </details>
           <p className="etf-funds-note">
-            单只 ETF 的公开披露样本，份额按原文统计。缺少具名披露的期次留空。
+            持仓占比为具名披露份额除以同一期基金总份额。占比也会随基金总份额变化，缺少披露的期次留空。
             <a href={SOURCE_RULE_URL} target="_blank" rel="noreferrer">2026 年新版披露模板</a>
           </p>
         </>

@@ -4,7 +4,7 @@ import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import { DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import { api } from './api';
+import useEtfSnapshot from './useEtfSnapshot';
 import { number, percent, tone } from './format';
 import { useTheme } from './ThemeContext';
 import './etf-funds.css';
@@ -12,7 +12,7 @@ import './etf-funds.css';
 echarts.use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
 type Basket = 'wide' | 'long';
-type View = 'flow' | 'inventory';
+type View = 'overlay' | 'flow' | 'inventory';
 type Point = {
   date: string;
   score: number | null;
@@ -40,10 +40,12 @@ const cash = (amount: number | null | undefined, signed = true) =>
   amount == null ? '—' : `${signed && amount > 0 ? '+' : ''}${number(amount / 1e8)} 亿元`;
 
 function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
-  const showInventory = view === 'inventory';
-  const metricLabel = showInventory ? '累计异常净申赎' : '资金动向';
+  const overlay = view === 'overlay';
+  const showFlow = view !== 'inventory';
+  const showInventory = view !== 'flow';
   const root = useRef<HTMLDivElement>(null);
   const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
+  const plotted = useRef<Snapshot | null>(null);
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -60,6 +62,14 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
     const color = (name: string) => style.getPropertyValue(name).trim();
     const indicatorColor = color('--theme-warning');
     const indexColor = color('--chart-marker-neutral');
+    const inventoryColor = color('--ink-violet');
+    const primaryColor = showFlow ? indicatorColor : inventoryColor;
+    const instance = chart.current;
+    if (!instance) return;
+    const zoom = plotted.current === snapshot
+      ? (instance.getOption()?.dataZoom as { start?: number; end?: number }[] | undefined)?.[0]
+      : undefined;
+    plotted.current = snapshot;
     const border = color('--chart-border');
     const axisLabel = { fontSize: 10, hideOverlap: true };
     const points = new Map(snapshot.history.map(point => [point.date, point]));
@@ -70,10 +80,18 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
     const markerDates = new Set(events.map(event => event.date));
     if (showInventory && first <= disclosure.date && disclosure.date <= last) markerDates.add(disclosure.date);
 
-    chart.current?.setOption({
+    const annotations = {
+      silent: true, symbol: 'none', label: { show: false },
+      lineStyle: { color: color('--chart-crosshair'), type: 'dashed', opacity: .65 },
+      data: [...(overlay ? [] : [{ yAxis: 0 }]), ...Array.from(markerDates, day => ({ xAxis: Date.parse(day) }))],
+    };
+
+    instance.setOption({
       useUTC: true,
       animation: false,
-      grid: { left: 9, right: 9, top: 34, bottom: 52, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+      grid: overlay
+        ? { left: 38, right: 87, top: 13, bottom: 52, outerBoundsMode: 'none' }
+        : { left: 9, right: 9, top: 34, bottom: 52, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       tooltip: {
         trigger: 'axis', renderMode: 'richText', confine: true, borderColor: border,
         backgroundColor: color('--chart-tooltip-bg'), textStyle: { color: color('--chart-tooltip-text'), fontSize: 11 },
@@ -83,11 +101,14 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
           const day = new Date(timestamp).toISOString().slice(0, 10);
           const point = points.get(day);
           if (!point) return day;
-          const lines = [day, `${metricLabel} ${showInventory ? cash(point.cumulative_amount) : percent(point.score)}`];
+          const lines = [day];
+          if (showFlow) lines.push(`20 日动向 ${percent(point.score)}`);
           if (showInventory) {
+            lines.push(`累计异常净申赎 ${cash(point.cumulative_amount)}`);
             if (point.daily_counted_flow) lines.push(`当日计入 ${cash(point.daily_counted_flow)}`);
             if (day === disclosure.date) lines.push(`年报具名持仓 ${cash(disclosure.amount, false)}`);
-          } else if (point.amount != null) {
+          }
+          if (showFlow && point.amount != null) {
             lines.push(`窗口内异常日净申赎 ${cash(point.amount)}`);
           }
           if (point.net != null) lines.push(`当日样本净申赎 ${cash(point.net)}`);
@@ -101,13 +122,19 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
         axisLine: { lineStyle: { color: border } }, axisTick: { show: false },
         axisLabel: { ...axisLabel, color: color('--chart-text') } },
       yAxis: [
-        { type: 'value', name: showInventory ? '累计净申赎（亿元）' : '资金动向（%）', nameTextStyle: { color: indicatorColor, align: 'left', fontSize: 11 },
-          axisLabel: { ...axisLabel, color: indicatorColor }, splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
-        { type: 'value', name: '上证指数（点）', scale: true, nameTextStyle: { color: indexColor, align: 'right', fontSize: 11 },
+        { type: 'value', position: 'left', name: overlay ? '' : showFlow ? '20 日动向（%）' : '累计净申赎（亿元）',
+          nameTextStyle: { color: primaryColor, align: 'left', fontSize: 11 },
+          axisLabel: { ...axisLabel, color: primaryColor }, splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
+        { type: 'value', position: 'right', name: overlay ? '' : '上证指数（点）', scale: true,
+          nameTextStyle: { color: indexColor, align: 'right', fontSize: 11 },
           axisLabel: { ...axisLabel, color: indexColor }, splitLine: { show: false } },
+        ...(overlay ? [{
+          type: 'value', position: 'right', offset: 43,
+          axisLabel: { ...axisLabel, color: inventoryColor }, splitLine: { show: false },
+        }] : []),
       ],
       dataZoom: [{
-        type: 'slider', xAxisIndex: 0, bottom: 4, height: 18, filterMode: 'none', showDetail: false,
+        type: 'slider', xAxisIndex: 0, start: zoom?.start ?? 0, end: zoom?.end ?? 100, bottom: 4, height: 18, filterMode: 'none', showDetail: false,
         showDataShadow: false, borderColor: border, backgroundColor: color('--theme-panel'),
         fillerColor: color('--theme-accent-soft'), handleStyle: { color: indexColor }, brushSelect: false,
       }],
@@ -116,53 +143,54 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
           type: 'line', name: '上证指数', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
           lineStyle: { color: indexColor, width: 1.5 }, data: snapshot.history.map(point => [Date.parse(point.date), point.index_close]),
         },
-        {
-          type: 'line', name: metricLabel, showSymbol: false, connectNulls: false,
+        ...(showFlow ? [{
+          type: 'line', name: '20 日动向', showSymbol: false, connectNulls: false,
           lineStyle: { color: indicatorColor, width: 2 },
+          data: snapshot.history.map(point => [Date.parse(point.date), point.score]),
+          markLine: annotations,
+        }] : []),
+        ...(showInventory ? [{
+          type: 'line', name: '累计变化', yAxisIndex: overlay ? 2 : 0, showSymbol: false, connectNulls: false,
+          lineStyle: { color: inventoryColor, width: 2 },
           data: snapshot.history.map(point => [Date.parse(point.date),
-            showInventory ? (point.cumulative_amount == null ? null : point.cumulative_amount / 1e8) : point.score]),
-          markLine: {
-            silent: true, symbol: 'none', label: { show: false },
-            lineStyle: { color: color('--chart-crosshair'), type: 'dashed', opacity: .65 },
-            data: [{ yAxis: 0 }, ...Array.from(markerDates, day => ({ xAxis: Date.parse(day) }))],
-          },
-        },
+            point.cumulative_amount == null ? null : point.cumulative_amount / 1e8]),
+          markLine: showFlow ? undefined : annotations,
+        }] : []),
       ],
     }, { notMerge: true });
-  }, [snapshot, theme, showInventory, metricLabel]);
+  }, [snapshot, theme, overlay, showFlow, showInventory]);
 
-  return <div ref={root} className="etf-holdings-chart" role="img" aria-label={showInventory ? "累计异常净申赎与上证指数走势" : "资金动向指标与上证指数走势"} />;
+  return <>
+    {overlay && <ul className="etf-overlay-legend" aria-label="曲线与坐标轴">
+      <li className="etf-overlay-flow">20 日动向（%）</li>
+      <li className="etf-overlay-index">上证指数（点）</li>
+      <li className="etf-overlay-inventory">累计变化（亿元）</li>
+    </ul>}
+    <div ref={root} className="etf-holdings-chart" role="img" aria-label={overlay
+      ? '20 日动向、累计变化与上证指数叠加图'
+      : showInventory ? '累计异常净申赎与上证指数走势' : '资金动向指标与上证指数走势'} />
+  </>;
 }
 
 export default function EtfFlowIndicator() {
   const title = useId();
   const [basket, setBasket] = useState<Basket>('wide');
-  const [view, setView] = useState<View>('flow');
-  const [result, setResult] = useState<{ basket: Basket; snapshot: Snapshot }>();
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setError('');
-    api<Snapshot>(`/api/market/etf-flow-indicator?basket=${basket}`, undefined, controller.signal)
-      .then(snapshot => { if (!controller.signal.aborted) setResult({ basket, snapshot }); })
-      .catch((err: Error) => { if (!controller.signal.aborted) setError(err.message); });
-    return () => controller.abort();
-  }, [basket]);
-
-  const snapshot = result?.basket === basket ? result.snapshot : undefined;
-  const showInventory = view === 'inventory';
+  const [view, setView] = useState<View>('overlay');
+  const { data: snapshot, loading, error } = useEtfSnapshot<Snapshot>(`/api/market/etf-flow-indicator?basket=${basket}`);
+  const showFlow = view !== 'inventory';
+  const showInventory = view !== 'flow';
   const inventory = snapshot?.inventory;
-  const latest = snapshot?.history.filter(point => point[showInventory ? 'cumulative_amount' : 'score'] != null).at(-1);
-  const reading = showInventory ? latest?.cumulative_amount : latest?.score;
+  const latest = snapshot?.history.filter(point => point.score != null || point.cumulative_amount != null).at(-1);
 
   return (
-    <section id="etf-flow-indicator" className="panel etf-funds-card etf-holdings-card" aria-labelledby={title}>
+    <section id="etf-flow-indicator" className="panel etf-funds-card etf-holdings-card" aria-labelledby={title} aria-busy={loading}>
       <header className="etf-funds-heading">
         <h2 id={title}><BarChart3 size={17} aria-hidden="true" />国家队资金动向（宽基 ETF 代理）</h2>
-        {latest && <span className="etf-funds-status">
-          <strong className={reading ? tone(reading) : undefined}>{showInventory ? cash(reading) : percent(reading)}</strong> · {latest.date}
-        </span>}
+        {latest && <div className="etf-funds-status etf-overlay-readings">
+          {showFlow && <span>20 日动向 <strong className={latest.score ? tone(latest.score) : undefined}>{percent(latest.score)}</strong></span>}
+          {showInventory && <span>累计变化 <strong className={latest.cumulative_amount ? tone(latest.cumulative_amount) : undefined}>{cash(latest.cumulative_amount)}</strong></span>}
+          <time dateTime={latest.date}>{latest.date}</time>
+        </div>}
       </header>
       <div className="etf-holdings-controls">
         <div className="etf-funds-groups" role="group" aria-label="选择宽基 ETF 样本">
@@ -170,8 +198,9 @@ export default function EtfFlowIndicator() {
           <button type="button" aria-pressed={basket === 'long'} onClick={() => setBasket('long')}>长历史 · 5 只</button>
         </div>
         <div className="etf-funds-groups" role="group" aria-label="选择资金指标">
+          <button type="button" aria-pressed={view === 'overlay'} onClick={() => setView('overlay')}>叠加</button>
           <button type="button" aria-pressed={view === 'flow'} onClick={() => setView('flow')}>20 日动向</button>
-          <button type="button" aria-pressed={showInventory} onClick={() => setView('inventory')}>累计变化</button>
+          <button type="button" aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}>累计变化</button>
         </div>
         {snapshot?.history.length ? <span className="etf-funds-status">
           {snapshot.history[0].date} 至 {snapshot.history.at(-1)?.date}
@@ -199,10 +228,10 @@ export default function EtfFlowIndicator() {
       {snapshot?.history.length ? <FlowChart snapshot={snapshot} view={view} /> : (
         <p className="etf-funds-empty" role="status">{error || (snapshot ? '暂无足够的历史份额数据' : '正在读取资金指标…')}</p>
       )}
+      {error && snapshot?.history.length ? <p className="etf-funds-notice" role="status">更新失败，显示上次加载的数据。</p> : null}
       <p className="etf-funds-note">
-        {showInventory
-          ? '金线从样本起点累加，符合条件的净申赎每天计一次。机构持仓以具名披露为准。'
-          : '正值偏流入，负值偏流出。每个交易日早间更新上一交易日数据，竖虚线为已核对的公告或披露日期。'}
+        {showInventory && '累计变化从样本起点逐日累加。'}
+        每个交易日早间更新上一交易日数据，竖虚线为已核对的公告或披露日期。
       </p>
       <details className="etf-funds-details">
         <summary>计算口径与官方公告</summary>

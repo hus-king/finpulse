@@ -4,7 +4,7 @@ import * as echarts from 'echarts/core';
 import { BarChart, LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import { api } from './api';
+import useEtfSnapshot from './useEtfSnapshot';
 import { number, tone } from './format';
 import { useTheme } from './ThemeContext';
 import './etf-funds.css';
@@ -169,22 +169,8 @@ function EtfFundsRows({ rows, date }: { rows: FundRow[]; date: string | null | u
 
 export default function EtfFundsCard() {
   const title = useId();
-  const [data, setData] = useState<EtfFunds | null>(null);
+  const { data, loading, error, refresh } = useEtfSnapshot<EtfFunds>('/api/market/etf-funds');
   const [groupId, setGroupId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [request, setRequest] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    api<EtfFunds>('/api/market/etf-funds', undefined, controller.signal)
-      .then(snapshot => { if (!controller.signal.aborted) setData(snapshot); })
-      .catch((err: Error) => { if (!controller.signal.aborted) setError(err.message); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [request]);
 
   const groups = data?.groups ?? [];
   const group = groups.find(item => item.id === groupId) ?? groups[0];
@@ -200,7 +186,7 @@ export default function EtfFundsCard() {
         <div className="etf-funds-status">
           {date && <span>交易日 <time dateTime={date}>{date}</time>{timestamp && ` · 采集于 ${timestamp}`}</span>}
           <button type="button" className="subtle-button" title="刷新 ETF 资金数据" aria-label="刷新 ETF 资金数据" disabled={loading}
-            onClick={() => setRequest(value => value + 1)}>
+            onClick={refresh}>
             {loading ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
           </button>
         </div>
