@@ -152,43 +152,17 @@
   gap: 10px 16px;
   margin: 16px 0 8px;
 }
-.etf-holdings-controls small { color: var(--theme-muted); font: 10px var(--mono); }
-.etf-holdings-chart { height: clamp(315px, 34vw, 460px); }
-.etf-holdings-table { max-height: 350px; }
-.etf-holdings-table td:last-child { min-width: 150px; white-space: normal; overflow-wrap: anywhere; }
 .etf-holdings-card a { color: var(--theme-accent-text); }
 .etf-holdings-card a svg { vertical-align: middle; }
-.etf-holdings-conversions { display: flex; flex-wrap: wrap; gap: 3px 12px; }
-
-.etf-disclosure-summary {
+.etf-flow-chart-details.etf-flow-disclosure-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 14px 0;
-}
-.etf-disclosure-summary > div {
-  padding: 10px 12px;
+  inset-inline: 10px 58px;
+  max-width: calc(100% - 68px);
   border: 1px solid var(--theme-border);
-  border-radius: 6px;
-}
-.etf-disclosure-summary dt, .etf-disclosure-summary small { color: var(--theme-muted); font-size: 11px; }
-.etf-disclosure-summary dd { margin: 4px 0 0; font-size: clamp(16px, 2vw, 22px); }
-.etf-disclosure-chart-events {
-  position: absolute;
-  z-index: 2;
-  left: 10px;
-  bottom: 32px;
-  max-width: calc(100% - 80px);
-  pointer-events: none;
-  padding: 6px 8px;
-  border: 1px solid var(--theme-border);
-  border-radius: 4px;
   background: var(--chart-tooltip-bg);
   color: var(--chart-tooltip-text);
-  font-size: 10px;
 }
-.etf-disclosure-chart-events > div { display: grid; gap: 3px; }
-.etf-disclosure-chart-events > div + div { margin-top: 5px; }
+.etf-flow-disclosure-details > div { display: grid; gap: 3px; }
 .etf-disclosure-marker.is-increase { color: var(--chart-up); }
 .etf-disclosure-marker.is-decrease { color: var(--chart-down); }
 .etf-overlay-legend .etf-disclosure-marker::before {
@@ -198,11 +172,6 @@
   border-top: 0;
 }
 .etf-overlay-legend .etf-disclosure-marker.is-decrease::before { transform: rotate(180deg); }
-@media (max-width: 560px) {
-  .etf-disclosure-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .etf-disclosure-summary > :last-child { grid-column: 1 / -1; }
-  .etf-disclosure-summary > div { padding: 8px; }
-}
 
 .etf-inventory-metrics { margin: 14px 0; }
 .etf-inventory-metrics > div { border-top: 1px solid var(--theme-border); padding-top: 10px; }

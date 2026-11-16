@@ -34,6 +34,7 @@ test('market dates use the preceding session for a report period and the followi
   assert.equal(disclosureEvents(periods, index, 'period-end')[0].date, '2026-06-29');
   assert.equal(disclosureEvents(periods, index, 'published')[0].date, '2026-09-01');
   assert.equal(disclosureEvents(periods, index.slice(0, -1), 'published').length, 0);
+  assert.equal(disclosureEvents(periods, index.slice(-1), 'published').length, 0);
 });
 
 test('the last 252 trading-session range excludes future closes', () => {

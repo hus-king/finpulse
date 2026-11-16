@@ -24,7 +24,6 @@ import WorkspaceView from './WorkspaceView';
 
 const defaults = ['600519', '300750', '688981'];
 const EtfFundsCard = lazy(() => import('./EtfFundsCard'));
-const EtfHoldingsComparison = lazy(() => import('./EtfHoldingsComparison'));
 const EtfFlowIndicator = lazy(() => import('./EtfFlowIndicator'));
 const navigation = [
   { id: 'dashboard', label: '行情与新闻', english: 'MARKET INTELLIGENCE' },
@@ -485,9 +484,6 @@ export default function App() {
       )}
       {(view === 'dashboard' || view === 'etf-funds') && (
         <Suspense fallback={<p role="status">正在打开 ETF 资金监控…</p>}><EtfFundsCard /></Suspense>
-      )}
-      {view === 'etf-funds' && (
-        <Suspense fallback={<p role="status">正在打开 ETF 持仓图…</p>}><EtfHoldingsComparison /></Suspense>
       )}
       {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} jobs={jobs} batchAnalyze={batchAnalyzeWatchlist} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
       </WorkspaceView>

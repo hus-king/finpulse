@@ -69,12 +69,11 @@ export function disclosureEvents(periods: Period[], index: Close[], basis: DateB
   return periods.flatMap(period => {
     if (period.change == null || period.change === 0) return [];
     const cutoff = basis === 'published' ? period.publication_date : period.report_date;
-    if (!cutoff) return [];
+    if (!cutoff || !index.length || cutoff < index[0].date) return [];
     // Publication dates have no time of day. Wait until the next session
     // so an announcement after the close cannot use that same day's quote.
     const firstAfter = index.findIndex(({ date }) => date > cutoff);
     if (basis === 'published' && firstAfter < 0) return [];
-    if (basis === 'period-end' && period.report_date < index[0]?.date) return [];
     const at = basis === 'published' ? firstAfter : (firstAfter < 0 ? index.length - 1 : firstAfter - 1);
     if (at < 0) return [];
     return [{ period, change: period.change, ...index[at], position: indexRangePosition(index, at) }];

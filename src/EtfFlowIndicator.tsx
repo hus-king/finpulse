@@ -1,10 +1,12 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { BarChart3, ExternalLink } from 'lucide-react';
-import { ColorType, CrosshairMode, LineSeries, LineStyle, createChart } from 'lightweight-charts';
-import type { IChartApi, IPrimitivePaneRenderer, ISeriesApi, ISeriesPrimitive, Time, UTCTimestamp } from 'lightweight-charts';
+import { ColorType, CrosshairMode, LineSeries, LineStyle, createChart, createSeriesMarkers } from 'lightweight-charts';
+import type { IChartApi, IPrimitivePaneRenderer, ISeriesApi, ISeriesMarkersPluginApi, ISeriesPrimitive, MouseEventParams, SeriesMarker, Time, UTCTimestamp } from 'lightweight-charts';
 import TradingChartToolbar from './TradingChartToolbar';
 import { chartTimestamp } from './tradingChartData';
 import useEtfSnapshot from './useEtfSnapshot';
+import { disclosureEvents, holdingPeriods } from './etfHoldingsMath';
+import type { DateBasis, Fund } from './etfHoldingsMath';
 import { number, percent, tone } from './format';
 import { useTheme } from './ThemeContext';
 import './etf-funds.css';
@@ -34,9 +36,23 @@ type Snapshot = {
   funds: string[]; group_count: number; expected_date: string; history: Point[];
   announcements: Announcement[]; inventory: Inventory;
 };
+type Disclosure = ReturnType<typeof disclosureEvents>[number] & { fund: Fund };
 
 const cash = (amount: number | null | undefined, signed = true) =>
   amount == null ? '—' : `${signed && amount > 0 ? '+' : ''}${number(amount / 1e8)} 亿元`;
+const shares = (change: number) => `${change > 0 ? '+' : ''}${number(change / 1e8)} 亿份`;
+
+function disclosureMarkers(dates: Map<string, Disclosure[]>, up: string, down: string): SeriesMarker<Time>[] {
+  return [...dates].flatMap(([day, events]) => {
+    const increasing = events.some(event => event.change > 0);
+    const decreasing = events.some(event => event.change < 0);
+    const time = chartTimestamp(day) as UTCTimestamp;
+    const result: SeriesMarker<Time>[] = [];
+    if (increasing) result.push({ time, id: day, position: decreasing ? 'aboveBar' : 'inBar', shape: 'arrowUp', color: up, size: 1.55 });
+    if (decreasing) result.push({ time, id: day, position: increasing ? 'belowBar' : 'inBar', shape: 'arrowDown', color: down, size: 1.55 });
+    return result;
+  });
+}
 
 function flowAnnotations(chart: IChartApi, days: string[], color: string): ISeriesPrimitive<Time> {
   const times = days.map(day => chartTimestamp(day) as UTCTimestamp);
@@ -62,16 +78,21 @@ function flowAnnotations(chart: IChartApi, days: string[], color: string): ISeri
   return { paneViews: () => views };
 }
 
-function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
+function FlowChart({ snapshot, view, basis, disclosures }: {
+  snapshot: Snapshot; view: View; basis: DateBasis; disclosures: Map<string, Disclosure[]>;
+}) {
   const showFlow = view !== 'inventory';
   const showInventory = view !== 'flow';
   const canvas = useRef<HTMLDivElement>(null);
   const instance = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<'Line'>[]>([]);
+  const indexSeries = useRef<ISeriesApi<'Line'> | null>(null);
+  const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const lastIndex = useRef(0);
   const fullScreenButton = useRef<HTMLButtonElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -87,10 +108,13 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
       localization: { locale: 'zh-CN', timeFormatter: (time: Time) => new Date(Number(time) * 1000).toISOString().slice(0, 10) },
     });
     instance.current = chart;
-    chart.subscribeCrosshairMove(({ point, time }) => {
-      setHoveredDay(point && typeof time === 'number' ? new Date(time * 1000).toISOString().slice(0, 10) : null);
-    });
-    return () => { chart.remove(); instance.current = null; series.current = []; };
+    return () => {
+      chart.remove();
+      instance.current = null;
+      series.current = [];
+      indexSeries.current = null;
+      markers.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -115,6 +139,7 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
 
     const scale = chart.timeScale();
     const range = scale.getVisibleLogicalRange();
+    markers.current?.detach();
     series.current.forEach(item => chart.removeSeries(item));
     series.current = [];
     const history = snapshot.history;
@@ -160,6 +185,8 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
     const ticks = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 1 });
     const index = addLine(point => point.index_close, color('--chart-marker-neutral'), 'right', ticks, 1, timelineAnchors);
     index.attachPrimitive(flowAnnotations(chart, [...marks], crosshair));
+    indexSeries.current = index;
+    markers.current = createSeriesMarkers(index, [], { zOrder: 'top' });
     let flow: ISeriesApi<'Line'> | undefined;
     let inventory: ISeriesApi<'Line'> | undefined;
     if (showFlow) flow = addLine(point => point.score, color('--theme-warning'), 'left', value => ticks(value) + '%', 2);
@@ -174,6 +201,64 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
     if (range) scale.setVisibleLogicalRange(range);
     else scale.fitContent();
   }, [snapshot, theme, view, showFlow, showInventory]);
+
+  useEffect(() => {
+    const styles = getComputedStyle(document.documentElement);
+    markers.current?.setMarkers(disclosureMarkers(
+      disclosures, styles.getPropertyValue('--chart-up').trim(), styles.getPropertyValue('--chart-down').trim(),
+    ));
+  }, [disclosures, snapshot, theme, view]);
+
+  useEffect(() => {
+    setHoveredDay(null);
+    setSelectedDay(null);
+    instance.current?.clearCrosshairPosition();
+  }, [basis]);
+
+  useEffect(() => {
+    const chart = instance.current;
+    if (!chart) return;
+    const scale = chart.timeScale();
+    const move = ({ point, time, hoveredInfo }: MouseEventParams) => {
+      const markerId = hoveredInfo?.objectId;
+      const marker = point && hoveredInfo?.objectKind === 'series-marker' && typeof markerId === 'string'
+        ? disclosures.get(markerId)?.[0] : undefined;
+      if (marker && indexSeries.current) chart.setCrosshairPosition(marker.close, chartTimestamp(marker.date) as UTCTimestamp, indexSeries.current);
+      setHoveredDay(marker?.date ?? (point && typeof time === 'number' ? new Date(time * 1000).toISOString().slice(0, 10) : null));
+    };
+    const click = ({ point }: MouseEventParams) => {
+      const line = indexSeries.current;
+      if (!point || !line) return;
+      // A narrow chart spans several sessions per pixel. Match the marker's
+      // plotted coordinates to find its exact date when the user taps it.
+      let best = 16;
+      let selected: Disclosure | undefined;
+      for (const events of disclosures.values()) {
+        const event = events[0];
+        const x = scale.timeToCoordinate(chartTimestamp(event.date) as UTCTimestamp);
+        const y = line.priceToCoordinate(event.close);
+        if (x == null || y == null || x < 0 || x > scale.width()) continue;
+        const offsets = events.some(event => event.change > 0) && events.some(event => event.change < 0) ? [-16, 16] : [0];
+        const distance = Math.min(...offsets.map(offset => Math.hypot(point.x - x, point.y - y - offset)));
+        if (distance >= best) continue;
+        selected = event;
+        best = distance;
+      }
+      setSelectedDay(selected?.date ?? null);
+      if (selected) {
+        setHoveredDay(null);
+        chart.setCrosshairPosition(selected.close, chartTimestamp(selected.date) as UTCTimestamp, line);
+      }
+    };
+    chart.subscribeCrosshairMove(move);
+    chart.subscribeClick(click);
+    chart.subscribeDblClick(click);
+    return () => {
+      chart.unsubscribeCrosshairMove(move);
+      chart.unsubscribeClick(click);
+      chart.unsubscribeDblClick(click);
+    };
+  }, [disclosures]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -199,6 +284,7 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
     instance.current?.timeScale().fitContent();
     series.current.forEach(line => line.priceScale().setAutoScale(true));
     setHoveredDay(null);
+    setSelectedDay(null);
   }
 
   function latest() {
@@ -206,11 +292,14 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
     const range = scale?.getVisibleLogicalRange();
     if (scale && range) scale.setVisibleLogicalRange({ from: lastIndex.current - (range.to - range.from), to: lastIndex.current });
     setHoveredDay(null);
+    setSelectedDay(null);
   }
 
-  const point = hoveredDay ? snapshot.history.find(row => row.date === hoveredDay) : snapshot.history.at(-1);
-  const day = hoveredDay ?? point?.date;
+  const activeDay = hoveredDay ?? selectedDay;
+  const point = activeDay ? snapshot.history.find(row => row.date === activeDay) : snapshot.history.at(-1);
+  const day = activeDay ?? point?.date;
   const events = day ? snapshot.announcements.filter(event => event.date === day) : [];
+  const changes = activeDay ? disclosures.get(activeDay) ?? [] : [];
   const disclosure = snapshot.inventory.disclosed;
   return <div className={`technical-chart etf-flow-trading-chart${expanded ? ' is-expanded' : ''}`}>
     <TradingChartToolbar title="资金走势" expanded={expanded} fullScreenButton={fullScreenButton}
@@ -220,15 +309,26 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
         {showFlow && <li className="etf-overlay-flow">20 日动向 <b className="mono">{percent(point?.score)}</b></li>}
         {showInventory && <li className="etf-overlay-inventory">累计变化 <b className="mono">{cash(point?.cumulative_amount)}</b></li>}
         <li className="etf-overlay-index">上证指数 <b className="mono">{number(point?.index_close)}{point?.index_close != null && ' 点'}</b></li>
+        {disclosures.size > 0 && <>
+          <li className="etf-disclosure-marker is-increase">披露增持</li>
+          <li className="etf-disclosure-marker is-decrease">披露减持</li>
+        </>}
       </ul>
-      <time dateTime={day}>{day}{!hoveredDay && ' · 最新'}</time>
+      <time dateTime={day}>{day}{!activeDay && ' · 最新'}</time>
     </div>
     <div className="technical-chart-stage etf-flow-chart-stage">
       <div ref={canvas} className="technical-chart-canvas" role="img" aria-label={view === 'overlay'
         ? '20 日动向、累计变化与上证指数叠加图'
         : showInventory ? '累计异常净申赎与上证指数走势' : '资金动向指标与上证指数走势'} />
     </div>
-    {hoveredDay && <div className="etf-flow-chart-details">
+    {changes.length > 0 ? <div className="etf-flow-chart-details etf-flow-disclosure-details">
+      {changes.map(({ fund, period, change }) => <div key={`${fund.code}-${period.report_date}`}>
+        <strong className={tone(change)}>{fund.name} · {shares(change)}</strong>
+        <span>报告期末 {period.report_date}{period.publication_date && ` · 披露日 ${period.publication_date}`}</span>
+      </div>)}
+      {changes[0].position != null && <span>上证近一年区间位置 {changes[0].position.toFixed(1)}%</span>}
+      {events.map(event => <span key={event.url}>{event.entity} · {event.title}</span>)}
+    </div> : activeDay && <div className="etf-flow-chart-details">
       {point?.net != null && <span>样本净申赎 {cash(point.net)}</span>}
       {showFlow && point?.amount != null && <span>窗口内异常净申赎 {cash(point.amount)}</span>}
       {showFlow && point?.agreeing_groups != null && <span>同向异常 {point.agreeing_groups}/{snapshot.group_count} 类宽基</span>}
@@ -237,7 +337,7 @@ function FlowChart({ snapshot, view }: { snapshot: Snapshot; view: View }) {
       {events.map(event => <span key={event.url}>{event.entity} · {event.title}</span>)}
     </div>}
     <div className="chart-interaction-hint">
-      <span>滚轮缩放 · 拖动平移 · 双击坐标轴复位</span>
+      <span>滚轮缩放 · 拖动平移{disclosures.size > 0 && ' · 悬停或点按箭头查看披露'}</span>
       <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer" title="TradingView Lightweight Charts™">TradingView</a>
     </div>
   </div>;
@@ -247,7 +347,23 @@ export default function EtfFlowIndicator() {
   const title = useId();
   const [basket, setBasket] = useState<Basket>('wide');
   const [view, setView] = useState<View>('overlay');
+  const [basis, setBasis] = useState<DateBasis>('published');
   const { data: snapshot, loading, error } = useEtfSnapshot<Snapshot>(`/api/market/etf-flow-indicator?basket=${basket}`);
+  const { data: funds, error: disclosureError } = useEtfSnapshot<Fund[]>('/market-archives/etf-holder-disclosures.json');
+  const disclosureFunds = useMemo(() => (funds ?? []).filter(fund => snapshot?.funds.includes(fund.code)), [funds, snapshot]);
+  const disclosures = useMemo(() => {
+    const days = new Map<string, Disclosure[]>();
+    if (!snapshot?.history.length || !disclosureFunds.length) return days;
+    const index = snapshot.history.flatMap(point => point.index_close == null ? [] : [{ date: point.date, close: point.index_close }]);
+    const events = disclosureFunds.flatMap(fund => disclosureEvents(holdingPeriods(fund, 'all'), index, basis)
+      .map(event => ({ ...event, fund }))).sort((a, b) => a.date.localeCompare(b.date));
+    for (const event of events) {
+      const sameDay = days.get(event.date);
+      if (sameDay) sameDay.push(event);
+      else days.set(event.date, [event]);
+    }
+    return days;
+  }, [snapshot, disclosureFunds, basis]);
   const showFlow = view !== 'inventory';
   const showInventory = view !== 'flow';
   const inventory = snapshot?.inventory;
@@ -273,6 +389,10 @@ export default function EtfFlowIndicator() {
           <button type="button" aria-pressed={view === 'flow'} onClick={() => setView('flow')}>20 日动向</button>
           <button type="button" aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}>累计变化</button>
         </div>
+        {disclosureFunds.length > 0 && <div id="etf-holdings" className="etf-funds-groups" role="group" aria-label="披露箭头时间">
+          <button type="button" aria-pressed={basis === 'published'} onClick={() => setBasis('published')}>披露后</button>
+          <button type="button" aria-pressed={basis === 'period-end'} onClick={() => setBasis('period-end')}>报告期末</button>
+        </div>}
         {snapshot?.history.length ? <span className="etf-funds-status">
           {snapshot.history[0].date} 至 {snapshot.history.at(-1)?.date}
         </span> : null}
@@ -296,13 +416,17 @@ export default function EtfFlowIndicator() {
           </div>
         </dl>
       )}
-      {snapshot?.history.length ? <FlowChart key={basket} snapshot={snapshot} view={view} /> : (
+      {snapshot?.history.length ? <FlowChart key={basket} snapshot={snapshot} view={view} basis={basis} disclosures={disclosures} /> : (
         <p className="etf-funds-empty" role="status">{error || (snapshot ? '暂无足够的历史份额数据' : '正在读取资金指标…')}</p>
       )}
       {error && snapshot?.history.length ? <p className="etf-funds-notice" role="status">更新失败，显示上次加载的数据。</p> : null}
+      {disclosureError && !funds && <p className="etf-funds-notice" role="status">公开持仓披露档案暂不可用。</p>}
       <p className="etf-funds-note">
         {showInventory && '累计变化从样本起点逐日累加。'}
-        每个交易日早间更新上一交易日数据，竖虚线为已核对的公告或披露日期。
+        每个交易日早间更新上一交易日数据，固定竖虚线标记公告日或年报持仓统计期末。
+        {disclosureFunds.length > 0 && (basis === 'published'
+          ? '箭头对齐披露后的首个交易日。'
+          : '箭头对齐报告期末或此前最近交易日，持仓数据当时尚未公开。')}
       </p>
       <details className="etf-funds-details">
         <summary>计算口径与官方公告</summary>
@@ -316,6 +440,10 @@ export default function EtfFlowIndicator() {
           指标覆盖样本内全部参与者，机构身份依赖具名披露。大单和超大单反映场内成交，可用作独立佐证。
           {snapshot && ` 样本代码 ${snapshot.funds.join('、')}。`}
         </p>
+        {disclosureFunds.length > 0 && <p className="etf-funds-note">
+          披露箭头覆盖 {disclosureFunds.map(fund => fund.name).join('、')}，按相邻报告中同一批具名账户的份额变化标记。
+          近一年区间位置按过去 252 个交易日的收盘价高低区间计算。
+        </p>}
         {showInventory && inventory && (
           <p className="etf-funds-note">
             年报具名持仓按报告期末份额乘单位净值估算，当前样本规模按当日场内总份额乘单位净值估算。
@@ -330,6 +458,14 @@ export default function EtfFlowIndicator() {
           <li key={event.url}><time dateTime={event.date}>{event.date}</time><span>{event.entity}</span>
             <a href={event.url} target="_blank" rel="noreferrer">{event.title} <ExternalLink size={11} aria-hidden="true" /></a></li>
         ))}</ul>
+        {disclosures.size > 0 && <ul className="etf-funds-events" aria-label="增减持披露原文">
+          {[...disclosures.values()].reverse().flat().map(({ date, fund, period, change }) => (
+            <li key={`${fund.code}-${period.report_date}`}><time dateTime={date}>{date}</time>
+              <span className={tone(change)}>{fund.name} · {shares(change)}</span>
+              {period.source_url && <a href={period.source_url} target="_blank" rel="noreferrer">报告原文 <ExternalLink size={11} aria-hidden="true" /></a>}
+            </li>
+          ))}
+        </ul>}
       </details>
     </section>
   );
