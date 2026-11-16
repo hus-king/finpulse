@@ -55,8 +55,8 @@ async function loadIndexCloses(key: string, signal: AbortSignal): Promise<Close[
   return candles.filter(point => Number.isFinite(point.close) && point.close > 0).map(({ date, close }) => ({ date, close }));
 }
 
-function HoldingsChart({ index, events, fund, basis }: {
-  index: Close[]; events: Event[]; fund: Fund; basis: DateBasis;
+function HoldingsChart({ index, events, fund, group, basis }: {
+  index: Close[]; events: Event[]; fund: Fund; group: (typeof groups)[number]['id']; basis: DateBasis;
 }) {
   const canvas = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -97,10 +97,9 @@ function HoldingsChart({ index, events, fund, basis }: {
     const line = indexSeries.current;
     if (!instance || !line) return;
     const scale = instance.timeScale();
-    const range = scale.getVisibleLogicalRange();
+    const hasData = line.data().length > 0;
     line.setData([...indexByTime].map(([time, point]) => ({ time: time as UTCTimestamp, value: point.close })));
-    if (range) scale.setVisibleLogicalRange(range);
-    else scale.fitContent();
+    if (!hasData) scale.fitContent();
   }, [indexByTime]);
 
   useEffect(() => {
@@ -129,12 +128,15 @@ function HoldingsChart({ index, events, fund, basis }: {
   }, [eventTimes, theme]);
 
   useEffect(() => {
+    setHoveredTime(null);
+    setSelectedTime(null);
+    chart.current?.clearCrosshairPosition();
+  }, [basis, group]);
+
+  useEffect(() => {
     const instance = chart.current;
     const line = indexSeries.current;
     if (!instance || !line) return;
-    setHoveredTime(null);
-    setSelectedTime(null);
-    instance.clearCrosshairPosition();
     const scale = instance.timeScale();
     const move = ({ point, time, hoveredInfo }: MouseEventParams) => {
       const marker = point && hoveredInfo?.objectKind === 'series-marker'
@@ -164,7 +166,12 @@ function HoldingsChart({ index, events, fund, basis }: {
     };
     instance.subscribeCrosshairMove(move);
     instance.subscribeClick(click);
-    return () => { instance.unsubscribeCrosshairMove(move); instance.unsubscribeClick(click); };
+    instance.subscribeDblClick(click);
+    return () => {
+      instance.unsubscribeCrosshairMove(move);
+      instance.unsubscribeClick(click);
+      instance.unsubscribeDblClick(click);
+    };
   }, [eventTimes]);
 
   useEffect(() => {
@@ -294,7 +301,7 @@ export default function EtfHoldingsComparison() {
             <button type="button" aria-pressed={basis === 'published'} onClick={() => setBasis('published')}>披露后</button>
             <button type="button" aria-pressed={basis === 'period-end'} onClick={() => setBasis('period-end')}>报告期末</button>
           </div>
-          <HoldingsChart key={fund.code} index={indexWindow} events={events} fund={fund} basis={basis} />
+          <HoldingsChart key={fund.code} index={indexWindow} events={events} fund={fund} group={group} basis={basis} />
           {events.length === 0 && <p className="etf-funds-note">当前筛选暂无可比的具名份额变动。</p>}
           <p className="etf-funds-note">
             {basis === 'published' ? '标记对齐披露后的首个交易日。' : '标记对齐报告期末或此前最近交易日，当时的持仓数据尚未公开。'}
