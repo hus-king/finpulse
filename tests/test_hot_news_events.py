@@ -205,16 +205,16 @@ class RefreshTaskTests(unittest.IsolatedAsyncioTestCase):
             await self.service.request_refresh(); await self.service.task
         self.assertEqual(fetch.await_count, 2 * len(SOURCES))
 
-    async def test_configured_refresh_groups_raw_context_before_screening_and_publishes_progress(self):
+    async def test_refresh_groups_raw_context_without_model_and_publishes_progress(self):
         stages = []
-        async def group(rows, *args):
+        def group(rows):
             self.assertTrue(all('screening' not in row for row in rows)); stages.append('grouping')
             self.assertEqual(self.service.refresh_status()['stage'], 'grouping')
-            return rows, None
+            return rows
         async def screen(rows, progress):
             self.assertEqual(stages, ['grouping']); stages.append('screening')
             return [{**row, 'screening': rule_screen(row)} for row in rows], []
-        with patch('backend.hot_news_board.read_config', return_value={'model': 'fixture', 'api_key': 'fixture'}), patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])), patch('backend.hot_news_board.cluster_events', new=AsyncMock(side_effect=group)), patch.object(self.service, 'screen', side_effect=screen):
+        with patch('backend.hot_news_board.read_config', return_value={}), patch('backend.hot_news_board.fetch_board', new=AsyncMock(return_value=[board_row()])), patch('backend.hot_news_board.cluster_events', side_effect=group), patch.object(self.service, 'screen', side_effect=screen):
             await self.service.request_refresh(); await self.service.task
         self.assertEqual(stages, ['grouping', 'screening'])
         self.assertEqual(self.service.refresh_status()['status'], 'completed')

@@ -19,7 +19,7 @@ from .prompts import parse_json
 from .providers import ProviderError, read_config
 from .tushare_news import NEWS_SOURCES, configured_sources, fetch_news
 from .hot_news_events import EVENT_PROMPT, NewsEvent, editorial_reason, rule_event, validate_event
-from .hot_news_attention import GROUPING_VERSION, attach_attention, cluster_events
+from .hot_news_attention import GROUPING_VERSION, attach_attention, cluster_events, normalized_title
 from .hot_platforms import PLATFORMS, fetch_platform
 from .hot_news_limits import PER_SOURCE_LIMIT, PUBLIC_NEWS_LIMIT
 from .hot_news_scoring import NewsRubric, RUBRIC_PROMPT, SCORING_VERSION, validate_rubric, attach_scores
@@ -66,11 +66,6 @@ def digest(value):
 
 def text_value(value, limit):
     return value.strip()[:limit] if isinstance(value, str) else ''
-
-
-def normalized_title(title):
-    value = unicodedata.normalize('NFKC', title).casefold()
-    return re.sub(r'[\W_]+', '', value)
 
 
 def parse_baidu(raw):
@@ -470,18 +465,15 @@ class HotNewsBoardService:
             await asyncio.to_thread(self.store.put, 'hot_news_board', CHECKPOINT_KEY,
                 {'topics': provisional, 'sources': snapshots, 'refreshed_at': now,
                  'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(),
-                 'screening': 'rules', 'warnings': ['已保存本轮采集结果，暂展示规则初筛；模型归组与筛选尚未完成。']})
-            config = read_config()
-            grouping_warning = None
-            if config.get('model') and config.get('api_key'):
-                await self._progress(token, 'grouping', 0, len(topics))
-                topics, grouping_warning = await cluster_events(topics, self.completion, self.store, [config.get('model'), config.get('base_url')])
+                 'screening': 'rules', 'warnings': ['已保存本轮采集结果，暂展示规则初筛；去重与筛选尚未完成。']})
+            await self._progress(token, 'grouping', 0, len(topics))
+            topics = cluster_events(topics)
             await self._progress(token, 'screening', 0, len(topics))
             async def progress(completed, total):
                 await self._progress(token, 'screening', completed, total)
             screened, warnings = await self.screen(topics, progress)
-            if grouping_warning: warnings.append(grouping_warning)
-            screened = attach_attention(screened, record.get('topics', []), now)
+            previous = record.get('topics', []) if record.get('grouping_version') == GROUPING_VERSION else []
+            screened = attach_attention(screened, previous, now)
             for topic in screened:
                 for entry in topic['sources']:
                     entry['observed_timestamp'] = usable[entry['id']]['fetched_at']
@@ -489,7 +481,7 @@ class HotNewsBoardService:
                     for entry in member['sources']: entry['observed_timestamp'] = usable[entry['id']]['fetched_at']
             screened = attach_scores(screened, now)
             methods = {topic['screening']['method'] for topic in screened}
-            saved = {'version': VERSION, 'collection_version': COLLECTION_VERSION, 'scoring_version': SCORING_VERSION, 'grouping_version': GROUPING_VERSION, 'grouping_ok': not bool(grouping_warning), 'topics': screened, 'sources': snapshots, 'refreshed_at': now,
+            saved = {'version': VERSION, 'collection_version': COLLECTION_VERSION, 'scoring_version': SCORING_VERSION, 'grouping_version': GROUPING_VERSION, 'grouping_ok': True, 'topics': screened, 'sources': snapshots, 'refreshed_at': now,
                      'collected_at': datetime.fromtimestamp(now, SHANGHAI).isoformat(),
                      'screening': next(iter(methods)) if len(methods) == 1 else 'mixed' if methods else 'rules', 'warnings': warnings}
             await asyncio.to_thread(self.store.put, 'hot_news_board', FEED_KEY, saved)
@@ -517,7 +509,7 @@ class HotNewsBoardService:
         return {key: record.get(key) for key in ('status', 'stage', 'message', 'completed', 'total', 'updated_at')} if record else {'status': 'idle'}
 
     async def _progress(self, token, stage, completed, total, status='running'):
-        messages = {'collecting': '正在采集平台热点', 'grouping': '正在归组同一事件的热搜与后续报道', 'screening': '正在筛选具体的重要新事件', 'ready': '热点新闻已更新', 'failed': '更新未完成，请稍后重试', 'interrupted': '服务重启，更新已中断，可重试'}
+        messages = {'collecting': '正在采集平台热点', 'grouping': '正在按文本相似度合并报道', 'screening': '正在筛选具体的重要新事件', 'ready': '热点新闻已更新', 'failed': '更新未完成，请稍后重试', 'interrupted': '服务重启，更新已中断，可重试'}
         await asyncio.to_thread(self.store.put, 'hot_news_board', REFRESH_KEY,
             {'token': token, 'status': status, 'stage': stage, 'message': messages[stage],
              'completed': completed, 'total': total, 'updated_at': self.clock()})

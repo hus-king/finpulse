@@ -1,9 +1,6 @@
 from copy import deepcopy
-import json
 import unittest
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
-from backend.hot_news_attention import attach_attention, cluster_events, group_reports, validate_groups, retain_valid_groups
+from backend.hot_news_attention import attach_attention, cluster_events, group_reports
 from tests.test_hot_news_board import topic, model_row
 
 
@@ -15,11 +12,10 @@ class AttentionTests(unittest.TestCase):
             item = topic(title, '隔离测试资料：姆巴佩相关言论引发品牌合作方回应和解约。')
             item['sources'] = [{'id': 'baidu', 'rank': 1 + index, 'url': 'https://example.test/topic', 'stale': False}]
             item['screening'] = model_row(item); self.topics.append(item)
-        self.groups = [{'label': '姆巴佩言论争议与品牌解约', 'anchor': '姆巴佩', 'topic_ids': [row['id'] for row in self.topics]}]
+        self.groups = [{'topic_ids': [row['id'] for row in self.topics]}]
 
     def test_multiple_trend_titles_form_one_event_with_all_news_material(self):
-        groups = validate_groups(json.dumps({'groups': self.groups}), self.topics)
-        result = attach_attention(group_reports(self.topics, groups), [], 1000)[0]
+        result = attach_attention(group_reports(self.topics, self.groups), [], 1000)[0]
         self.assertEqual(result['attention']['mentions'], 3)
         self.assertEqual(result['attention']['platforms'], 1)
         self.assertTrue(result['attention']['priority'])
@@ -57,79 +53,32 @@ class AttentionTests(unittest.TestCase):
         for item in rows: item['sources'][0]['stale'] = True
         self.assertEqual(attach_attention(group_reports(rows, self.groups), [], 1000)[0]['attention']['snapshots'], 0)
 
-    def test_missing_repeated_unknown_ids_and_unshared_anchor_are_rejected(self):
-        for change in ({'topic_ids': [self.topics[0]['id']]}, {'topic_ids': [row['id'] for row in self.topics] + ['unknown']},
-                       {'anchor': '公司'}, {'anchor': '另一事件'}):
-            with self.subTest(change=change), self.assertRaises(ValueError):
-                validate_groups(json.dumps({'groups': [{**self.groups[0], **change}]}), self.topics)
-
-    def test_unmentioned_and_empty_groups_retain_every_singleton(self):
-        group = {**self.groups[0], 'topic_ids': [row['id'] for row in self.topics[:2]]}
-        result = validate_groups(json.dumps({'groups': [group]}), self.topics)
+    def test_similarity_groups_reports_without_truncating_screening_evidence(self):
+        rows = [
+            topic('南卫股份实控人因涉嫌内幕交易被刑事拘留', '共同报道材料' * 40 + '后续裁定细节甲'),
+            topic('南卫股份实控人李平因涉嫌内幕交易被刑事拘留', '共同报道材料' * 40 + '后续裁定细节乙'),
+            topic('全美机场航班延误', ''),
+        ]
+        result = cluster_events(rows)
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[1]['topic_ids'], [self.topics[2]['id']])
-        self.assertEqual(len(validate_groups('{"groups":[]}', self.topics)), 3)
+        self.assertEqual([member['id'] for member in result[0]['members']], [row['id'] for row in rows[:2]])
+        self.assertEqual(result[1]['id'], rows[-1]['id'])
+        self.assertIn('后续裁定细节甲', result[0]['summary'])
+        self.assertIn('后续裁定细节乙', result[0]['summary'])
 
+    def test_shared_text_after_prefix_does_not_create_a_match(self):
+        shared = '后续详细报道涉及同一个具体项目' * 10
+        rows = [topic('苹果发布新品', '甲乙丙丁戊' * 40 + shared),
+                topic('央行宣布降准', '己庚辛壬癸' * 40 + shared)]
+        self.assertEqual(len(cluster_events(rows)), 2)
 
-class GroupProtocolTests(unittest.IsolatedAsyncioTestCase):
-    async def test_invalid_proposal_does_not_discard_other_valid_groups(self):
-        fixture = AttentionTests(); fixture.setUp()
-        rows = fixture.topics + [topic('某机构宣布新的独立事件')]
-        groups, rejected = retain_valid_groups(json.dumps({'groups': [
-            {'label': '有效测试组', 'anchor': '姆巴佩', 'topic_ids': [rows[0]['id'], rows[1]['id']]},
-            {'label': '无效测试组', 'anchor': '不存在主体', 'topic_ids': [rows[2]['id'], rows[3]['id']]}
-        ]}), rows)
-        self.assertEqual(len(rejected), 1)
-        self.assertEqual(sum(len(group['topic_ids']) for group in groups), 4)
-        self.assertEqual(sum(len(group['topic_ids']) > 1 for group in groups), 1)
+    def test_bridge_cannot_join_two_dissimilar_reports(self):
+        rows = [topic('甲乙丙丁戊己庚', ''), topic('甲乙丙丁戊己庚辛壬癸子丑寅', ''),
+                topic('庚辛壬癸子丑寅', '')]
+        result = cluster_events(rows)
+        self.assertEqual([len(group['members']) for group in result], [2, 1])
 
-    async def test_cached_checked_subset_keeps_warning_without_new_model_calls(self):
-        fixture = AttentionTests(); fixture.setUp()
-        rows = fixture.topics
-        for row in rows: row.pop('screening')
-        cached = {'groups': [], 'split_unverified': True}
-        model = AsyncMock()
-        result, warning = await cluster_events(rows, model, SimpleNamespace(get=Mock(return_value=cached)), ['fixture'])
-        self.assertTrue(warning)
-        self.assertEqual(len(result), len(rows))
-        model.assert_not_awaited()
-
-    async def test_invalid_shared_anchor_gets_one_repair(self):
-        fixture = AttentionTests(); fixture.setUp()
-        rows = fixture.topics
-        for row in rows: row.pop('screening')
-        invalid = {'groups': [{'label': '测试事件', 'anchor': '不存在主体', 'topic_ids': ['t0', 't1']}]}
-        valid = {'groups': [{'label': '测试事件', 'anchor': '姆巴佩', 'topic_ids': ['t0', 't1']}]}
-        model = AsyncMock(side_effect=[{'content': json.dumps(invalid)}, {'content': json.dumps(valid)}])
-        store = SimpleNamespace(get=Mock(return_value=None), put=Mock())
-        result, warning = await cluster_events(rows, model, store, ['fixture'])
-        self.assertIsNone(warning)
-        self.assertEqual(model.await_count, 2)
-        self.assertEqual(sum(len(row['members']) for row in result), 3)
-
-    async def test_two_invalid_outputs_preserve_all_original_topics(self):
-        fixture = AttentionTests(); fixture.setUp()
-        rows = fixture.topics
-        for row in rows: row.pop('screening')
-        model = AsyncMock(return_value={'content': '{invalid'})
-        store = SimpleNamespace(get=Mock(return_value=None), put=Mock())
-        result, warning = await cluster_events(rows, model, store, ['fixture'])
-        self.assertEqual(result, rows)
-        self.assertTrue(warning)
-        self.assertEqual(model.await_count, 2)
-
-    async def test_compact_ids_are_resolved_and_reasoning_has_a_bounded_budget(self):
-        fixture = AttentionTests(); fixture.setUp()
-        rows = fixture.topics
-        for row in rows: row.pop('screening')
-        async def complete(messages, **kwargs):
-            self.assertEqual(kwargs['max_tokens'], 8000)
-            sent = json.loads(messages[1]['content'])['topics']
-            self.assertEqual(sent[0]['id'], 't0')
-            self.assertTrue(all(len(row['summary']) <= 120 for row in sent))
-            return {'content': json.dumps({'groups': [{'label': '姆巴佩争议', 'anchor': '姆巴佩', 'topic_ids': ['t0', 't1']} ]})}
-        store = SimpleNamespace(get=Mock(return_value=None), put=Mock())
-        result, warning = await cluster_events(rows, AsyncMock(side_effect=complete), store, ['fixture'])
-        self.assertIsNone(warning)
-        ids = [member['id'] for row in result for member in row['members']]
-        self.assertEqual(set(ids), {row['id'] for row in rows})
+    def test_similar_catalogue_reports_about_distinct_drugs_remain_separate(self):
+        rows = [topic('长春高新：控股子公司药品新纳入国家医保目录', ''),
+                topic('润都股份：创新药盐酸去甲乌药碱注射液纳入国家医保目录', '')]
+        self.assertEqual(len(cluster_events(rows)), 2)
