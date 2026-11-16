@@ -1,32 +1,19 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { BarChart3, ExternalLink } from 'lucide-react';
-import * as echarts from 'echarts/core';
-import { LineChart } from 'echarts/charts';
-import { DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
+import { ColorType, CrosshairMode, LineSeries, LineStyle, createChart, createSeriesMarkers } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, ISeriesMarkersPluginApi, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
 import { api } from './api';
+import TradingChartToolbar from './TradingChartToolbar';
 import useEtfSnapshot from './useEtfSnapshot';
-import { number } from './format';
+import { number, tone } from './format';
 import { useTheme } from './ThemeContext';
+import { disclosureEvents, holdingPeriods } from './etfHoldingsMath';
+import type { Close, DateBasis, Fund, Period } from './etfHoldingsMath';
+import { chartTimestamp } from './tradingChartData';
 import './etf-funds.css';
+import './technical-chart.css';
 
-echarts.use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
-
-type HolderGroup = 'huijin' | 'social-security' | 'csf';
-type Holder = { name: string; shares: number; group: HolderGroup };
-type Report = {
-  report_date: string;
-  publication_date: string | null;
-  source_url: string | null;
-  total_shares?: number;
-  status: 'disclosed' | 'anonymous' | 'missing';
-  holders: Holder[];
-};
-type ShareConversion = { date: string; ratio: string; source_url: string };
-type Fund = { code: string; name: string; reports: Report[]; conversions?: ShareConversion[] };
-type Close = { date: string; close: number };
-type Period = Report & { matches: Holder[]; shares: number | null; ownershipPercent: number | null };
-type AxisPoint = { axisValue: number };
+type Event = ReturnType<typeof disclosureEvents>[number];
 
 const groups = [
   { id: 'all', label: '已披露合计' },
@@ -35,6 +22,8 @@ const groups = [
   { id: 'csf', label: '证金' },
 ] as const;
 const units = (shares: number) => number(shares / 1e8);
+const changeLabel = (shares: number) => `${shares > 0 ? '+' : ''}${units(shares)} 亿份`;
+const positionLabel = (position: number) => position <= 20 ? '低位' : position >= 80 ? '高位' : '中间';
 const SOURCE_RULE_URL = 'https://www.amac.org.cn/xwfb/xhyw/202603/t20260313_27472.html';
 
 function reportStatus(period: Period): string {
@@ -66,129 +55,220 @@ async function loadIndexCloses(key: string, signal: AbortSignal): Promise<Close[
   return candles.filter(point => Number.isFinite(point.close) && point.close > 0).map(({ date, close }) => ({ date, close }));
 }
 
-function HoldingsChart({ index, periods, fund, first }: {
-  index: Close[]; periods: Period[]; fund: Fund; first: string;
+function HoldingsChart({ index, events, fund, basis }: {
+  index: Close[]; events: Event[]; fund: Fund; basis: DateBasis;
 }) {
-  const root = useRef<HTMLDivElement>(null);
-  const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
+  const canvas = useRef<HTMLDivElement>(null);
+  const chart = useRef<IChartApi | null>(null);
+  const indexSeries = useRef<ISeriesApi<'Line'> | null>(null);
+  const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const fullScreenButton = useRef<HTMLButtonElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+  const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const { theme } = useTheme();
+  const indexByTime = useMemo(() => new Map(index.map(point => [chartTimestamp(point.date), point])), [index]);
+  const eventTimes = useMemo(() => events.map(event => ({ ...event, time: chartTimestamp(event.date) as UTCTimestamp }))
+    .sort((a, b) => a.time - b.time), [events]);
 
   useEffect(() => {
-    if (!root.current) return;
-    const instance = echarts.init(root.current);
+    if (!canvas.current) return;
+    const instance = createChart(canvas.current, {
+      autoSize: true,
+      layout: { attributionLogo: false, fontFamily: 'Inter, Segoe UI, Microsoft YaHei, sans-serif', fontSize: 11 },
+      crosshair: { mode: CrosshairMode.Normal },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+      kineticScroll: { mouse: true, touch: true },
+      timeScale: { minBarSpacing: .02, fixLeftEdge: true, fixRightEdge: true, lockVisibleTimeRangeOnResize: true },
+      localization: { locale: 'zh-CN', timeFormatter: (time: Time) => new Date(Number(time) * 1000).toISOString().slice(0, 10) },
+    });
+    const line = instance.addSeries(LineSeries, {
+      lineWidth: 2, priceLineVisible: false, priceFormat: { type: 'custom', minMove: .01, formatter: number },
+    });
     chart.current = instance;
-    const observer = new ResizeObserver(() => instance.resize());
-    observer.observe(root.current);
-    return () => { observer.disconnect(); instance.dispose(); chart.current = null; };
+    indexSeries.current = line;
+    markers.current = createSeriesMarkers(line, [], { zOrder: 'top' });
+    return () => { instance.remove(); chart.current = null; indexSeries.current = null; markers.current = null; };
   }, []);
 
   useEffect(() => {
-    const style = getComputedStyle(document.documentElement);
-    const color = (name: string) => style.getPropertyValue(name).trim();
-    const holdingColor = color('--theme-warning');
-    const indexColor = color('--chart-marker-neutral');
+    const instance = chart.current;
+    const line = indexSeries.current;
+    if (!instance || !line) return;
+    const scale = instance.timeScale();
+    const range = scale.getVisibleLogicalRange();
+    line.setData([...indexByTime].map(([time, point]) => ({ time: time as UTCTimestamp, value: point.close })));
+    if (range) scale.setVisibleLogicalRange(range);
+    else scale.fitContent();
+  }, [indexByTime]);
+
+  useEffect(() => {
+    const instance = chart.current;
+    const line = indexSeries.current;
+    if (!instance || !line) return;
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string) => styles.getPropertyValue(name).trim();
     const border = color('--chart-border');
-    const axisLabel = { fontSize: 10, hideOverlap: true };
-    const dates = new Map(index.map(point => [point.date, point.close]));
-    const reports = new Map(periods.map(period => [period.report_date, period]));
-    const last = index.at(-1)?.date ?? first;
-    const conversions = fund.conversions ?? [];
-    const holdingPoints = periods.map(({ report_date, ownershipPercent }) =>
-      [Date.parse(report_date), ownershipPercent]);
+    const grid = color('--chart-grid');
+    const crosshair = color('--chart-crosshair');
+    const guide = { color: crosshair, style: LineStyle.Dashed, labelBackgroundColor: crosshair };
+    instance.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: color('--theme-panel') }, textColor: color('--chart-text') },
+      grid: { vertLines: { color: grid, style: LineStyle.Dotted }, horzLines: { color: grid, style: LineStyle.Dotted } },
+      crosshair: { vertLine: guide, horzLine: guide },
+      rightPriceScale: { borderColor: border, minimumWidth: 62, scaleMargins: { top: .1, bottom: .1 } },
+      timeScale: { borderColor: border },
+    });
+    line.applyOptions({ color: color('--chart-marker-neutral') });
+    const up = color('--chart-up');
+    const down = color('--chart-down');
+    markers.current?.setMarkers(eventTimes.map(({ time, change }) => ({
+      time, id: String(time), position: 'inBar', shape: change > 0 ? 'arrowUp' : 'arrowDown', color: change > 0 ? up : down, size: 1.25,
+    })));
+  }, [eventTimes, theme]);
 
-    chart.current?.setOption({
-      useUTC: true,
-      animation: false,
-      grid: { left: 9, right: 9, top: 32, bottom: 52, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
-      tooltip: {
-        trigger: 'axis', renderMode: 'richText', confine: true, textStyle: { color: color('--chart-tooltip-text'), fontSize: 11 },
-        backgroundColor: color('--chart-tooltip-bg'), borderColor: border,
-        formatter: (items: unknown) => {
-          const timestamp = Number((items as AxisPoint[])[0]?.axisValue);
-          if (!Number.isFinite(timestamp)) return '';
-          const day = new Date(timestamp).toISOString().slice(0, 10);
-          const close = dates.get(day);
-          const report = reports.get(day);
-          const lines = [day];
-          if (close != null) lines.push(`上证指数 ${number(close)} 点`);
-          if (report) {
-            const { shares, ownershipPercent, publication_date: published } = report;
-            if (shares == null) {
-              lines.push(reportStatus(report));
-            } else {
-              if (ownershipPercent != null) lines.push(`持仓占比 ${number(ownershipPercent)}%`);
-              lines.push(`披露份额 ${shares.toLocaleString('zh-CN')} 份`);
-            }
-            if (published) lines.push(`公告 ${published}`);
-          }
-          return lines.join('\n');
-        },
-      },
-      xAxis: {
-        type: 'time', min: Date.parse(first), max: Date.parse(last), boundaryGap: false,
-        axisLine: { lineStyle: { color: border } }, axisTick: { show: false },
-        axisLabel: { ...axisLabel, color: color('--chart-text') },
-      },
-      yAxis: [
-        { type: 'value', min: 0, name: '持仓占比（%）', nameTextStyle: { color: holdingColor, fontSize: 11, align: 'left' },
-          axisLabel: { ...axisLabel, color: holdingColor }, splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
-        { type: 'value', scale: true, name: '上证指数（点）', nameTextStyle: { color: indexColor, fontSize: 11, align: 'right' },
-          axisLabel: { ...axisLabel, color: indexColor }, splitLine: { show: false } },
-      ],
-      dataZoom: [{
-        type: 'slider', xAxisIndex: 0, bottom: 4, height: 18, filterMode: 'none', showDetail: false,
-        showDataShadow: false, borderColor: border, backgroundColor: color('--theme-panel'),
-        fillerColor: color('--theme-accent-soft'), handleStyle: { color: indexColor },
-        brushSelect: false,
-      }],
-      series: [
-        {
-          name: '上证指数', type: 'line', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
-          lineStyle: { color: indexColor, width: 1.5 }, itemStyle: { color: indexColor },
-          data: index.map(point => [Date.parse(point.date), point.close]),
-        },
-        {
-          name: '持仓占比', type: 'line', yAxisIndex: 0, connectNulls: false, symbol: 'circle', symbolSize: 6,
-          lineStyle: { color: holdingColor, width: 2 }, itemStyle: { color: holdingColor },
-          data: holdingPoints,
-          markLine: {
-            symbol: 'none',
-            lineStyle: { color: holdingColor, type: 'dashed', opacity: .65 },
-            label: { position: 'insideEndTop', formatter: '{b}', fontSize: 10, color: holdingColor },
-            data: conversions.map(({ date, ratio }) => ({ xAxis: Date.parse(date), name: ratio })),
-          },
-          z: 3,
-        },
-      ],
-    }, { notMerge: true });
-  }, [first, fund, index, periods, theme]);
+  useEffect(() => {
+    const instance = chart.current;
+    const line = indexSeries.current;
+    if (!instance || !line) return;
+    setHoveredTime(null);
+    setSelectedTime(null);
+    instance.clearCrosshairPosition();
+    const scale = instance.timeScale();
+    const move = ({ point, time, hoveredInfo }: MouseEventParams) => {
+      const marker = point && hoveredInfo?.objectKind === 'series-marker'
+        ? eventTimes.find(event => String(event.time) === hoveredInfo.objectId)
+        : undefined;
+      if (marker) instance.setCrosshairPosition(marker.close, marker.time, line);
+      setHoveredTime(marker?.time ?? (point && typeof time === 'number' ? time : null));
+    };
+    const click = ({ point }: MouseEventParams) => {
+      if (!point) return;
+      // On narrow screens several trading days share one pixel. Test the
+      // visible marker instead of the trading day under the tap.
+      let bestDistance = 12;
+      let selected: (typeof eventTimes)[number] | null = null;
+      for (const event of eventTimes) {
+        const x = scale.timeToCoordinate(event.time);
+        const y = line.priceToCoordinate(event.close);
+        if (x == null || x < 0 || x > scale.width() || y == null) continue;
+        const distance = Math.hypot(point.x - x, point.y - y);
+        if (distance >= bestDistance) continue;
+        selected = event;
+        bestDistance = distance;
+      }
+      setSelectedTime(selected?.time ?? null);
+      setHoveredTime(null);
+      if (selected) instance.setCrosshairPosition(selected.close, selected.time, line);
+    };
+    instance.subscribeCrosshairMove(move);
+    instance.subscribeClick(click);
+    return () => { instance.unsubscribeCrosshairMove(move); instance.unsubscribeClick(click); };
+  }, [eventTimes]);
 
-  return <div className="etf-holdings-chart" ref={root} role="img" aria-label={`${fund.name}公开持仓占比与上证指数`} />;
+  useEffect(() => {
+    if (!expanded) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setExpanded(false); fullScreenButton.current?.focus(); }
+    };
+    document.addEventListener('keydown', escape);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', escape); };
+  }, [expanded]);
+
+  function zoom(factor: number) {
+    const scale = chart.current?.timeScale();
+    const range = scale?.getVisibleLogicalRange();
+    if (!scale || !range) return;
+    const center = (range.from + range.to) / 2;
+    const half = Math.max(2, (range.to - range.from) * factor / 2);
+    scale.setVisibleLogicalRange({ from: center - half, to: center + half });
+  }
+
+  function reset() {
+    chart.current?.timeScale().fitContent();
+    indexSeries.current?.priceScale().setAutoScale(true);
+    chart.current?.clearCrosshairPosition();
+    setHoveredTime(null);
+    setSelectedTime(null);
+  }
+
+  function latest() {
+    chart.current?.timeScale().scrollToRealTime();
+    chart.current?.clearCrosshairPosition();
+    setHoveredTime(null);
+    setSelectedTime(null);
+  }
+
+  const activeTime = hoveredTime ?? selectedTime;
+  const active = (activeTime != null ? indexByTime.get(activeTime) : undefined) ?? index.at(-1)!;
+  const activeEvents = eventTimes.filter(event => event.time === activeTime);
+  return <div className={`technical-chart etf-disclosure-chart${expanded ? ' is-expanded' : ''}`}>
+    <TradingChartToolbar title="持仓变动与上证指数" expanded={expanded} fullScreenButton={fullScreenButton}
+      onZoom={zoom} onReset={reset} onLatest={latest} onFullScreen={() => setExpanded(value => !value)} />
+    <div className="etf-flow-chart-readout etf-holdings-readout">
+      <ul className="etf-overlay-legend" aria-label="图例">
+        <li className="etf-overlay-index">上证指数 <b className="mono">{number(active.close)} 点</b></li>
+        <li className="etf-disclosure-marker is-increase">份额增加</li>
+        <li className="etf-disclosure-marker is-decrease">份额减少</li>
+      </ul>
+      <time dateTime={active.date}>{active.date}{activeTime == null && ' · 最新'}</time>
+    </div>
+    <div className="technical-chart-stage etf-holdings-chart">
+      <div ref={canvas} className="technical-chart-canvas" role="img"
+        aria-label={`${fund.name}具名份额变化与上证指数 · ${basis === 'published' ? '披露后' : '报告期末'}`} />
+      {activeEvents.length > 0 && <div className="etf-disclosure-chart-events">
+        {activeEvents.map(({ period, change, position }) => <div key={period.report_date}>
+          <strong className={tone(change)}>披露份额变化 {changeLabel(change)}</strong>
+          {position != null && <span>近一年区间位置 {position.toFixed(1)}% · {positionLabel(position)}</span>}
+          <span>报告期末 {period.report_date}{period.publication_date && ` · 披露日 ${period.publication_date}`}</span>
+        </div>)}
+      </div>}
+    </div>
+    <div className="chart-interaction-hint">
+      <span>滚轮缩放 · 拖动平移 · 悬停或点按标记查看详情</span>
+      <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer" title="TradingView Lightweight Charts™">TradingView</a>
+    </div>
+  </div>;
+}
+
+function PositionSummary({ events }: { events: Event[] }) {
+  const measured = events.flatMap(event => event.position == null ? [] : [{ change: event.change, position: event.position }]);
+  const increases = measured.filter(event => event.change > 0);
+  const decreases = measured.filter(event => event.change < 0);
+  const count = (subset: typeof measured, position: string) => subset.filter(event => positionLabel(event.position) === position).length;
+  const latest = events.at(-1);
+  return <dl className="etf-disclosure-summary" aria-label="历史指数位置分布">
+    <div><dt>份额增加时在低位</dt><dd className="mono up">{increases.length ? `${count(increases, '低位')} / ${increases.length}` : '—'}</dd>
+      {increases.length > 0 && <small>中间 {count(increases, '中间')} 次 · 高位 {count(increases, '高位')} 次</small>}</div>
+    <div><dt>份额减少时在高位</dt><dd className="mono down">{decreases.length ? `${count(decreases, '高位')} / ${decreases.length}` : '—'}</dd>
+      {decreases.length > 0 && <small>低位 {count(decreases, '低位')} 次 · 中间 {count(decreases, '中间')} 次</small>}</div>
+    <div><dt>最近一次可比变动</dt><dd className={`mono ${latest ? tone(latest.change) : ''}`}>{latest ? changeLabel(latest.change) : '—'}</dd>
+      {latest && <small>{latest.date}{latest.position != null && ` · 区间 ${latest.position.toFixed(1)}%`}</small>}</div>
+  </dl>;
 }
 
 export default function EtfHoldingsComparison() {
   const title = useId();
   const { data: archive, loading, error } = useEtfSnapshot('holdings-archive', loadHoldingsArchive);
   const { data: daily } = useEtfSnapshot('/api/market/sh000001/daily', loadIndexCloses);
-  const [fundCode, setFundCode] = useState('');
+  const [fundCode, setFundCode] = useState('510300');
   const [group, setGroup] = useState<(typeof groups)[number]['id']>('all');
+  const [basis, setBasis] = useState<DateBasis>('published');
   const funds = archive?.funds ?? [];
   const fund = funds.find(item => item.code === fundCode) ?? funds[0];
   const first = fund?.reports.find(report => report.holders.length)?.report_date;
-  const periods = useMemo<Period[]>(() => (fund?.reports ?? []).map(report => {
-    const matches = group === 'all' ? report.holders : report.holders.filter(holder => holder.group === group);
-    const shares = matches.length ? matches.reduce((sum, holder) => sum + holder.shares, 0) : null;
-    const ownershipPercent = shares != null && report.total_shares && report.total_shares > 0
-      ? 100 * (shares / report.total_shares)
-      : null;
-    return { ...report, matches, shares, ownershipPercent };
-  }), [fund, group]);
-  const indexWindow = useMemo(() => {
-    if (!archive || !first) return [];
+  const periods = useMemo(() => fund ? holdingPeriods(fund, group) : [], [fund, group]);
+  const indexHistory = useMemo(() => {
+    if (!archive) return [];
     const last = archive.index.at(-1)!.date;
-    return [...archive.index.filter(point => point.date >= first), ...(daily ?? []).filter(point => point.date > last)];
-  }, [first, archive, daily]);
-  const lastReport = periods.filter(period => period.shares != null).at(-1)?.report_date;
+    return [...archive.index, ...(daily ?? []).filter(point => point.date > last)];
+  }, [archive, daily]);
+  const indexWindow = useMemo(() => indexHistory.filter(point => first && point.date >= first), [first, indexHistory]);
+  const events = useMemo(() => disclosureEvents(periods, indexHistory, basis), [periods, indexHistory, basis]);
+  const latestReport = periods.at(-1);
 
   return (
     <section id="etf-holdings" className="panel etf-funds-card etf-holdings-card" aria-labelledby={title} aria-busy={loading}>
@@ -209,12 +289,20 @@ export default function EtfHoldingsComparison() {
                 onClick={() => setGroup(item.id)}>{item.label}</button>)}
             </div>
           </div>
-          <HoldingsChart index={indexWindow} periods={periods} fund={fund} first={first} />
+          <PositionSummary events={events} />
+          <div className="etf-funds-groups" role="group" aria-label="对齐时间">
+            <button type="button" aria-pressed={basis === 'published'} onClick={() => setBasis('published')}>披露后</button>
+            <button type="button" aria-pressed={basis === 'period-end'} onClick={() => setBasis('period-end')}>报告期末</button>
+          </div>
+          <HoldingsChart key={fund.code} index={indexWindow} events={events} fund={fund} basis={basis} />
+          {events.length === 0 && <p className="etf-funds-note">当前筛选暂无可比的具名份额变动。</p>}
           <p className="etf-funds-note">
-            圆点为报告期末的持仓占比，蓝线为上证指数日收盘。
-            {lastReport ? `最近具名持仓 ${lastReport}。` : '当前机构暂无具名持仓记录。'}
-            拖动滑块缩放。
+            {basis === 'published' ? '标记对齐披露后的首个交易日。' : '标记对齐报告期末或此前最近交易日，当时的持仓数据尚未公开。'}
+            指数位置按近 252 个交易日收盘的最低至最高区间计算，≤20% 为低位，≥80% 为高位。
           </p>
+          {latestReport && latestReport.shares == null && <p className="etf-funds-note">
+            最新报告期末 {latestReport.report_date} · {reportStatus(latestReport)}。
+          </p>}
           {!!fund.conversions?.length && (
             <div className="etf-holdings-conversions etf-funds-note">
               <span>份额折算</span>
@@ -229,7 +317,7 @@ export default function EtfHoldingsComparison() {
               <table>
                 <thead><tr>
                   <th scope="col">报告期末</th><th scope="col">披露日</th>
-                  <th scope="col">占比 / 份额</th><th scope="col">持有人及来源</th>
+                  <th scope="col">占比 / 份额</th><th scope="col">份额变化</th><th scope="col">持有人及来源</th>
                 </tr></thead>
                 <tbody>{periods.slice().reverse().map(period => (
                   <tr key={period.report_date}>
@@ -237,6 +325,10 @@ export default function EtfHoldingsComparison() {
                     <td title={period.shares == null ? undefined : `${period.shares.toLocaleString('zh-CN')} 份`}>
                       {period.ownershipPercent == null ? '—' : `${number(period.ownershipPercent)}%`}
                       {period.shares != null && <small>{units(period.shares)} 亿份</small>}
+                    </td>
+                    <td>
+                      {period.change == null ? '—' : <span className={period.change ? tone(period.change) : undefined}>{changeLabel(period.change)}</span>}
+                      {period.changeNote && <small>{period.changeNote}</small>}
                     </td>
                     <td>
                       {period.matches.length
@@ -252,7 +344,7 @@ export default function EtfHoldingsComparison() {
             </div>
           </details>
           <p className="etf-funds-note">
-            持仓占比为具名披露份额除以同一期基金总份额。占比也会随基金总份额变化，缺少披露的期次留空。
+            份额变化只比较相邻报告中名单相同的具名账户，拆合份额按同一口径折算。持仓占比也会随基金总份额变化。
             <a href={SOURCE_RULE_URL} target="_blank" rel="noreferrer">2026 年新版披露模板</a>
           </p>
         </>
