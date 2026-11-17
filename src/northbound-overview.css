@@ -1,0 +1,17 @@
+.northbound-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+.northbound-overview .northbound-readout { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.northbound-smooth { background: var(--theme-warning); }
+.northbound-index { background: var(--chart-marker-neutral); }
+.northbound-chart { width: 100%; height: clamp(255px, 27vw, 365px); }
+.northbound-overview .stock-bond-source-links { margin-bottom: 0; }
+
+@media (max-width: 640px) {
+  .northbound-overview .northbound-readout > div { padding: 8px 6px; border-top: 0; }
+  .northbound-overview .northbound-readout > div + div { border-inline-start: 1px solid var(--theme-border); }
+}

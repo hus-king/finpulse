@@ -26,6 +26,7 @@ const defaults = ['600519', '300750', '688981'];
 const EtfFundsCard = lazy(() => import('./EtfFundsCard'));
 const EtfFlowIndicator = lazy(() => import('./EtfFlowIndicator'));
 const StockBondOverview = lazy(() => import('./StockBondOverview'));
+const NorthboundOverview = lazy(() => import('./NorthboundOverview'));
 const navigation = [
   { id: 'dashboard', label: '行情与新闻', english: 'MARKET INTELLIGENCE' },
   { id: 'etf-funds', label: 'ETF 资金', english: 'ETF FLOWS' },
@@ -482,6 +483,9 @@ export default function App() {
       {view === 'dashboard' && <MarketSentimentCard />}
       {view === 'dashboard' && (
         <Suspense fallback={<p role="status">正在打开股债联动…</p>}><StockBondOverview /></Suspense>
+      )}
+      {view === 'dashboard' && (
+        <Suspense fallback={<p role="status">正在打开北向资金…</p>}><NorthboundOverview /></Suspense>
       )}
       {view === 'etf-funds' && (
         <Suspense fallback={<p role="status">正在打开 ETF 资金动向…</p>}><EtfFlowIndicator /></Suspense>

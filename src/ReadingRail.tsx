@@ -5,6 +5,7 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
   dashboard: [
     { selector: '.finance-heading', title: '市场概览' },
     { selector: '#stock-bond-overview', title: '股债联动' },
+    { selector: '#northbound-overview', title: '北向资金' },
     { selector: '.live-quote', title: '行情走势' },
     { selector: '.live-news', title: '新闻研判' },
     { selector: '.returns-panel', title: '消息复盘' },
