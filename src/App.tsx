@@ -29,7 +29,7 @@ const StockBondOverview = lazy(() => import('./StockBondOverview'));
 const NorthboundOverview = lazy(() => import('./NorthboundOverview'));
 const navigation = [
   { id: 'dashboard', label: '行情与新闻', english: 'MARKET INTELLIGENCE' },
-  { id: 'etf-funds', label: 'ETF 资金', english: 'ETF FLOWS' },
+  { id: 'etf-funds', label: '资金与宏观', english: 'FUND FLOWS & MACRO' },
   { id: 'hot-news', label: '热点榜单', english: 'GLOBAL SIGNALS' },
   { id: 'screener', label: 'PEG榜单', english: 'EQUITY SCREENER' },
   { id: 'convertible-bonds', label: '可转债研究', english: 'CONVERTIBLE BONDS' },
@@ -470,7 +470,7 @@ export default function App() {
     <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /><small className="brand-caption">财经研究</small></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票、指数名称或代码</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
     <FinanceNav view={view} isAdmin={user?.role === 'admin'} onSelect={setView} />
     <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>主要指数 · 行情快照</span></div>{headlineIndices.flatMap(code => catalog.find(stock => stock.code === code) ?? []).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span><strong key={cached?.stock.price ?? stock.price} className="mono quote-update">{number(cached?.stock.price ?? stock.price)}</strong><span className={tone(cached?.stock.change ?? stock.change)}>{percent(cached?.stock.change ?? stock.change)}</span></button>; })}</div></div>
-    <main className="finance-main" id="workspace-content" tabIndex={-1}><div className="finance-heading"><div><p className="eyebrow"><span className="heading-mark" />{currentPage.english}</p><h1>{view === 'etf-funds' ? '宽基 ETF 资金监控' : view === 'hot-news' ? '看见热点，识别市场影响。' : view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'convertible-bonds' ? '可转债单券轮动' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'etf-funds' ? '跟踪宽基 ETF 的整体资金动向和具名机构的公开持仓。' : view === 'hot-news' ? '汇集全领域平台热榜，筛选可能影响股市与产业的事件。' : view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'convertible-bonds' ? '同类券相对低估 · 正股驱动 · 周度决策' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><div className="workspace-meta" aria-hidden="true"><span>{String(navigation.indexOf(currentPage) + 1).padStart(2, '0')}</span><div><strong>{currentPage.label}</strong><small>FINPULSE / RESEARCH</small></div></div></div>
+    <main className="finance-main" id="workspace-content" tabIndex={-1}><div className="finance-heading"><div><p className="eyebrow"><span className="heading-mark" />{currentPage.english}</p><h1>{view === 'etf-funds' ? currentPage.label : view === 'hot-news' ? '看见热点，识别市场影响。' : view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'convertible-bonds' ? '可转债单券轮动' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'etf-funds' ? '跟踪宽基 ETF 申赎与机构持仓，观察股债联动和北向资金。' : view === 'hot-news' ? '汇集全领域平台热榜，筛选可能影响股市与产业的事件。' : view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'convertible-bonds' ? '同类券相对低估 · 正股驱动 · 周度决策' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><div className="workspace-meta" aria-hidden="true"><span>{String(navigation.indexOf(currentPage) + 1).padStart(2, '0')}</span><div><strong>{currentPage.label}</strong><small>FINPULSE / RESEARCH</small></div></div></div>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
       <WorkspaceView key={view}>
       {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
@@ -481,18 +481,12 @@ export default function App() {
       {view === 'paper' && <PaperTradingPanel key={user?.id ?? 'guest'} initialCode={code} onOpenStock={target => { setCode(target); setView('dashboard'); }} />}
       {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯日线 / 新浪分钟行情</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
       {view === 'dashboard' && <MarketSentimentCard />}
-      {view === 'dashboard' && (
-        <Suspense fallback={<p role="status">正在打开股债联动…</p>}><StockBondOverview /></Suspense>
-      )}
-      {view === 'dashboard' && (
-        <Suspense fallback={<p role="status">正在打开北向资金…</p>}><NorthboundOverview /></Suspense>
-      )}
-      {view === 'etf-funds' && (
+      {view === 'etf-funds' && <>
         <Suspense fallback={<p role="status">正在打开 ETF 资金动向…</p>}><EtfFlowIndicator /></Suspense>
-      )}
-      {(view === 'dashboard' || view === 'etf-funds') && (
         <Suspense fallback={<p role="status">正在打开 ETF 资金监控…</p>}><EtfFundsCard /></Suspense>
-      )}
+        <Suspense fallback={<p role="status">正在打开股债联动…</p>}><StockBondOverview /></Suspense>
+        <Suspense fallback={<p role="status">正在打开北向资金…</p>}><NorthboundOverview /></Suspense>
+      </>}
       {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} jobs={jobs} batchAnalyze={batchAnalyzeWatchlist} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
       </WorkspaceView>
       <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>分钟行情按需更新 · AI 研判需要结合原文核验</span></footer>

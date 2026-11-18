@@ -4,16 +4,16 @@ import type { Chapter } from './readingRailGeometry';
 const chaptersByView: Record<string, { selector: string; title: string }[]> = {
   dashboard: [
     { selector: '.finance-heading', title: '市场概览' },
-    { selector: '#stock-bond-overview', title: '股债联动' },
-    { selector: '#northbound-overview', title: '北向资金' },
     { selector: '.live-quote', title: '行情走势' },
     { selector: '.live-news', title: '新闻研判' },
     { selector: '.returns-panel', title: '消息复盘' },
   ],
   'etf-funds': [
-    { selector: '.finance-heading', title: 'ETF 资金' },
+    { selector: '.finance-heading', title: '资金与宏观' },
     { selector: '#etf-flow-indicator', title: '资金动向' },
     { selector: '.etf-funds-card:not(.etf-holdings-card)', title: '净申赎' },
+    { selector: '#stock-bond-overview', title: '股债联动' },
+    { selector: '#northbound-overview', title: '北向资金' },
   ],
   'hot-news': [
     { selector: '.finance-heading', title: '热点榜单' },
