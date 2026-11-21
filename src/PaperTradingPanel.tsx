@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import PaperStockSearch from './PaperStockSearch';
 import PaperAutomation from './PaperAutomation';
 import PaperPerformance from './PaperPerformance';
+import { clearPaperSnapshots, readPaperSnapshot, writePaperSnapshot } from './paperSnapshots';
 import { estimateFees, formatMoney, maxBuyQuantity, newRequestId } from './paperMath';
 import type { PaperAccount, PaperHistory, PaperIntent, PaperQuote, PaperTrade } from './paperTypes';
 import type { Stock } from './types';
@@ -33,9 +34,14 @@ function pendingIntent(owner?: string): PaperIntent | null {
 
 export default function PaperTradingPanel({ initialCode, onOpenStock }: { initialCode: string; onOpenStock: (code: string) => void }) {
   const { user, loading: authLoading, requestLogin, refreshSession } = useAuth();
+  const owner = user?.id ?? '';
   const [restored] = useState(() => pendingIntent(user?.id));
-  const [account, setAccount] = useState<PaperAccount | null>(null);
-  const [history, setHistory] = useState<PaperHistory | null>(null);
+  const [snapshot, setSnapshot] = useState(() => readPaperSnapshot<PaperAccount>(owner, 'account'));
+  const account = snapshot?.value;
+  const [accountConfirmed, setAccountConfirmed] = useState(false);
+  const [history, setHistory] = useState(() => readPaperSnapshot<PaperHistory>(owner, 'trades')?.value ?? null);
+  const [historyError, setHistoryError] = useState('');
+  const [performanceRevision, setPerformanceRevision] = useState(0);
   const [reading, setReading] = useState(true);
   const [moreLoading, setMoreLoading] = useState(false);
   const [readError, setReadError] = useState('');
@@ -70,28 +76,39 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
     if (!controller || controller.signal.aborted) return;
     window.clearTimeout(accountTimer.current);
     const version = ++accountVersion.current;
+    const current = () => !controller.signal.aborted && version === accountVersion.current;
     let nextPollSeconds = 30;
     setReading(true);
-    try {
-      const [next, trades] = await Promise.all([
-        api<PaperAccount>(`/api/paper/account${refresh ? '?refresh=true' : ''}`, undefined, controller.signal),
-        api<PaperHistory>('/api/paper/trades', undefined, controller.signal),
-      ]);
-      nextPollSeconds = next.valuation_refreshing ? 2 : 30;
-      if (!controller.signal.aborted && version === accountVersion.current) { setAccount(next); setHistory(trades); setReadError(''); }
-    } catch (error) { if (!controller.signal.aborted && version === accountVersion.current) setReadError((error as Error).message); }
-    finally {
-      if (!controller.signal.aborted && version === accountVersion.current) {
-        setReading(false);
-        const poll = () => {
-          if (controller.signal.aborted) return;
-          if (busy.current) { accountTimer.current = window.setTimeout(poll, 2000); return; }
-          void loadAccount();
-        };
-        accountTimer.current = window.setTimeout(poll, nextPollSeconds * 1000);
-      }
-    }
-  }, []);
+    const balances = api<PaperAccount>(`/api/paper/account${refresh ? '?refresh=true' : ''}`, undefined, controller.signal)
+      .then(next => {
+        if (!current()) return;
+        nextPollSeconds = next.valuation_refreshing ? 2 : 30;
+        writePaperSnapshot(owner, 'account', next);
+        setSnapshot({ value: next, savedAt: Date.now() }); setAccountConfirmed(true); setReadError('');
+      })
+      .catch((error: Error) => { if (current()) setReadError(error.message); })
+      .finally(() => { if (current()) setReading(false); });
+    const journal = api<PaperHistory>('/api/paper/trades', undefined, controller.signal)
+      .then(trades => {
+        if (!current()) return;
+        writePaperSnapshot(owner, 'trades', trades);
+        setHistory(previous => {
+          const newest = trades.items[0]?.request_id;
+          if (newest && previous?.items[0]?.request_id === newest && previous.items.length > trades.items.length) return previous;
+          return trades;
+        });
+        setHistoryError('');
+      })
+      .catch((error: Error) => { if (current()) setHistoryError(error.message); });
+    await Promise.all([balances, journal]);
+    if (!current()) return;
+    const poll = () => {
+      if (controller.signal.aborted) return;
+      if (busy.current) { accountTimer.current = window.setTimeout(poll, 2000); return; }
+      void loadAccount();
+    };
+    accountTimer.current = window.setTimeout(poll, nextPollSeconds * 1000);
+  }, [owner]);
 
   useEffect(() => {
     if (!user) return;
@@ -133,7 +150,7 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
   const available = side === 'buy' ? buyable : position?.sellable ?? 0;
   const rule = selected?.rules;
   let invalid = '';
-  if (!account) invalid = '正在读取模拟账户。';
+  if (!accountConfirmed || !account) invalid = '等待核实最新账户余额与持仓。';
   else if (!selected) invalid = quoteError || '正在获取交易报价。';
   else if (!selected.can_trade) invalid = selected.reason ?? '当前不能模拟成交。';
   else if (!Number.isSafeInteger(amount) || amount <= 0 || amount > selected.rules.max_quantity) invalid = '请输入规则允许的正整数股数。';
@@ -162,6 +179,9 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
       if (controller.signal.aborted) return;
       intent.current = null; setUnknown(false);
       saveIntent(null);
+      clearPaperSnapshots();
+      setAccountConfirmed(false);
+      setPerformanceRevision(value => value + 1);
       setNotice(`模拟${trade.side === 'buy' ? '买入' : '卖出'}成功 · ${trade.name} ${trade.quantity} 股 · 成交价 ${money(trade.price_fen)}`);
       await loadAccount(true);
       setRefreshNonce(value => value + 1);
@@ -188,14 +208,14 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
     try {
       const older = await api<PaperHistory>(`/api/paper/trades?before_seq=${cursor}`, undefined, controller.signal);
       if (!controller.signal.aborted) setHistory(previous => previous?.next_before_seq === cursor ? { items: [...previous.items, ...older.items], next_before_seq: older.next_before_seq } : previous);
-    } catch (error) { if (!controller.signal.aborted) setReadError((error as Error).message); }
+    } catch (error) { if (!controller.signal.aborted) setHistoryError((error as Error).message); }
     finally { if (!controller.signal.aborted) setMoreLoading(false); }
   }
 
   if (!user) return <section className="panel paper-welcome"><span className="paper-welcome-icon"><WalletCards size={38} /></span><span className="paper-tag">PAPER TRADING</span><h2>用 20 万虚拟资金，练习你的交易判断。</h2><p>独立模拟账户 · A 股交易时段 · T+1 · 持仓盈亏与成交记录</p><button className="primary-button" disabled={authLoading} onClick={() => requestLogin('登录后拥有独立的 20 万元模拟账户，资金与成交记录保存在你的账号下。')}>登录体验模拟盘<ArrowUpRight size={16} /></button><small>虚拟资金，不连接券商，不产生真实交易。</small></section>;
 
   return <div className="paper-workspace">
-    <div className="paper-topbar"><div><span className="paper-tag"><ShieldCheck size={13} />虚拟资金 · 模拟成交</span><span className={`paper-session ${account?.market.can_trade ? 'trading' : ''}`}><Clock3 size={13} />{account?.market.label ?? '读取交易状态'}<small>北京时间</small></span></div><button className="paper-refresh" aria-label="刷新模拟账户" disabled={reading || submitting} onClick={() => { void loadAccount(true); }}><RefreshCw size={15} className={reading ? 'spin' : ''} />刷新账户</button></div>
+    <div className="paper-topbar"><div><span className="paper-tag"><ShieldCheck size={13} />虚拟资金 · 模拟成交</span><span className={`paper-session ${accountConfirmed && account?.market.can_trade ? 'trading' : ''}`}><Clock3 size={13} />{accountConfirmed ? account?.market.label : '读取交易状态'}<small>北京时间</small></span>{!accountConfirmed && snapshot && <small className="paper-session">上次读取 {date(new Date(snapshot.savedAt).toISOString())}</small>}</div><button className="paper-refresh" aria-label="刷新模拟账户" disabled={reading || submitting} onClick={() => { void loadAccount(true); }}><RefreshCw size={15} className={reading ? 'spin' : ''} />刷新账户</button></div>
     {readError && <div className="paper-error" role="alert">{readError}<button onClick={() => { void loadAccount(true); }}>重试</button></div>}
     <div className="paper-stats">
       <section className="panel paper-stat paper-equity"><span>模拟账户总资产</span><strong className="mono" data-testid="paper-equity">{money(account?.equity_fen ?? null)}</strong><small>初始本金 ¥ 200,000.00</small></section>
@@ -205,7 +225,7 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
       <section className="panel paper-stat"><span>累计盈亏</span><strong className={`mono ${tone(account?.total_pnl_fen ?? 0)}`}>{account ? signed(account.total_pnl_fen) : '—'}<small>{account ? `${account.return_percent > 0 ? '+' : ''}${account.return_percent.toFixed(2)}%` : ''}</small></strong><small>已实现 {account ? signed(account.realized_pnl_fen) : '—'} · 浮动 {account ? signed(account.unrealized_pnl_fen) : '—'}{account?.receivable_fen ? ` · 应收分红 ${money(account.receivable_fen)}` : ''}</small></section>
     </div>
 
-    <PaperPerformance ownerKey={user?.id ?? ''} />
+    <PaperPerformance revision={performanceRevision} ownerKey={owner} />
     <PaperAutomation disabled={submitting || unknown} onModeChange={setOperationMode} />
     <div className="paper-trading-grid">
       <section className="panel paper-ticket"><header><div><span className="paper-eyebrow">PLACE A SIMULATED TRADE</span><h2>买卖股票</h2></div><span className="paper-mini-tag">T+1</span></header>
@@ -235,7 +255,8 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
     </div>
 
     <section className="panel paper-history"><header><div><span className="paper-eyebrow">TRADE JOURNAL</span><h2><History size={18} />成交记录</h2></div><span className="paper-mini-tag">仅模拟成交</span></header>
-      {history?.items.length ? <div className="paper-table-scroll"><table><thead><tr><th>成交时间 · 北京时间</th><th>股票</th><th>方向</th><th>股数</th><th>成交价</th><th>成交金额</th><th>费用与依据</th><th>成交后现金</th></tr></thead><tbody>{history.items.map(trade => <tr key={trade.request_id}><td>{date(trade.executed_at)}</td><td><strong>{trade.name}</strong><small>{trade.code} · {trade.execution_mode === 'daily_open_replay' ? '历史回放' : trade.actor === 'algorithm' ? '算法托管' : '手动'}</small>{trade.model_version && <small>{trade.model_version}</small>}</td><td><span className={`paper-trade-side ${trade.side}`}>{trade.side === 'buy' ? '买入' : '卖出'}</span></td><td>{trade.quantity.toLocaleString()}</td><td className="mono">{formatMoney(trade.price_fen)}</td><td className="mono">{formatMoney(trade.gross_fen)}</td><td><details><summary>{money(trade.fees_fen)}</summary><div>佣金 {money(trade.commission_fen)}<br />过户费 {money(trade.transfer_fen)}<br />印花税 {money(trade.stamp_fen)}<br />{trade.friction_fen ? <>模型摩擦成本 {money(trade.friction_fen)}<br /></> : null}{trade.source}<br />报价 {date(trade.quote_as_of)}<br />已实现 {signed(trade.realized_pnl_fen)}</div></details></td><td className="mono">{formatMoney(trade.cash_after_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-history-empty">{reading ? '正在读取成交记录…' : '暂时没有成交记录，每笔成功交易都会保存在这里。'}</div>}
+      {historyError && <p className="paper-error" role="alert">{historyError}<button onClick={() => { void loadAccount(); }}>重试</button></p>}
+      {history?.items.length ? <div className="paper-table-scroll"><table><thead><tr><th>成交时间 · 北京时间</th><th>股票</th><th>方向</th><th>股数</th><th>成交价</th><th>成交金额</th><th>费用与依据</th><th>成交后现金</th></tr></thead><tbody>{history.items.map(trade => <tr key={trade.request_id}><td>{date(trade.executed_at)}</td><td><strong>{trade.name}</strong><small>{trade.code} · {trade.execution_mode === 'daily_open_replay' ? '历史回放' : trade.actor === 'algorithm' ? '算法托管' : '手动'}</small>{trade.model_version && <small>{trade.model_version}</small>}</td><td><span className={`paper-trade-side ${trade.side}`}>{trade.side === 'buy' ? '买入' : '卖出'}</span></td><td>{trade.quantity.toLocaleString()}</td><td className="mono">{formatMoney(trade.price_fen)}</td><td className="mono">{formatMoney(trade.gross_fen)}</td><td><details><summary>{money(trade.fees_fen)}</summary><div>佣金 {money(trade.commission_fen)}<br />过户费 {money(trade.transfer_fen)}<br />印花税 {money(trade.stamp_fen)}<br />{trade.friction_fen ? <>模型摩擦成本 {money(trade.friction_fen)}<br /></> : null}{trade.source}<br />报价 {date(trade.quote_as_of)}<br />已实现 {signed(trade.realized_pnl_fen)}</div></details></td><td className="mono">{formatMoney(trade.cash_after_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-history-empty">{historyError ? '成交记录暂不可用' : !history ? '正在读取成交记录…' : '暂时没有成交记录，每笔成功交易都会保存在这里。'}</div>}
       {history?.next_before_seq && <button className="paper-load-more" disabled={moreLoading} onClick={() => { void loadMore(); }}>{moreLoading ? '正在加载…' : '加载更早成交'}</button>}
     </section>
     <details className="panel paper-rules"><summary><ShieldCheck size={16} />模拟盘交易规则与费用</summary><div><p>每个账号初始资金 20 万元；仅在核验交易日 09:30–11:30、13:00–14:57 模拟成交。当天买入的股份下一交易日才能卖出。集合竞价、盘后和未经核验的交易日暂不支持。</p><p>主板、创业板买入为 100 股整数倍；科创板至少 200 股，之后可逐股增加。卖出时零股需一次处理；不支持融资、卖空、限价挂单或撤单。</p><p>固定模拟费用：双向佣金 0.03%，每笔最低 5 元；双向过户费 0.001%；卖出印花税 0.05%。费用分别四舍五入到分，不代表实际券商收费。</p><p>成交使用新鲜、有效的未复权 1 分钟价格；延迟或缺失行情暂停成交。估值可使用缓存或最近成交价格。第一版不处理分红、送股和拆股；所有资金均为虚拟资金。</p></div></details>

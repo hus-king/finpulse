@@ -258,17 +258,24 @@ class PaperPerformanceService:
         end=end.isoformat();snapshot=await asyncio.to_thread(self._snapshot,owner)
         signature=_signature(snapshot,end);key=(owner,benchmark)
         cached=await asyncio.to_thread(self.records.get,'paper_performance','curve:'+benchmark,owner,default={})
-        if cached.get('signature')==signature and now.timestamp()-cached.get('computed_at',0)<60:
-            return cached['result']
+        complete_curve = None
+        if cached.get('signature') == signature:
+            saved = cached['result']
+            if now.timestamp() - cached.get('computed_at', 0) < 60:
+                return saved
+            if saved.get('status') == 'ready' and saved.get('as_of') == end and saved.get('points'):
+                complete_curve = saved
         previous=self.tasks.get(key)
         if previous and previous[0]!=signature:
             previous[1].cancel();self.tasks.pop(key,None);previous=None
         if not previous:
             if self.closed or len(self.tasks)>=16:
-                return dict(result,status='waiting',reason='收益数据正在更新，请稍后刷新')
+                return complete_curve or dict(result,status='waiting',reason='收益数据正在更新，请稍后刷新')
             task=asyncio.create_task(self._compute(owner,benchmark,snapshot,end,signature))
             self.tasks[key]=(signature,task)
         else:task=previous[1]
+        if complete_curve is not None:
+            return complete_curve
         try:
             return await asyncio.wait_for(asyncio.shield(task),.06)
         except asyncio.TimeoutError:

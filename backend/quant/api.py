@@ -27,9 +27,13 @@ async def strategies(response:Response,session=Depends(current_session),service=
 
 
 @router.get('/automation')
-async def state(response:Response,session=Depends(current_session),service=Depends(quant)):
+async def state(response:Response,summary:bool=False,session=Depends(current_session),service=Depends(quant)):
     response.headers['Cache-Control']='no-store'
-    return await asyncio.to_thread(service.state,session['user']['id'])
+    account=await asyncio.to_thread(service.state,session['user']['id'])
+    if summary and account['last_decision']:
+        decision=account['last_decision']
+        account={**account,'last_decision':{'key':decision['key'],'status':decision['status']}}
+    return account
 
 
 @router.put('/automation')

@@ -66,6 +66,23 @@ class QuantAutomationTests(unittest.TestCase):
         self.service.store.records.put('quant_decision',decision['key'],decision,self.owner)
         return {'revision':1,'decision_key':decision['key'],'lease_token':token,'strategy_id':'test','model_version':'test-v1'}
 
+    def test_optional_summary_omits_decision_payload(self):
+        path='/api/paper/automation?summary=true'
+        self.assertEqual(self.client.get(path).status_code,401)
+        self.ready()
+        self.assertIsNone(self.client.get(path).json()['last_decision'])
+        decision={'key':'2026-10-08:1','date':self.now.date().isoformat(),'revision':0,
+                  'status':'completed','target_weights':{'000001':.2},'diagnostics':'x'*65536}
+        self.service.store.records.put('quant_decision',decision['key'],decision,self.owner)
+        full=self.client.get('/api/paper/automation').json()
+        response=self.client.get(path)
+        self.assertEqual(response.headers['cache-control'],'no-store')
+        self.assertLess(len(response.content),2000)
+        self.assertEqual(full['last_decision'],decision)
+        self.assertEqual(response.json(),{**full,'last_decision':{'key':decision['key'],'status':'completed'}})
+        self.assertEqual(self.configure().json()['last_decision'],decision)
+        self.assertEqual(self.client.get('/api/paper/automation/decisions').json()['items'],[decision])
+
     def test_pause_stale_lease_and_disabled_user_cannot_execute(self):
         execution=self.execution_context()
         async def submit(): return await self.service.paper.submit(self.owner,str(uuid.uuid4()),'000001','buy',100,execution=execution)

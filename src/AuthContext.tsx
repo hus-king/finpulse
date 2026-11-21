@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { setPaperSnapshotOwner } from './paperSnapshots';
 import type { ReactNode } from 'react';
 import { api, ApiError, setCsrfToken } from './api';
 import AuthDialog from './AuthDialog';
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pending = useRef<AbortController | null>(null);
   const channel = useRef<BroadcastChannel | null>(null);
   const update = useCallback((session: AuthSession | null) => {
+    setPaperSnapshotOwner(session?.user.id ?? null);
     setCsrfToken(session?.csrf_token ?? null);
     setUser(session?.user ?? null);
     if (!session) setChangingPassword(false);

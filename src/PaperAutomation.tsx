@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Pause, Play, RefreshCw } from 'lucide-react';
 import { api } from './api';
 import UserStrategyEditor from './UserStrategyEditor';
@@ -11,39 +11,89 @@ const PEG_B_ID = 'official-peg-buffered-v1';
 const N2_ID = 'official-four-factor-n2-v1';
 const decisionStatus = (status: string) => ({ completed: '已完成', paused: '已暂停', expired: '已过期', running: '执行中，可恢复' }[status] ?? status);
 
+type DecisionPage = { items: QuantDecision[]; next_before: string | null };
+
+function DecisionHistory({ latest }: { latest?: QuantDecision | null }) {
+  const [history, setHistory] = useState<DecisionPage | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const pending = useRef<AbortController | null>(null);
+
+  const load = useCallback(async (before?: string) => {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    setLoading(true); setError('');
+    try {
+      const params = new URLSearchParams({ limit: '5' });
+      if (before) params.set('before', before);
+      const page = await api<DecisionPage>(`/api/paper/automation/decisions?${params}`, undefined, controller.signal);
+      if (!controller.signal.aborted) setHistory(previous => before && previous
+        ? { items: [...previous.items, ...page.items], next_before: page.next_before } : page);
+    } catch (reason) {
+      if (!controller.signal.aborted) setError((reason as Error).message);
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    return () => pending.current?.abort();
+  }, [load]);
+
+  // The account mode poll already carries the current decision, including partial fills.
+  useEffect(() => {
+    if (latest) setHistory(previous => previous?.items[0]?.key === latest.key
+      ? { ...previous, items: [latest, ...previous.items.slice(1)] } : previous);
+  }, [latest]);
+
+  return <>
+    {error && <div className="paper-error" role="alert">{error}<button onClick={() => { void load(history?.next_before ?? undefined); }}>重新读取</button></div>}
+    {!history && loading && <p className="paper-pilot-note">正在读取决策记录…</p>}
+    {history?.items.length === 0 && <p className="paper-pilot-note">尚无算法决策。启用后在下一个有效交易时段检查。</p>}
+    {history?.items.map(decision => <article key={decision.key}><strong>{decision.date} · {decisionStatus(decision.status)}</strong><small>{decision.model_version} · 信号日 {decision.as_of}</small><p>{decision.reason ?? '根据保存的策略信号生成目标组合'}</p>{decision.peg_snapshot && <p>PEG榜单发布于 {stamp(decision.peg_snapshot.published_at)} · 快照 {decision.peg_snapshot.snapshot_id.slice(0, 12)}</p>}{decision.peg_selection && <p>入选：{decision.peg_selection.map(r => `${r.name}（${r.code}）PEG ${r.peg.toFixed(2)}`).join(' / ')}</p>}{Object.entries(decision.skipped_targets ?? {}).map(([code, reason]) => <p className="paper-pilot-note" key={code}>{code} · {reason}</p>)}<p>目标：{Object.entries(decision.target_weights).map(([code, weight]) => `${code} ${percent(weight)}`).join(' / ') || '现金'}</p>{decision.results?.map(result => <p key={result.request_id}>{result.code} · {result.status === 'filled' ? `已成交 #${result.sequence}` : result.reason}</p>)}{decision.allocation_outcome && <><p>执行后持仓：{Object.entries(decision.allocation_outcome.positions).map(([code, p]) => `${code} ${p.quantity}股${p.weight == null ? '' : ` / ${percent(p.weight)}`}`).join(' / ') || '现金'}</p>{Object.keys(decision.allocation_outcome.differences ?? {}).length > 0 && <p className="paper-pilot-note">尚有目标差额。{decision.allocation_outcome.note}</p>}</>}</article>)}
+    {history?.next_before && !error && <button disabled={loading} onClick={() => { void load(history.next_before!); }}>{loading ? '读取中…' : '加载更早决策'}</button>}
+  </>;
+}
+
 export default function PaperAutomation({ disabled, onModeChange }: { disabled: boolean; onModeChange: (mode: 'manual' | 'algorithm' | null) => void }) {
   const [state, setState] = useState<PaperAutomationState | null>(null);
   const [strategies, setStrategies] = useState<PaperStrategy[]>([]);
   const [selected, setSelected] = useState('manual');
-  const [decisions, setDecisions] = useState<QuantDecision[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  const historyDetails = useRef<HTMLDetailsElement>(null);
+  const [decisionsOpen, setDecisionsOpen] = useState(false);
+  const [catalogueError, setCatalogueError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [moreBusy, setMoreBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [pegCount, setPegCount] = useState(5);
   const [pegGroup, setPegGroup] = useState('all');
   const strategy = strategies.find(item => item.id === (selected === 'manual' ? state?.strategy_id : selected));
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const loadState = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [next, catalogue, history] = await Promise.all([
-        api<PaperAutomationState>('/api/paper/automation', undefined, signal),
-        api<{ items: PaperStrategy[] }>('/api/paper/strategies', undefined, signal),
-        api<{ items: QuantDecision[]; next_before: string | null }>('/api/paper/automation/decisions', undefined, signal),
-      ]);
+      const query = historyDetails.current?.open ? '' : '?summary=true';
+      const next = await api<PaperAutomationState>(`/api/paper/automation${query}`, undefined, signal);
       if (signal?.aborted) return;
-      setState(next); setStrategies(catalogue.items); setDecisions(history.items); setCursor(history.next_before);
-      onModeChange(next.mode); setError('');
+      setState(next); onModeChange(next.mode); setError('');
     } catch (err) { if (!signal?.aborted) { setError((err as Error).message); onModeChange(null); } }
   }, [onModeChange]);
 
+  const loadCatalogue = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const catalogue = await api<{ items: PaperStrategy[] }>('/api/paper/strategies', undefined, signal);
+      if (!signal?.aborted) { setStrategies(catalogue.items); setCatalogueError(''); }
+    } catch (err) { if (!signal?.aborted) setCatalogueError((err as Error).message); }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
-    const timer = window.setInterval(() => { void load(controller.signal); }, 30000);
+    void loadCatalogue(controller.signal);
+    void loadState(controller.signal);
+    const timer = window.setInterval(() => { void loadState(controller.signal); }, 30000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [load]);
+  }, [loadState, loadCatalogue]);
   useEffect(() => { if (state && !dirty) {
     setSelected(state.mode === 'manual' ? 'manual' : state.strategy_id ?? 'manual');
     setPegCount(state.strategy_config?.top_n ?? 5); setPegGroup(state.strategy_config?.group ?? 'all');
@@ -56,24 +106,15 @@ export default function PaperAutomation({ disabled, onModeChange }: { disabled: 
       const target = strategies.find(item => item.id === id);
       const next = await api<PaperAutomationState>('/api/paper/automation', { mode, strategy_id: id ?? null, expected_revision: state.revision, ...(target?.origin === 'user' ? { strategy_revision: target.revision } : {}), ...(id === PEG_ID ? { strategy_config: { top_n: pegCount, group: pegGroup } } : {}) }, undefined, 'PUT');
       setState(next); setDirty(false); onModeChange(next.mode);
-    } catch (err) { await load(); setDirty(false); setError((err as Error).message); }
+    } catch (err) { await Promise.all([loadState(), loadCatalogue()]); setDirty(false); setError((err as Error).message); }
     finally { setBusy(false); }
-  }
-
-  async function more() {
-    if (!cursor || moreBusy) return;
-    setMoreBusy(true);
-    try {
-      const data = await api<{ items: QuantDecision[]; next_before: string | null }>(`/api/paper/automation/decisions?before=${encodeURIComponent(cursor)}`);
-      setDecisions(items => [...items, ...data.items]); setCursor(data.next_before);
-    } catch (err) { setError((err as Error).message); }
-    finally { setMoreBusy(false); }
   }
 
   const unchanged = state && selected === (state.mode === 'manual' ? 'manual' : state.strategy_id) &&
     (selected !== PEG_ID || pegCount === (state.strategy_config?.top_n ?? 5) && pegGroup === (state.strategy_config?.group ?? 'all'));
   const displayed = strategy ?? strategies[0];
   const model = displayed?.report?.test?.model;
+  const latest = state?.last_decision;
   return <section className="panel paper-automation" aria-label="模拟盘操作方式">
     <header><div><span className="paper-eyebrow">ACCOUNT PILOT</span><h2><Bot size={19} />自己操作，或选择算法托管</h2></div><span className={`paper-pilot-status ${state?.mode === 'algorithm' ? 'active' : ''}`}>{state ? state.mode === 'algorithm' ? '算法托管中' : '手动操作' : '读取操作方式'}</span></header>
     <div className="paper-pilot-controls"><label>操作方式<select aria-label="操作方式" value={selected} disabled={busy || disabled || !state} onChange={event => { setSelected(event.target.value); setDirty(true); }}><option value="manual">自己操作 · 手动交易</option><optgroup label="官方算法">{strategies.filter(item => item.origin !== 'user').map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.name}{item.available ? ' · 官方' : ' · 暂不可用'}</option>)}</optgroup><optgroup label="我的策略">{strategies.filter(item => item.origin === 'user').map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.name} · 我的策略 · r{item.revision}{item.available ? '' : ' · 暂不可用'}</option>)}</optgroup></select></label>
@@ -83,7 +124,8 @@ export default function PaperAutomation({ disabled, onModeChange }: { disabled: 
     </div>
     <p className="paper-pilot-note">启用后，算法会在交易日北京时间 10:00 后自动管理此模拟账户，关闭网页后继续运行。{displayed?.kind === 'n2' ? '双股倒波动会按规则管理账户全部持仓；需要退出的持仓仍受实际成交与T+1约束。' : displayed?.kind === 'peg' ? '低 PEG 策略会调整账户全部已有持仓，包括原手动持仓，卖出不再入选的股票。' : '切换保留持仓；股票池外持仓不自动清仓。'}托管期间手动新单暂停。</p>
     {disabled && <p className="paper-pilot-note">请先确认当前未完成的交易请求，再切换操作方式。</p>}
-    {error && <div className="paper-error" role="alert">{error}<button onClick={() => { void load(); }}>重新读取</button></div>}
+    {error && <div className="paper-error" role="alert">{error}<button onClick={() => { void loadState(); }}>重新读取</button></div>}
+    {catalogueError && <div className="paper-error" role="alert">{catalogueError}<button onClick={() => { void loadCatalogue(); }}>重新读取策略列表</button></div>}
     {state && !state.scheduler_enabled && <p className="paper-pilot-warning">当前实例未开启自动执行，托管配置会保存；由已开启调度的服务器处理。</p>}
     {state?.reason && <p className="paper-pilot-warning">{state.reason}</p>}
     {state?.mode === 'algorithm' && <div className="paper-pilot-runtime"><span>最近检查 {stamp(state.runtime.checked_at)}</span><span>{state.runtime.reason ?? (state.last_decision?.status === 'completed' ? '今日决策已完成' : '等待交易时段或首轮检查')}</span><span>{state.next_check}</span></div>}
@@ -111,11 +153,10 @@ export default function PaperAutomation({ disabled, onModeChange }: { disabled: 
       {displayed.report?.limits?.map(text => <p className="paper-pilot-note" key={text}>{text}</p>)}
     </div></details>}
     {displayed?.origin === 'user' && <div className="paper-rule-summary"><strong>我的规则策略 · 尚未回测</strong><p>{displayed.description}</p><p>{displayed.version} · 股票池 {displayed.universe?.length ?? 0} 只 · 最多 {displayed.rules_summary?.top_n ?? 5} 只 · 单票 {percent(displayed.rules_summary?.per_stock_weight)} · 总仓 {percent(displayed.rules_summary?.max_total_weight)}</p><p>继续受共同风控限制：每日成交额 30%、最多 5 只、总仓 80%、单票 20%、回撤 15% 暂停。</p></div>}
-    <UserStrategyEditor strategies={strategies} activeId={state?.mode === 'algorithm' ? state.strategy_id : null} onChanged={load} />
+    <UserStrategyEditor strategies={strategies} activeId={state?.mode === 'algorithm' ? state.strategy_id : null} onChanged={loadCatalogue} />
     {strategies.filter(item => !item.available).map(item => <p className="paper-pilot-warning" key={item.id}>{item.name}：{item.reason}</p>)}
-    <details className="paper-decisions"><summary>算法决策与执行记录 {decisions.length ? `· ${decisions.length}` : ''}</summary>
-      {decisions.length ? decisions.map(decision => <article key={decision.key}><strong>{decision.date} · {decisionStatus(decision.status)}</strong><small>{decision.model_version} · 信号日 {decision.as_of}</small><p>{decision.reason ?? '根据保存的策略信号生成目标组合'}</p>{decision.peg_snapshot && <p>PEG榜单发布于 {stamp(decision.peg_snapshot.published_at)} · 快照 {decision.peg_snapshot.snapshot_id.slice(0, 12)}</p>}{decision.peg_selection && <p>入选：{decision.peg_selection.map(r => `${r.name}（${r.code}）PEG ${r.peg.toFixed(2)}`).join(' / ')}</p>}{Object.entries(decision.skipped_targets ?? {}).map(([code, reason]) => <p className="paper-pilot-note" key={code}>{code} · {reason}</p>)}<p>目标：{Object.entries(decision.target_weights).map(([code, weight]) => `${code} ${percent(weight)}`).join(' / ') || '现金'}</p>{decision.results?.map(result => <p key={result.request_id}>{result.code} · {result.status === 'filled' ? `已成交 #${result.sequence}` : result.reason}</p>)}{decision.allocation_outcome && <><p>执行后持仓：{Object.entries(decision.allocation_outcome.positions).map(([code, p]) => `${code} ${p.quantity}股${p.weight == null ? '' : ` / ${percent(p.weight)}`}`).join(' / ') || '现金'}</p>{Object.keys(decision.allocation_outcome.differences ?? {}).length > 0 && <p className="paper-pilot-note">尚有目标差额。{decision.allocation_outcome.note}</p>}</>}</article>) : <p className="paper-pilot-note">尚无算法决策。启用后在下一个有效交易时段检查。</p>}
-      {cursor && <button disabled={moreBusy} onClick={() => { void more(); }}>{moreBusy ? '读取中…' : '加载更早决策'}</button>}
+    <details ref={historyDetails} className="paper-decisions" onToggle={event => setDecisionsOpen(event.currentTarget.open)}><summary>算法决策与执行记录</summary>
+      {decisionsOpen && <DecisionHistory key={latest?.key ?? ''} latest={latest && 'target_weights' in latest ? latest : null} />}
     </details>
   </section>;
 }

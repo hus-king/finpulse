@@ -1,6 +1,6 @@
 import asyncio
 import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import tempfile
@@ -296,6 +296,45 @@ class PerformanceServiceTests(unittest.IsolatedAsyncioTestCase):
         second=await self.result()
         self.assertEqual(first['summary']['strategy_profit_fen'],9580)
         self.assertEqual(second['summary']['strategy_profit_fen'],-10420)
+
+    async def test_complete_expired_curve_remains_visible_during_one_background_refresh(self):
+        self.put()
+        first = await self.result()
+        self.now += timedelta(minutes=2)
+        resume = asyncio.Event()
+        prices = self.service._prices
+
+        async def delayed_prices(*args, **kwargs):
+            await resume.wait()
+            return await prices(*args, **kwargs)
+
+        self.service._prices = delayed_prices
+        try:
+            self.assertEqual(await self.service.performance('alice'), first)
+            task = self.service.tasks[('alice', 'sh000300')][1]
+            self.assertEqual(await self.service.performance('alice'), first)
+            self.assertIs(self.service.tasks[('alice', 'sh000300')][1], task)
+        finally:
+            resume.set()
+        await task
+        cached = self.records.get('paper_performance', 'curve:sh000300', 'alice')
+        self.assertEqual(cached['computed_at'], self.now.timestamp())
+
+    async def test_busy_service_serves_only_a_complete_matching_curve_after_expiry(self):
+        self.put()
+        first = await self.result()
+        self.now += timedelta(minutes=2)
+        await self.service.close()
+        self.assertEqual(await self.service.performance('alice'), first)
+        cached = self.records.get('paper_performance', 'curve:sh000300', 'alice')
+        for overrides in [{'as_of': '2026-10-09'}, {'points': []}, {'status': 'waiting'}]:
+            with self.subTest(overrides=overrides):
+                self.records.put('paper_performance', 'curve:sh000300',
+                                 {**cached, 'result': {**first, **overrides}}, 'alice')
+                self.assertEqual((await self.service.performance('alice'))['points'], [])
+        self.records.put('paper_performance', 'curve:sh000300', cached, 'alice')
+        self.put(prefix='replacement', buy=1200)
+        self.assertEqual((await self.service.performance('alice'))['points'], [])
 
     async def test_same_trade_sequence_new_corporate_revision_invalidates_curve(self):
         account,_=self.put();first=await self.result()

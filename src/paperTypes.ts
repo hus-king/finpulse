@@ -51,6 +51,6 @@ export interface PaperAutomationState {
   replay?: { start_date: string; end_date: string; fills: number; trading_days: number; execution_mode: string; note: string; imported_at: string } | null;
   mode: 'manual' | 'algorithm'; revision: number; strategy_id: string | null; scheduler_enabled: boolean;
   strategy_config?: { top_n?: number; group?: string };
-  reason: string | null; next_check: string; last_decision: QuantDecision | null;
+  reason: string | null; next_check: string; last_decision: QuantDecision | Pick<QuantDecision, 'key' | 'status'> | null;
   runtime: { status?: string; checked_at?: string; reason?: string };
 }

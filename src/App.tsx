@@ -39,7 +39,7 @@ const navigation = [
   { id: 'admin', label: '管理中心', english: 'ADMINISTRATION' },
 ];
 
-const shareableViews = ['screener', 'hot-news', 'convertible-bonds', 'etf-funds'];
+const shareableViews = ['screener', 'hot-news', 'convertible-bonds', 'etf-funds', 'paper'];
 
 function FinanceNav({ view, isAdmin, onSelect }: { view: string; isAdmin: boolean; onSelect: (view: string) => void }) {
   const row = useRef<HTMLDivElement>(null);

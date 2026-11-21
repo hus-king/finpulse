@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, TrendingUp } from 'lucide-react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { api } from './api';
+import { readPaperSnapshot, writePaperSnapshot } from './paperSnapshots';
 import { useTheme } from './ThemeContext';
 import './paper-performance.css';
 
@@ -86,35 +87,46 @@ function ComparisonChart({ data, metric }: { data: Performance; metric: Metric }
   return <div ref={root} className="paper-performance-chart" role="img" aria-label={`模拟盘与${data.benchmark.name}截至${data.as_of ?? ''}的累计${metric === 'return' ? '收益率' : '收益金额'}对比`} />;
 }
 
-export default function PaperPerformance({ ownerKey }: { ownerKey: string }) {
+export default function PaperPerformance({ ownerKey, revision = 0 }: { ownerKey: string; revision?: number }) {
   const [benchmark, setBenchmark] = useState('sh000300');
   const [metric, setMetric] = useState<Metric>('return');
-  const [state, setState] = useState<{ owner: string; benchmark: string; data: Performance } | null>(null);
-  const [errorState, setError] = useState<{ owner: string; benchmark: string; message: string } | null>(null);
+  const [state, setState] = useState<{ owner: string; benchmark: string; revision: number; data: Performance } | null>(null);
+  const [errorState, setError] = useState<{ owner: string; benchmark: string; revision: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
-  const data = state?.owner === ownerKey && state.benchmark === benchmark ? state.data : null;
-  const error = errorState?.owner === ownerKey && errorState.benchmark === benchmark ? errorState.message : '';
+  const cacheKey = `performance:${benchmark}`;
+  const saved = useMemo(() => readPaperSnapshot<Performance>(ownerKey, cacheKey)?.value ?? null, [ownerKey, cacheKey, revision]);
+  const data = state?.owner === ownerKey && state.benchmark === benchmark && state.revision === revision ? state.data : saved;
+  const error = errorState?.owner === ownerKey && errorState.benchmark === benchmark && errorState.revision === revision ? errorState.message : '';
   useEffect(() => {
     const controller = new AbortController();
     let timer: number | undefined;
-    setState(null); setError(null); setLoading(true);
+    setError(null);
     async function load() {
       setLoading(true);
       let delay = 60_000;
       try {
         const next = await api<Performance>(`/api/paper/performance?benchmark=${encodeURIComponent(benchmark)}`, undefined, controller.signal);
         if (controller.signal.aborted) return;
-        setState({ owner: ownerKey, benchmark, data: next }); setError(null);
-        if (next.status === 'loading') delay = 3000;
-      } catch (reason) { if (!controller.signal.aborted) setError({ owner: ownerKey, benchmark, message: (reason as Error).message }); }
+        if (next.status === 'loading') {
+          delay = 3000;
+          setState(previous => {
+            const last = previous?.owner === ownerKey && previous.benchmark === benchmark && previous.revision === revision ? previous.data : saved;
+            return { owner: ownerKey, benchmark, revision, data: last?.points.length ? { ...last, reason: next.reason } : next };
+          });
+        } else {
+          writePaperSnapshot(ownerKey, cacheKey, next);
+          setState({ owner: ownerKey, benchmark, revision, data: next });
+        }
+        setError(null);
+      } catch (reason) { if (!controller.signal.aborted) setError({ owner: ownerKey, benchmark, revision, message: (reason as Error).message }); }
       finally {
         if (!controller.signal.aborted) { setLoading(false); timer = window.setTimeout(() => { void load(); }, delay); }
       }
     }
     if (ownerKey) void load();
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [ownerKey, benchmark, refresh]);
+  }, [ownerKey, benchmark, cacheKey, saved, revision, refresh]);
   const summary = data?.summary;
   const metrics = summary ? [
     { label: '模拟盘收益', amount: summary.strategy_profit_fen, rate: summary.strategy_return_percent },
