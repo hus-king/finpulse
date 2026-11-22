@@ -32,10 +32,11 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
     { selector: '#cb-history-heading', title: '决策历史' },
   ],
   paper: [
-    { selector: '.finance-heading', title: '模拟交易' },
-    { selector: '.paper-stats', title: '账户资产' },
-    { selector: '.paper-holdings', title: '当前持仓' },
-    { selector: '.paper-history', title: '交易记录' },
+    { selector: '.finance-heading', title: '模拟盘' },
+    { selector: '.paper-account', title: '账户总览' },
+    { selector: '.paper-portfolio', title: '持仓与收益' },
+    { selector: '.paper-trading-grid', title: '交易与托管' },
+    { selector: '.paper-history', title: '成交记录' },
   ],
   briefing: [
     { selector: '.finance-heading', title: '自选早报' },
@@ -45,34 +46,35 @@ const chaptersByView: Record<string, { selector: string; title: string }[]> = {
   lab: [{ selector: '.finance-heading', title: '连接状态' }],
   admin: [{ selector: '.finance-heading', title: '管理中心' }],
 };
-const digits = [...'0123456789'];
 export default function ReadingRail({ view }: { view: string }) {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const scale = useRef<HTMLDivElement>(null), needle = useRef<HTMLDivElement>(null), readout = useRef<HTMLSpanElement>(null);
   const bracket = useRef<HTMLDivElement>(null), ghost = useRef<HTMLDivElement>(null);
   const ticks = useRef<(HTMLDivElement | null)[]>([]), marks = useRef<(HTMLSpanElement | null)[]>([]);
-  const labels = useRef<(HTMLSpanElement | null)[]>([]), columns = useRef<(HTMLSpanElement | null)[]>([]);
+  const labels = useRef<(HTMLSpanElement | null)[]>([]);
   const hits = useRef<(HTMLButtonElement | null)[]>([]), letters = useRef<(HTMLSpanElement | null)[][]>([]);
-  const pools = useRef<(HTMLDivElement | null)[]>([]);
   const redraw = useRef(() => {});
-  const actions = useRef({ hover: (_value: boolean) => {}, move: (_y: number) => {}, down: (_y: number) => {},
-    up: (_x: number, _y: number) => {}, cancel: () => {}, click: (_y: number) => {}, jump: (_index: number) => {},
+  const actions = useRef({ keyboardFocus: (_value: boolean) => {}, hover: (_value: boolean) => {}, move: (_y: number) => {}, down: (_y: number) => {},
+    up: (_x: number, _y: number) => {}, cancel: () => {}, jump: (_index: number) => {},
     chapterHover: (_index: number) => {}, key: (_key: string): boolean => false });
   useEffect(() => {
-    const media = matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
+    const media = matchMedia('(min-width: 1024px)');
+    const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const definitions = chaptersByView[view] ?? chaptersByView.dashboard;
-    let frame = 0, timer = 0, lastTime = 0, zoom = 0, intent = false, dragging = false, dragStart = 0, dragMoved = 0;
-    let ghostY: number | null = null, dragTarget: number | null = null, hovered = -1;
-    let velocity = 0, lastY = scrollY, placed: Chapter[] = [], previousNames = '';
+    let frame = 0, lastTime = 0, zoom = 0, intent = false, dragging = false, dragStart = 0, dragMoved = 0;
+    let ghostY: number | null = null, hovered = -1, keyboardFocus = false;
+    const staticMap = () => motion.matches || !finePointer.matches || keyboardFocus;
+    let velocity = 0, lastY = scrollY, chapterOffset = RULER.nav, placed: Chapter[] = [], previousNames = '';
+    let selectedChapter = '', rejectedSize = '';
     let journey: { from: number; to: number; start: number; duration: number } | null = null;
-    const hoverAlpha: number[] = [], flashUntil: number[] = [], measurements = new Map<string, number[]>();
+    const hoverAlpha: number[] = [], measurements = new Map<string, number[]>();
     const schedule = () => { if (!frame) frame = requestAnimationFrame(paint); };
     redraw.current = schedule;
-    const jump = (top: number, duration: number) => {
-      dragTarget = null;
+    const jump = (top: number, duration: number, selector = '') => {
+      selectedChapter = selector;
       const to = Math.max(0, Math.min(document.documentElement.scrollHeight - innerHeight, top));
-      if (motion.matches) { window.scrollTo({ top: to, behavior: 'instant' }); schedule(); return; }
+      if (staticMap()) { journey = null; window.scrollTo({ top: to, behavior: 'instant' }); schedule(); return; }
       journey = { from: scrollY, to, start: performance.now(), duration }; schedule();
     };
     const measureTitle = (title: string) => {
@@ -85,8 +87,27 @@ export default function ReadingRail({ view }: { view: string }) {
       probe.remove(); measurements.set(title, values); return values;
     };
     const measure = () => {
-      if (!media.matches) { delete document.documentElement.dataset.readingRuler; journey = null; dragTarget = null; dragging = intent = false; zoom = 0; clearTimeout(timer); return; }
-      document.documentElement.dataset.readingRuler = motion.matches ? 'static' : 'on';
+      const root = document.documentElement;
+      if (!media.matches || root.scrollHeight <= innerHeight + 1) {
+        delete root.dataset.readingRuler;
+        journey = null; dragging = intent = keyboardFocus = false; zoom = 0;
+        return;
+      }
+      const mode = staticMap() ? 'static' : 'on';
+      if (!root.dataset.readingRuler) {
+        const size = `${innerWidth}/${innerHeight}/${root.scrollHeight}`;
+        if (size === rejectedSize) return;
+        root.dataset.readingRuler = mode;
+        // A responsive layout may get shorter after the gutter appears.
+        if (root.scrollHeight <= innerHeight + 1) {
+          rejectedSize = size;
+          delete root.dataset.readingRuler;
+          return;
+        }
+        rejectedSize = '';
+      } else if (root.dataset.readingRuler !== mode) root.dataset.readingRuler = mode;
+      if (mode === 'static') journey = null;
+      chapterOffset = (document.querySelector('.finance-nav')?.getBoundingClientRect().height ?? RULER.nav) + RULER.edge;
       placed = definitions.flatMap((chapter, index) => {
         const element = document.querySelector(chapter.selector);
         if (!element) return [];
@@ -99,61 +120,62 @@ export default function ReadingRail({ view }: { view: string }) {
     };
     function paint(now: number) {
       frame = 0;
-      if (!media.matches) return;
+      if (!document.documentElement.dataset.readingRuler) return;
       const dt = Math.min(.1, (now - (lastTime || now - 16)) / 1000); lastTime = now;
       let moving = false;
       if (journey) {
         const t = clamp((now - journey.start) / journey.duration);
         window.scrollTo({ top: journey.from + (journey.to - journey.from) * easeExpo(t), behavior: 'instant' });
         if (t === 1) journey = null; else moving = true;
-      } else if (dragTarget !== null) {
-        const next = scrollY + (dragTarget - scrollY) * (motion.matches ? 1 : 1 - .82 ** (dt * 60));
-        window.scrollTo({ top: next, behavior: 'instant' });
-        if (Math.abs(dragTarget - scrollY) < 1) dragTarget = null; else moving = true;
       }
-      const target = !motion.matches && (intent || dragging) ? 1 : 0;
-      zoom += (target - zoom) * (1 - Math.exp(-10 * dt));
+      const steady = staticMap();
+      const target = steady || intent || dragging ? 1 : 0;
+      zoom = steady ? target : zoom + (target - zoom) * (1 - Math.exp(-14 * dt));
       if (Math.abs(target - zoom) < .0005) zoom = target; else moving = true;
       const y = scrollY, height = innerHeight, width = innerWidth, docHeight = document.documentElement.scrollHeight;
       velocity += ((y - lastY) / Math.max(.001, dt) - velocity) * (1 - Math.exp(-6 * dt)); lastY = y;
       const g = rulerGeometry(height, docHeight, y, zoom);
-      scale.current?.setAttribute('aria-valuenow', String(Math.round(g.progress * 100)));
-      if (needle.current) {
-        needle.current.style.transform = `translate3d(0,${g.needle}px,0)`;
-        needle.current.style.opacity = String(clamp(g.progress / .03));
+      const percent = Math.round(g.progress * 100);
+      scale.current?.setAttribute('aria-valuenow', String(percent));
+      if (needle.current) needle.current.style.transform = `translate3d(0,${g.needle}px,0)`;
+      if (readout.current) {
+        readout.current.style.top = g.needle > height - 26 ? '-17px' : '4px';
+        if (readout.current.textContent !== `${percent}%`) readout.current.textContent = `${percent}%`;
       }
-      if (readout.current) readout.current.style.top = g.needle > height - 26 ? '-14px' : '4px';
-      [...String(Math.round(g.progress * 100)).padStart(3, '0')].forEach((digit, index) => {
-        const column = columns.current[index]; if (column) column.style.transform = `translateY(-${digit}em)`;
-      });
       if (bracket.current) Object.assign(bracket.current.style, { transform: `translate3d(0,${g.bracketTop}px,0)`, height: `${g.bracketHeight}px`, opacity: String(zoom) });
       if (ghost.current) Object.assign(ghost.current.style, { transform: `translate3d(0,${ghostY ?? 0}px,0)`, opacity: ghostY === null ? '0' : String(.2 + .8 * zoom) });
-      const layout = chapterGeometry(placed, height, width, docHeight, y, zoom);
-      const active = layout.reduce((current, chapter, index) => chapter.flip > .5 ? index : current, 0);
+      const atEnd = g.range > 0 && y >= g.range - 1;
+      if (!atEnd && !journey) selectedChapter = '';
+      let active = placed.reduce((current, chapter, index) => chapter.anchor <= y + chapterOffset + 1 ? index : current, 0);
+      if (atEnd) {
+        // Several final sections may share the same reachable scroll position.
+        const selected = placed.findIndex(chapter => chapter.selector === selectedChapter && chapter.anchor - chapterOffset >= g.range - 1);
+        active = selected >= 0 ? selected : placed.length - 1;
+      }
+      placed.forEach((_, index) => {
+        const hit = hits.current[index];
+        if (index === active) hit?.setAttribute('aria-current', 'location'); else hit?.removeAttribute('aria-current');
+      });
+      const layout = steady ? [] : chapterGeometry(placed, height, width, docHeight, y, zoom);
       layout.forEach((chapter, index) => {
         const hit = hits.current[index];
-        if (hit) {
-          Object.assign(hit.style, { left: `${chapter.left}px`, top: `${chapter.top}px`, width: `${chapter.width}px`, height: `${chapter.height}px` });
-          if (index === active) hit.setAttribute('aria-current', 'location'); else hit.removeAttribute('aria-current');
-        }
+        if (hit) Object.assign(hit.style, { left: `${chapter.left}px`, top: `${chapter.top}px`, width: `${chapter.width}px`, height: `${chapter.height}px` });
         const targetAlpha = hovered === index ? 1 : 0;
-        hoverAlpha[index] = (hoverAlpha[index] ?? 0) + (targetAlpha - (hoverAlpha[index] ?? 0)) * (motion.matches ? 1 : 1 - Math.exp(-dt / .08));
+        hoverAlpha[index] = (hoverAlpha[index] ?? 0) + (targetAlpha - (hoverAlpha[index] ?? 0)) * (1 - Math.exp(-dt / .08));
         if (Math.abs(targetAlpha - hoverAlpha[index]) > .001) moving = true;
-        const flash = motion.matches ? 0 : clamp(((flashUntil[index] ?? 0) - now) / 350);
-        if (flash > 0) moving = true;
         chapter.letters.forEach((letter, position) => {
           const element = letters.current[index]?.[position]; if (!element) return;
           const alpha = letter.alpha + (1 - letter.alpha) * hoverAlpha[index];
-          const color = `color-mix(in srgb,var(--theme-heading) ${alpha * 100}%,var(--theme-background))`;
+          const color = index === active ? 'var(--theme-accent-text)' : `color-mix(in srgb,var(--theme-heading) ${alpha * 100}%,var(--theme-background))`;
           element.style.transform = `translate3d(${letter.x}px,${letter.y}px,0) translate(-50%,-50%) rotate(${letter.rotation}deg) scale(${letter.scale})`;
-          element.style.color = flash > .01 ? `color-mix(in srgb,var(--theme-accent-text) ${flash * 70}%,${color})` : color;
+          element.style.color = color;
         });
       });
       g.ticks.forEach((tick, index) => {
         const wrapper = ticks.current[index], mark = marks.current[index], label = labels.current[index];
         if (wrapper) wrapper.style.transform = `translate3d(0,${tick.y}px,0)`;
         const proximity = clamp(1 - Math.abs(tick.documentY - g.progress * docHeight) / 180);
-        const stretch = clamp(Math.abs(velocity) / 3000) * proximity ** 2;
+        const stretch = steady ? 0 : clamp(Math.abs(velocity) / 3000) * proximity ** 2;
         if (mark) { mark.style.transform = `scaleX(${1 + .6 * stretch})`; mark.style.opacity = String(Math.min(1, (tick.major ? .8 : .4) + .6 * stretch)); }
         if (label) {
           let visible = 1;
@@ -164,77 +186,92 @@ export default function ReadingRail({ view }: { view: string }) {
           label.style.opacity = String(.5 * (1 - (1 - visible) * (1 - zoom)));
         }
       });
-      if (pools.current[0]) pools.current[0].style.opacity = String(Math.max(0, ...layout.map(chapter => chapter.flip)));
-      if (pools.current[1]) pools.current[1].style.opacity = String(Math.max(0, ...layout.slice(1).map(chapter => 1 - chapter.detach)));
-      if (moving || Math.abs(velocity) > 1) schedule();
+      if (moving || (!steady && Math.abs(velocity) > 1)) schedule();
     }
     const hover = (value: boolean) => {
-      clearTimeout(timer);
+      intent = value;
       if (!value && !dragging) ghostY = null;
-      timer = window.setTimeout(() => { intent = value; schedule(); }, 150);
       schedule();
     };
     const position = (clientY: number) => {
       const g = rulerGeometry(innerHeight, document.documentElement.scrollHeight, scrollY, zoom);
       return { y: Math.max(g.base, Math.min(g.base + g.span, clientY)), top: clamp((clientY - g.base) / g.span) * g.range };
     };
-    const cancel = () => { dragging = false; dragTarget = null; journey = null; intent = false; ghostY = null; clearTimeout(timer); schedule(); };
+    const cancel = () => { dragging = false; journey = null; intent = false; ghostY = null; schedule(); };
     actions.current = { hover,
-      move: clientY => { const point = position(clientY); ghostY = point.y; if (dragging) { dragMoved = Math.max(dragMoved, Math.abs(clientY - dragStart)); dragTarget = point.top; } schedule(); },
+      keyboardFocus: value => {
+        if (keyboardFocus === value) return;
+        keyboardFocus = value;
+        if (value) cancel();
+        measure();
+      },
+      move: clientY => {
+        const point = position(clientY);
+        ghostY = finePointer.matches ? point.y : null;
+        if (dragging) {
+          dragMoved = Math.max(dragMoved, Math.abs(clientY - dragStart));
+          if (dragMoved > 4) window.scrollTo({ top: point.top, behavior: 'instant' });
+        }
+        schedule();
+      },
       down: clientY => { dragging = true; dragStart = clientY; dragMoved = 0; journey = null; schedule(); },
-      up: (x, clientY) => { dragging = false; if (x < innerWidth - RULER.width || x > innerWidth || clientY < 0 || clientY > innerHeight) hover(false); schedule(); },
+      up: (x, clientY) => {
+        if (!dragging) return;
+        dragging = false;
+        if (x < innerWidth - RULER.width || x > innerWidth || clientY < 0 || clientY > innerHeight) hover(false);
+        else if (dragMoved <= 4) jump(position(clientY).top, 320);
+        schedule();
+      },
       cancel,
-      click: clientY => { if (dragMoved <= 4) { const point = position(clientY); jump(point.top, 1250 * (.4 + .6 * Math.min(1, Math.abs(point.top - scrollY) / (2.5 * innerHeight)))); } },
-      jump: index => { const chapter = placed[index]; if (chapter) { flashUntil[index] = performance.now() + 350; jump(index === 0 ? 0 : chapter.anchor - RULER.nav, 1250); } },
+      jump: index => { const chapter = placed[index]; if (chapter) jump(index === 0 ? 0 : chapter.anchor - chapterOffset, 320, chapter.selector); },
       chapterHover: index => { hovered = index; schedule(); },
       key: key => {
         const range = Math.max(0, document.documentElement.scrollHeight - innerHeight);
         const targets: Record<string, number> = { ArrowUp: scrollY - 80, ArrowDown: scrollY + 80, PageUp: scrollY - innerHeight, PageDown: scrollY + innerHeight, Home: 0, End: range };
         if (!(key in targets)) return false;
-        jump(targets[key], 500); return true;
+        jump(targets[key], 160); return true;
       },
     };
-    const interrupt = () => { journey = null; dragTarget = null; };
+    const interrupt = () => { journey = null; };
     const resize = new ResizeObserver(measure); resize.observe(document.body);
     const mutations = new MutationObserver(measure), main = document.querySelector('.finance-main');
     if (main) mutations.observe(main, { childList: true, subtree: true });
     window.addEventListener('scroll', schedule, { passive: true }); window.addEventListener('resize', measure);
     window.addEventListener('wheel', interrupt, { passive: true }); window.addEventListener('touchstart', interrupt, { passive: true });
-    media.addEventListener('change', measure); motion.addEventListener('change', measure);
+    media.addEventListener('change', measure); finePointer.addEventListener('change', measure); motion.addEventListener('change', measure);
     let disposed = false;
     document.fonts.ready.then(() => { if (!disposed) { measurements.clear(); measure(); } });
     measure();
     return () => {
-      disposed = true; cancelAnimationFrame(frame); clearTimeout(timer); resize.disconnect(); mutations.disconnect();
+      disposed = true; cancelAnimationFrame(frame); resize.disconnect(); mutations.disconnect();
       window.removeEventListener('scroll', schedule); window.removeEventListener('resize', measure);
       window.removeEventListener('wheel', interrupt); window.removeEventListener('touchstart', interrupt);
-      media.removeEventListener('change', measure); motion.removeEventListener('change', measure);
+      media.removeEventListener('change', measure); finePointer.removeEventListener('change', measure); motion.removeEventListener('change', measure);
       delete document.documentElement.dataset.readingRuler; redraw.current = () => {};
     };
   }, [view]);
   // Ref nodes become available after the measured chapter list renders.
   useEffect(() => redraw.current(), [chapters]);
-  return <aside className="reading-rail" aria-label="页面阅读进度">
+  return <aside className="reading-rail" aria-label="页面阅读进度"
+    onPointerEnter={event => { if (event.pointerType === 'mouse') actions.current.hover(true); }}
+    onPointerLeave={() => actions.current.hover(false)}
+    onFocusCapture={event => actions.current.keyboardFocus(event.target.matches(':focus-visible'))}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) actions.current.keyboardFocus(false); }}>
     <div ref={scale} className="reading-scale" role="scrollbar" tabIndex={0} aria-controls="workspace-content" aria-orientation="vertical" aria-label="阅读进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={0}
-      onPointerEnter={() => actions.current.hover(true)} onPointerLeave={() => actions.current.hover(false)}
-      onFocus={() => actions.current.hover(true)} onBlur={() => actions.current.hover(false)}
       onPointerMove={event => actions.current.move(event.clientY)}
       onPointerDown={event => { if (event.button === 0) { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); actions.current.down(event.clientY); } }}
       onPointerUp={event => { actions.current.up(event.clientX, event.clientY); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
-      onPointerCancel={() => actions.current.cancel()} onClick={event => actions.current.click(event.clientY)}
+      onPointerCancel={() => actions.current.cancel()}
       onKeyDown={event => { if (actions.current.key(event.key)) event.preventDefault(); }}>
-      <div className="reading-frost" aria-hidden="true" />
       {Array.from({ length: 101 }, (_, index) => <div key={index} ref={node => { ticks.current[index] = node; }} className={`reading-tick ${index % 5 === 0 ? 'major' : ''}`} aria-hidden="true">
-        <span ref={node => { marks.current[index] = node; }} className="reading-mark" style={{ animationDelay: `${index * 10}ms` }} />
+        <span ref={node => { marks.current[index] = node; }} className="reading-mark" />
         {index % 5 === 0 && <span ref={node => { labels.current[index] = node; }} className="reading-tick-label">{index}</span>}
       </div>)}
       <div ref={bracket} className="reading-viewport" aria-hidden="true" />
-      <div ref={needle} className="reading-indicator" aria-hidden="true"><span className="reading-needle" /><span ref={readout} className="reading-readout"><span className="reading-digits">{[0, 1, 2].map(index => <span key={index} ref={node => { columns.current[index] = node; }} className="reading-digit-column">{digits.map(digit => <span key={digit}>{digit}</span>)}</span>)}</span><span>%</span></span></div>
+      <div ref={needle} className="reading-indicator" aria-hidden="true"><span className="reading-needle" /><span ref={readout} className="reading-readout">0%</span></div>
     </div>
     <div ref={ghost} className="reading-preview" aria-hidden="true" />
-    <div className="reading-contrast reading-contrast-top" ref={node => { pools.current[0] = node; }} aria-hidden="true" />
-    <div className="reading-contrast reading-contrast-bottom" ref={node => { pools.current[1] = node; }} aria-hidden="true" />
-    <nav className="reading-chapters" aria-label="页面章节">{chapters.map((chapter, index) => <div key={chapter.selector}>
+    <nav className="reading-chapters" aria-label="页面章节" style={{ fontSize: RULER.heading }}>{chapters.map((chapter, index) => <div key={chapter.selector}>
       <button ref={node => { hits.current[index] = node; }} type="button" className="reading-chapter" aria-label={`跳转到${chapter.title}`}
         onClick={() => actions.current.jump(index)} onPointerEnter={() => actions.current.chapterHover(index)} onPointerLeave={() => actions.current.chapterHover(-1)}
         onFocus={() => actions.current.chapterHover(index)} onBlur={() => actions.current.chapterHover(-1)}><span className="reading-static-label">{chapter.title}</span></button>

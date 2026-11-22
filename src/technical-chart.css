@@ -49,6 +49,3 @@
   .chart-interaction-hint { flex-wrap: wrap; font-size: 8px; gap: 5px; padding-inline: 8px; }
   .chart-readout-value small { display: none; }
 }
-/* The page entrance animation otherwise makes fixed descendants relative to
-   the whole workspace instead of the viewport. */
-.workspace-view:has(.technical-chart.is-expanded) { transform: none; animation: none; }

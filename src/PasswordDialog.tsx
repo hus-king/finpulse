@@ -16,6 +16,7 @@ export default function PasswordDialog({ onClose, onSuccess }: { onClose: () => 
   useDialogScroll();
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.querySelector('input')?.focus();
     const handler = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); if (!controls.current.busy) controls.current.onClose(); }
       if (event.key !== 'Tab') return;
@@ -40,7 +41,7 @@ export default function PasswordDialog({ onClose, onSuccess }: { onClose: () => 
     <button className="icon-button auth-close" aria-label="关闭密码窗口" disabled={busy} onClick={onClose}><X size={20} /></button>
     <span className="brand-icon"><KeyRound size={22} /></span><h2 id="password-title">修改网站密码</h2><p>保存后，其他设备上的登录会失效，当前设备保持登录。</p>
     <form className="password-form" onSubmit={event => { event.preventDefault(); void submit(); }}>
-      <label className="auth-field">当前密码<input autoFocus autoComplete="current-password" type="password" required maxLength={128} disabled={busy} value={current} onChange={event => setCurrent(event.target.value)} /></label>
+      <label className="auth-field">当前密码<input autoComplete="current-password" type="password" required maxLength={128} disabled={busy} value={current} onChange={event => setCurrent(event.target.value)} /></label>
       <label className="auth-field">新密码<input autoComplete="new-password" type="password" required minLength={8} maxLength={128} disabled={busy} value={password} onChange={event => setPassword(event.target.value)} /></label>
       <label className="auth-field">确认新密码<input autoComplete="new-password" type="password" required minLength={8} maxLength={128} disabled={busy} value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
       {error && <div className="error-box" role="alert">{error}</div>}<button className="primary-button auth-submit" disabled={busy}>{busy && <LoaderCircle size={15} className="spin" />}保存新密码</button>

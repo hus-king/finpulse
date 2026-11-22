@@ -3,8 +3,8 @@ export const clamp = (value: number) => Math.max(0, Math.min(1, value));
 export const mix = (from: number, to: number, progress: number) => from + (to - from) * progress;
 export const easeCubic = (value: number) => value < .5 ? 4 * value ** 3 : 1 - (-2 * value + 2) ** 3 / 2;
 export const easeExpo = (value: number) => value >= 1 ? 1 : 1 - 2 ** (-10 * value);
-export const RULER = { width: 60, nav: 48, edge: 12, heading: 30, riding: 20, queue: 16,
-  top: 28, currentGap: 26, slot: 20, bottom: 36, flip: 200, detach: 240, stagger: .16, arc: 28 };
+export const RULER = { width: 60, nav: 48, edge: 12, heading: 22, riding: 16, queue: 16,
+  top: 28, currentGap: 26, slot: 26, bottom: 36, flip: 200, detach: 240, stagger: .16, arc: 12 };
 export type Chapter = { selector: string; title: string; anchor: number; bottom: number; advances: number[] };
 type Position = { x: number; y: number; rotation: number; scale: number; alpha: number };
 export type Letter = Position & { character: string; advance: number };
@@ -59,7 +59,7 @@ export function chapterGeometry(chapters: Chapter[], height: number, width: numb
       x: width - r.width - (total - center) * r.heading * scale, y, rotation: 0, scale, alpha,
     });
     const vertical = (center: number, y: number): Position => ({ x: width - r.width / 2,
-      y: y + (total - center) * r.riding, rotation: -90, scale: r.riding / r.heading, alpha: .35 });
+      y: y + (total - center) * r.riding, rotation: -90, scale: r.riding / r.heading, alpha: .60 });
     const letters = [...chapter.title].map((character, position) => {
       const step = chapter.advances[position] ?? 1, center = advance + step / 2; advance += step;
       let from: Position, to: Position, amount: number;
@@ -67,10 +67,10 @@ export function chapterGeometry(chapters: Chapter[], height: number, width: numb
         from = vertical(center, phase.ridingY); amount = phase.flip;
         const compact = phase.flip >= 1 ? index === settled - 1 ? unfolding : 1 : 0;
         to = horizontal(center, r.nav + r.top + index * r.slot + r.currentGap * (1 - compact),
-          mix(1, r.queue / r.heading, compact), mix(1, .35, compact));
+          mix(1, r.queue / r.heading, compact), mix(1, .60, compact));
       } else {
         amount = phase.detach;
-        from = horizontal(center, phase.queueY, r.queue / r.heading, .35);
+        from = horizontal(center, phase.queueY, r.queue / r.heading, .60);
         to = vertical(center, phase.detach < 1 ? phase.queueY - phase.ridingHeight : phase.ridingY);
       }
       const order = phase.flip > 0 || phase.detach < 1 ? chapter.title.length - 1 - position : position;

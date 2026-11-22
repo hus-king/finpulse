@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, TrendingUp } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
@@ -32,7 +32,7 @@ const indices = [
   ['sh000852', '中证1000'], ['sh000016', '上证50'],
 ].map(([code, name]) => ({ code, name }));
 const money = (fen: number) => `${fen > 0 ? '+' : fen < 0 ? '−' : ''}¥${(Math.abs(fen) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const percent = (value: number, excess = false) => `${value > 0 ? '+' : ''}${value.toFixed(2)}${excess ? ' 个百分点' : '%'}`;
+const percent = (value: number, suffix = '%') => `${value > 0 ? '+' : ''}${value.toFixed(2)}${suffix}`;
 const tone = (value: number) => value > 0 ? 'up' : value < 0 ? 'down' : '';
 
 function ComparisonChart({ data, metric }: { data: Performance; metric: Metric }) {
@@ -57,8 +57,8 @@ function ComparisonChart({ data, metric }: { data: Performance; metric: Metric }
     const benchmarkValue = (point: PerformancePoint) => metric === 'return' ? point.benchmark_return_percent : point.benchmark_profit_fen / 100;
     const axisValue = (value: number) => metric === 'return' ? `${Number(value.toFixed(1))}%` : Math.abs(value) >= 10_000 ? `${Number((value / 10_000).toFixed(1))}万` : value.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
     chart.current.setOption({ animation: false, backgroundColor: 'transparent',
-      grid: { left: 66, right: 22, top: 43, bottom: 42 },
-      legend: { top: 3, left: 10, icon: 'roundRect', itemWidth: 17, itemHeight: 3, textStyle: { color: color('--chart-text'), fontSize: 12 } },
+      grid: { left: 8, right: 16, top: 40, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+      legend: { selectedMode: false, top: 3, left: 10, icon: 'roundRect', itemWidth: 17, itemHeight: 3, textStyle: { color: color('--chart-text'), fontSize: 12 } },
       tooltip: { trigger: 'axis', renderMode: 'richText', backgroundColor: color('--chart-tooltip-bg'), borderColor: color('--chart-border'),
         textStyle: { color: color('--chart-tooltip-text'), fontSize: 12, lineHeight: 21 },
         formatter: (params: unknown) => {
@@ -66,20 +66,21 @@ function ComparisonChart({ data, metric }: { data: Performance; metric: Metric }
           const point = data.points[index];
           if (!point) return '';
           const value = (profit: number, rate: number) => metric === 'return' ? percent(rate) : money(profit);
-          return `${point.trading_date} ${point.phase === 'open' ? '开盘基准' : '收盘'}\n模拟盘  ${value(point.strategy_profit_fen, point.strategy_return_percent)}\n${data.benchmark.name}  ${value(point.benchmark_profit_fen, point.benchmark_return_percent)}\n收益率差  ${percent(point.excess_return_percent, true)}`;
+          const excess = metric === 'return' ? `收益率差  ${percent(point.excess_return_percent, ' 个百分点')}` : `收益差额  ${money(point.excess_profit_fen)}`;
+          return `${point.trading_date} ${point.phase === 'open' ? '开盘基准' : '收盘'}\n模拟盘  ${value(point.strategy_profit_fen, point.strategy_return_percent)}\n${data.benchmark.name}  ${value(point.benchmark_profit_fen, point.benchmark_return_percent)}\n${excess}`;
         } },
       xAxis: { type: 'category', boundaryGap: false, data: data.points.map(p => p.date),
         axisLine: { lineStyle: { color: color('--chart-border') } }, axisTick: { show: false },
         axisLabel: { color: color('--chart-text'), fontSize: 11, hideOverlap: true,
-          formatter: (_: string, index: number) => `${data.points[index].trading_date.slice(5)}${index === 0 ? '\n开盘' : index === 1 ? '\n收盘' : ''}` } },
+          formatter: (_: string, index: number) => `${data.points[index].trading_date.slice(5)}${data.points[index].phase === 'open' ? '\n开盘' : index < 2 ? '\n收盘' : ''}` } },
       yAxis: { type: 'value', scale: true, axisLabel: { color: color('--chart-text'), fontSize: 11, formatter: axisValue },
         splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
       series: [
-        { name: '我的模拟盘', type: 'line', data: data.points.map(strategyValue), symbol: 'none', showSymbol: false,
+        { name: '我的模拟盘', type: 'line', data: data.points.map(strategyValue), symbol: 'circle', showSymbol: data.points.length === 1, symbolSize: 6,
           lineStyle: { color: strategyColor, width: 2.6 }, itemStyle: { color: strategyColor },
           markLine: { silent: true, symbol: 'none', label: { show: false }, data: [{ yAxis: 0 }],
             lineStyle: { color: color('--chart-crosshair'), width: 1, type: 'dashed', opacity: .6 } } },
-        { name: data.benchmark.name, type: 'line', data: data.points.map(benchmarkValue), symbol: 'none', showSymbol: false,
+        { name: data.benchmark.name, type: 'line', data: data.points.map(benchmarkValue), symbol: 'circle', showSymbol: data.points.length === 1, symbolSize: 6,
           lineStyle: { color: '#4a8cff', width: 1.8 }, itemStyle: { color: '#4a8cff' } },
       ],
     }, { notMerge: true });
@@ -133,18 +134,21 @@ export default function PaperPerformance({ ownerKey, revision = 0 }: { ownerKey:
     { label: `${data.benchmark.name}等额持有`, amount: summary.benchmark_profit_fen, rate: summary.benchmark_return_percent },
     { label: metric === 'return' ? '超额收益率' : '收益差额', amount: summary.excess_profit_fen, rate: summary.excess_return_percent, excess: true },
   ] : [];
-  return <section className="paper-performance" aria-labelledby="paper-performance-title">
-    <div className="paper-performance-heading"><div><span className="paper-performance-eyebrow">PORTFOLIO PERFORMANCE</span><h3 id="paper-performance-title">收益与收益率对比</h3></div>
-      <div className="paper-performance-controls"><label><span className="sr-only">对比指数</span><select aria-label="对比指数" value={benchmark} onChange={event => setBenchmark(event.target.value)}>{(data?.benchmark_options ?? indices).map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label>
+  return <section className="panel paper-performance" aria-labelledby="paper-performance-title">
+    <div className="paper-performance-heading"><h2 id="paper-performance-title">收益与收益率对比</h2>
+      <div className="paper-performance-controls"><label><span>对比指数</span><select aria-label="对比指数" value={benchmark} onChange={event => setBenchmark(event.target.value)}>{(data?.benchmark_options ?? indices).map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label>
         <div className="paper-performance-switch" role="group" aria-label="收益显示方式"><button type="button" aria-pressed={metric === 'return'} onClick={() => setMetric('return')}>收益率</button><button type="button" aria-pressed={metric === 'profit'} onClick={() => setMetric('profit')}>收益金额</button></div>
         <button type="button" className="paper-performance-refresh" aria-label="刷新收益对比" title="刷新收益对比" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={16} className={loading ? 'spin' : ''} /></button>
       </div></div>
-    {summary && <div className="paper-performance-metrics">{metrics.map(item => <div key={item.label}><span>{item.label}</span><strong className={tone(item.amount)}>{metric === 'return' ? percent(item.rate, item.excess) : money(item.amount)}</strong><small className={tone(item.amount)}>{metric === 'return' ? money(item.amount) : percent(item.rate, item.excess)}</small></div>)}</div>}
-    {data?.points.length ? <ComparisonChart data={data} metric={metric} /> : <div className="paper-performance-empty"><TrendingUp size={28} /><p>{error || data?.reason || '正在读取收益对比…'}</p></div>}
+    {summary && <div className="paper-performance-metrics">{metrics.map(item => <div key={item.label}>
+      <span>{item.label}{metric === 'return' && item.excess && '（百分点）'}</span>
+      <strong className={tone(item.amount)}>{metric === 'profit' ? money(item.amount) : percent(item.rate, item.excess ? '' : '%')}</strong>
+    </div>)}</div>}
+    {data?.points.length ? <ComparisonChart data={data} metric={metric} /> : <p className="paper-performance-empty" role="status">{error || data?.reason || '正在读取收益对比…'}</p>}
     {error && data?.points.length ? <p className="paper-performance-notice" role="status">{error}</p> : null}
     {data?.points.length ? <div className="paper-performance-footer"><span>{data.start_date} 开始 · 对比至 {data.as_of} 收盘</span><span>初始资金 ¥{((data.initial_cash_fen ?? 0) / 100).toLocaleString('zh-CN')}</span></div> : null}
     {data?.reason && data.points.length ? <p className="paper-performance-notice" role="status">{data.reason}</p> : null}
-    <p className="paper-performance-basis">仅比较已收盘交易日，采用相同本金和起点。模拟盘收益已扣交易费用；指数为价格收益，不含股息再投资和交易费用。</p>
+    {!!data?.points.length && <p className="paper-performance-basis">以相同本金和起点比较收盘收益。模拟盘已扣交易费用，指数不含股息再投资和交易费用。</p>}
     {data?.provenance?.replay_note && <p className="paper-performance-basis">{data.provenance.replay_note}</p>}
   </section>;
 }

@@ -1,0 +1,120 @@
+.modal-overlay:has(.stock-search) {
+  --search-top: clamp(16px, 15dvh, 160px);
+  align-items: flex-start;
+  padding-top: var(--search-top);
+}
+
+:root[data-theme] .research-modal:has(.stock-search) {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 39rem);
+  max-height: min(42rem, calc(100dvh - var(--search-top) - 20px));
+  gap: 12px;
+}
+
+.research-modal:has(.stock-search) > header,
+.research-modal:has(.stock-search) .stock-search {
+  margin: 0;
+}
+
+:root[data-theme] .research-modal .stock-search:focus-within {
+  border-color: var(--theme-focus);
+}
+
+:root[data-theme] .finance-shell .research-modal .stock-search input {
+  font-size: 14px;
+  background: transparent;
+}
+
+:root[data-theme] .research-modal .stock-search input:focus-visible {
+  outline: none;
+}
+
+.stock-search-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stock-search-options .instrument-filters {
+  margin: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-border);
+}
+
+:root[data-theme] .stock-search-options .instrument-filters button {
+  padding: 6px 13px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--theme-muted);
+  background: transparent;
+}
+
+:root[data-theme] .stock-search-options .instrument-filters button[aria-pressed="true"] {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+.stock-search-count {
+  font-size: 12px;
+  color: var(--theme-muted);
+}
+
+.research-modal .catalog-list {
+  flex: 0 1 auto;
+  min-height: 64px;
+  max-height: none;
+  overscroll-behavior: contain;
+  border-block: 1px solid var(--theme-border);
+}
+
+.research-modal .catalog-list > div {
+  padding: 0 3px;
+  gap: 8px;
+}
+
+.research-modal .catalog-list > div:first-child {
+  border-top: 0;
+}
+
+.research-modal .catalog-list > div > button {
+  min-height: 44px;
+  padding: 7px 4px;
+}
+
+.research-modal .catalog-list .catalog-name {
+  min-width: 0;
+}
+
+.research-modal .catalog-list strong {
+  font-size: 14px;
+}
+
+:root[data-theme] .research-modal .catalog-list small,
+.research-modal .catalog-list > div > button:last-child {
+  font-size: 12px;
+}
+
+.research-modal .catalog-list small {
+  margin-top: 3px;
+}
+
+:root[data-theme] .research-modal .catalog-list button:focus-visible {
+  outline-offset: -2px;
+}
+
+.research-modal .catalog-list button[aria-disabled="true"] {
+  opacity: .56;
+  cursor: default;
+}
+
+.research-modal .stock-search-footnote {
+  margin: 0;
+  line-height: 1.5;
+}

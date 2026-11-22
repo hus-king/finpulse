@@ -19,8 +19,9 @@
 :root[data-theme] {
   --font-display: "Space Grotesk", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-rail-cjk: "FinPulse Navigation", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 14px;
+  font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-optical-sizing: auto;
+  font-size: 87.5%;
   --workspace-width: 1840px;
   --workspace-gutter: clamp(24px, 3vw, 56px);
   --ease-out: cubic-bezier(.22, 1, .36, 1);
@@ -179,44 +180,36 @@
 /* Shell: a shared, generous horizontal rhythm. */
 :root[data-theme] :is(.finance-header, .finance-nav, .ticker-bar) { background: var(--theme-background); border-color: var(--theme-border); }
 :root[data-theme] :is(.header-inner, .finance-nav > div, .ticker-inner, .finance-main) { max-width: var(--workspace-width); padding-left: var(--workspace-gutter); padding-right: var(--workspace-gutter); }
-:root[data-theme] .header-inner { min-height: 84px; gap: 24px; }
+:root[data-theme] .header-inner { min-height: 72px; gap: 16px; }
 :root[data-theme] .finance-brand { gap: 12px; font-size: 26px; letter-spacing: -1.4px; color: var(--theme-heading); }
 :root[data-theme] .finance-brand > svg { color: var(--theme-accent-text); width: 28px; stroke-width: 1.5; }
-:root[data-theme] .finance-brand > span { color: var(--theme-heading); font-weight: 400; }
-:root[data-theme] .finance-brand strong { font-weight: 650; }
-:root[data-theme] .finance-brand small { font-size: 10px; font-weight: 400; letter-spacing: 2px; color: var(--theme-muted); margin-left: 20px; }
-:root[data-theme] .finance-brand .brand-wordmark-svg { display: block; width: 176px; height: auto; color: var(--theme-heading); flex-shrink: 0; }
-:root[data-theme] .finance-brand .brand-caption { color: var(--theme-subtle); font-size: 9px; font-weight: 400; letter-spacing: 2px; margin: 0 0 0 10px; }
-:root[data-theme] .finance-search { max-width: 390px; padding: 11px 16px; min-height: 40px; border-radius: 2px; background: transparent; border: 1px solid var(--theme-border); color: var(--theme-muted); font-size: 12px; }
+:root[data-theme] .finance-brand .brand-wordmark-svg { display: block; width: 148px; height: auto; color: var(--theme-heading); flex-shrink: 0; }
+:root[data-theme] .finance-search { max-width: 400px; margin-left: auto; padding: 10px 14px; min-height: 40px; border-radius: 10px; background: var(--theme-panel); border: 1px solid var(--theme-border); color: var(--theme-muted); font-size: .95rem; }
 :root[data-theme] .finance-search:hover { background: var(--theme-panel); border-color: var(--theme-subtle); }
 :root[data-theme] .finance-search svg { color: var(--theme-muted); stroke-width: 1.4; }
 :root[data-theme] .finance-search kbd { color: var(--theme-subtle); font-family: var(--mono); font-size: 10px; }
-:root[data-theme] .research-badge { gap: 9px; font-size: 10px; color: var(--theme-muted); }
 :root[data-theme] .status-dot { width: 5px; height: 5px; box-shadow: none; background: var(--theme-accent-text); }
-:root[data-theme] :is(button.theme-toggle, a.github-link, .account-button, .account-button.signed-in) { min-height: 36px; border-radius: 2px; background: transparent; border: 1px solid var(--theme-border); color: var(--theme-text); padding: 8px 11px; font-size: 11px; box-shadow: none; }
+:root[data-theme] :is(button.theme-toggle, a.github-link, .account-button, .account-button.signed-in) { min-height: 40px; border-radius: 10px; background: transparent; border: 1px solid var(--theme-border); color: var(--theme-text); padding: 8px 12px; font-size: .925rem; box-shadow: none; }
 :root[data-theme] :is(button.theme-toggle, a.github-link, .account-button):hover { background: var(--theme-hover); border-color: var(--theme-subtle); }
 :root[data-theme] :is(.account-avatar, .small-avatar) { border-radius: 2px; background: var(--theme-raised); color: var(--theme-heading); }
-:root[data-theme] .admin-login-button { color: var(--theme-muted); font-size: 10px; }
-:root[data-theme] .finance-nav > div { gap: 32px; height: 56px; }
-:root[data-theme] .finance-nav button { display: inline-flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 500; border-bottom-width: 1px; padding: 0; color: var(--theme-muted); white-space: nowrap; }
-:root[data-theme] .finance-nav button small { font: 9px var(--mono); color: var(--theme-subtle); }
-:root[data-theme] .finance-nav button.active { position: relative; color: var(--theme-heading); border-color: transparent; }
-:root[data-theme] .finance-nav button.active small { color: var(--theme-accent-text); }
-:root[data-theme] .finance-nav button:hover { color: var(--theme-heading); }
-:root[data-theme] .finance-nav > div > span { font-family: var(--mono); letter-spacing: .8px; font-size: 9px; color: var(--theme-subtle); }
-.finance-nav-marker {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 17px;
-  overflow: visible;
-  pointer-events: none;
-  color: var(--theme-accent-text);
-  transform-origin: left bottom;
+:root[data-theme] .finance-nav > div { height: 52px; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+:root[data-theme] .finance-nav button {
+  flex: none; align-self: center; min-height: 38px; padding: 0 14px;
+  border: 0; border-radius: 9px; white-space: nowrap;
+  font-size: .96rem; font-weight: 500; color: var(--theme-muted);
 }
-.finance-nav-marker circle { opacity: 0; transform-box: fill-box; transform-origin: center; }
-:root[data-theme] .ticker-inner { padding-top: 20px; padding-bottom: 20px; gap: 26px; }
+:root[data-theme] .finance-nav button:hover { background: var(--theme-panel); color: var(--theme-heading); }
+:root[data-theme] .finance-nav button.active { background: var(--theme-raised); color: var(--theme-heading); font-weight: 650; }
+:root[data-theme] .finance-nav button:active { background: var(--theme-hover); transition: none; }
+:root[data-theme] .finance-nav button:focus-visible { outline-offset: -2px; }
+@media (min-width: 901px) {
+  :root[data-theme] { scroll-padding-top: 60px; }
+  :root[data-theme] body { overflow-x: clip; }
+  :root[data-theme] .finance-nav { position: sticky; top: 0; z-index: 20; }
+  :root[data-theme] .header-inner .theme-toggle { margin-left: 0; }
+  :root[data-theme] .account-control { margin-left: 0; }
+}
+:root[data-theme] .ticker-inner { padding-top: 12px; padding-bottom: 12px; gap: 22px; }
 :root[data-theme] .ticker-label { min-width: 145px; color: var(--theme-text); font-size: 11px; gap: 6px 10px; }
 :root[data-theme] .ticker-label svg { stroke-width: 1.3; color: var(--theme-subtle); }
 :root[data-theme] .ticker-label span { color: var(--theme-subtle); font-size: 9px; }
@@ -227,55 +220,44 @@
 :root[data-theme] .ticker-card > span:last-child { font-family: var(--mono); font-size: 11px; }
 :root[data-theme] .ticker-card:hover { background: var(--theme-panel); }
 :root[data-theme] .finance-main { padding-top: 0; }
-:root[data-theme] .finance-heading { position: relative; min-height: 220px; padding: 48px 0; margin-bottom: 0; isolation: isolate; }
-:root[data-theme] .finance-heading::before { content: ''; position: absolute; inset: 0 -12px; z-index: -1; pointer-events: none; background: radial-gradient(ellipse at 76% 12%, var(--hero-glow), transparent 65%); }
-:root[data-theme] .finance-heading .eyebrow { display: flex; align-items: center; gap: 12px; font: 10px var(--mono); letter-spacing: 2px; color: var(--theme-muted); margin-bottom: 18px; }
-:root[data-theme] .heading-mark { width: 22px; height: 1px; background: var(--theme-accent-text); }
-:root[data-theme] .finance-heading h1 { font-size: clamp(28px, 2.4vw, 43px); letter-spacing: -1.4px; line-height: 1.35; font-weight: 550; color: var(--theme-heading); }
-:root[data-theme] .finance-heading > div > p:last-child { font-size: 12px; color: var(--theme-muted); line-height: 1.9; margin-top: 17px; }
-:root[data-theme] .workspace-meta { display: flex; align-items: center; gap: 23px; flex-shrink: 0; }
-:root[data-theme] .workspace-meta > span { font: 300 64px var(--mono); letter-spacing: -5px; color: var(--theme-border); }
-:root[data-theme] .workspace-meta > div { display: flex; flex-direction: column; gap: 12px; border-left: 1px solid var(--theme-border); padding: 4px 0 4px 22px; }
-:root[data-theme] .workspace-meta strong { font-size: 12px; font-weight: 500; color: var(--theme-text); }
-:root[data-theme] .workspace-meta small { font: 8px var(--mono); letter-spacing: 1.2px; color: var(--theme-subtle); }
+:root[data-theme] .finance-heading { padding: 30px 0 20px; margin: 0; }
+:root[data-theme] .finance-heading h1 { margin: 0; font-size: clamp(1.85rem, 2.1vw, 2.6rem); letter-spacing: -.035em; line-height: 1.24; font-weight: 650; color: var(--theme-heading); }
+:root[data-theme] .finance-footer a { display: inline-flex; align-items: center; gap: 6px; color: var(--theme-muted); }
+:root[data-theme] .finance-footer a:hover { color: var(--theme-heading); text-decoration: underline; }
 
-/* ArtCraft ruler geometry: document-scale ticks compress into a page map on hover. */
+/* The ruler and its chapter titles share a reserved margin in both themes. */
 :root[data-theme] .reading-rail { display: none; }
-:root[data-theme][data-reading-ruler] { scrollbar-width: none; }
+:root[data-theme][data-reading-ruler] { scrollbar-width: none; --reading-gutter: max(112px, calc(176px - var(--workspace-gutter))); }
 :root[data-theme][data-reading-ruler]::-webkit-scrollbar { display: none; }
-:root[data-theme][data-reading-ruler] .finance-shell { padding-right: 100px; }
-:root[data-theme][data-reading-ruler] .reading-rail { display: block; position: fixed; inset: 0 0 0 auto; width: 60px; z-index: 40; pointer-events: none; user-select: none; }
-:root[data-theme] .reading-scale { position: absolute; z-index: 1; inset: 0; overflow: hidden; pointer-events: auto; cursor: crosshair; touch-action: none; }
-:root[data-theme] .reading-frost { position: absolute; inset: 0; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb, var(--theme-background) 55%, transparent); mask-image: linear-gradient(to left,black 40%,rgba(0,0,0,.745) 47.5%,rgba(0,0,0,.531) 55%,rgba(0,0,0,.356) 62.5%,rgba(0,0,0,.218) 70%,rgba(0,0,0,.116) 77.5%,rgba(0,0,0,.047) 85%,rgba(0,0,0,.01) 92.5%,transparent); pointer-events: none; }
+:root[data-theme][data-reading-ruler] .finance-shell { padding-right: var(--reading-gutter); }
+:root[data-theme][data-reading-ruler] .reading-rail { display: block; position: fixed; inset: 0 0 0 auto; width: var(--reading-gutter); z-index: 40; pointer-events: auto; user-select: none; }
+:root[data-theme] .reading-scale { position: absolute; z-index: 1; inset: 0 0 0 auto; width: 60px; overflow: hidden; pointer-events: auto; cursor: crosshair; touch-action: none; }
+:root[data-theme] .reading-scale:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: -2px; }
 :root[data-theme] .reading-tick { position: absolute; top: 0; inset-inline: 0; height: 0; pointer-events: none; }
-:root[data-theme] .reading-mark { position: absolute; top: 0; right: 0; width: 10px; height: 1px; background: var(--theme-text); transform-origin: right center; opacity: .4; animation: reading-tick-enter 1s var(--ease-out) backwards; }
-@keyframes reading-tick-enter { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); } }
-:root[data-theme] .reading-tick.major .reading-mark { width: 20px; opacity: .8; }
-:root[data-theme] .reading-tick-label { position: absolute; top: 0; right: 24px; transform: translateY(-50%); font: 9px/1 var(--mono); letter-spacing: .08em; color: var(--theme-text); opacity: .5; }
-:root[data-theme] .reading-viewport { position: absolute; top: 0; inset-inline: 0; opacity: 0; border-block: 1px solid color-mix(in srgb, var(--theme-text) 50%, transparent); background: color-mix(in srgb, var(--theme-text) 10%, transparent); pointer-events: none; }
-:root[data-theme] .reading-indicator { position: absolute; top: 0; inset-inline: 0; height: 0; opacity: 0; pointer-events: none; }
-:root[data-theme] .reading-needle { position: absolute; top: 0; inset-inline: 0; height: 1px; background: #2d81ff; box-shadow: 0 0 6px #2d81ff; }
-:root[data-theme] .reading-readout { position: absolute; right: 2px; top: 4px; display: flex; align-items: baseline; gap: 2px; white-space: nowrap; color: var(--theme-accent-text); font: 9px/1 var(--mono); letter-spacing: .08em; }
-:root[data-theme] .reading-digits { display: inline-flex; height: 1em; line-height: 1; overflow: hidden; }
-:root[data-theme] .reading-digit-column { display: flex; flex-direction: column; transition: transform .28s cubic-bezier(.2,.9,.2,1); }
-:root[data-theme] .reading-digit-column > span { display: block; height: 1em; flex-shrink: 0; }
-:root[data-theme] .reading-preview { position: fixed; z-index: 2; top: 0; right: 0; width: 60px; height: 3px; margin-top: -1.5px; background: var(--theme-text); opacity: 0; pointer-events: none; }
-:root[data-theme] .reading-contrast { position: fixed; z-index: 0; right: 0; width: 320px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: color-mix(in srgb,var(--theme-background) 65%,transparent); opacity: 0; pointer-events: none; }
-:root[data-theme] .reading-contrast-top { top: 0; height: 260px; mask-image: radial-gradient(100% 100% at 100% 0%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
-:root[data-theme] .reading-contrast-bottom { bottom: 0; height: 180px; mask-image: radial-gradient(100% 100% at 100% 100%,black 38%,rgba(0,0,0,.82) 56%,rgba(0,0,0,.48) 72%,rgba(0,0,0,.2) 86%,rgba(0,0,0,.05) 94%,transparent 97%); }
+:root[data-theme] .reading-mark { position: absolute; top: 0; right: 0; width: 7px; height: 1px; background: var(--theme-muted); transform-origin: right center; opacity: .4; }
+:root[data-theme] .reading-tick.major .reading-mark { width: 14px; opacity: .8; }
+:root[data-theme] .reading-tick-label { position: absolute; top: 0; right: 19px; transform: translateY(-50%); font: 10px/1 var(--mono); color: var(--theme-text); }
+:root[data-theme] .reading-viewport { position: absolute; top: 0; inset-inline: 0; opacity: 0; border-block: 1px solid var(--theme-accent-border); background: color-mix(in srgb, var(--theme-accent-text) 7%, transparent); pointer-events: none; }
+:root[data-theme] .reading-indicator { position: absolute; top: 0; inset-inline: 0; height: 0; pointer-events: none; }
+:root[data-theme] .reading-needle { position: absolute; top: 0; inset-inline: 0; height: 1px; background: var(--theme-accent-text); }
+:root[data-theme] .reading-readout { position: absolute; right: 3px; top: 4px; background: var(--theme-background); padding: 1px 3px; color: var(--theme-accent-text); font: 600 11px/1 var(--mono); font-variant-numeric: tabular-nums; }
+:root[data-theme] .reading-preview { position: fixed; z-index: 2; top: 0; right: 0; width: 60px; height: 1px; background: var(--theme-muted); opacity: 0; pointer-events: none; }
 :root[data-theme] .reading-chapters { position: fixed; z-index: 2; inset: 0; pointer-events: none; }
-:root[data-theme] .reading-chapter { position: absolute; display: block; max-width: none; max-height: none; padding: 0; margin: 0; border: 0; background: none; pointer-events: auto; cursor: pointer; }
+:root[data-theme] .reading-chapter { position: absolute; display: block; min-height: 24px; max-width: none; max-height: none; padding: 0; margin: 0; border: 0; border-radius: 5px; background: none; pointer-events: auto; cursor: pointer; }
+:root[data-theme] .reading-chapter:active { background: var(--theme-accent-soft); }
+:root[data-theme] .reading-chapter:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: -2px; }
 :root[data-theme] .reading-glyph, :root[data-theme] .reading-font-probe { font-family: var(--font-rail-cjk); font-weight: 600; font-stretch: normal; line-height: 1; letter-spacing: normal; white-space: pre; -webkit-font-smoothing: antialiased; }
-:root[data-theme] .reading-glyph { position: absolute; top: 0; left: 0; font-size: 30px; pointer-events: none; will-change: transform; text-shadow: 0 0 4px var(--theme-background),0 0 10px var(--theme-background); }
+:root[data-theme] .reading-glyph { position: absolute; top: 0; left: 0; pointer-events: none; }
 :root[data-theme] .reading-font-probe { position: fixed; top: 0; left: -10000px; font-size: 100px; visibility: hidden; }
 :root[data-theme] .reading-static-label { display: none; }
 :root[data-theme][data-reading-ruler="static"] .reading-glyph { display: none; }
-:root[data-theme][data-reading-ruler="static"] .reading-chapters { inset: auto 60px 36px auto; display: flex; flex-direction: column; gap: 6px; }
-:root[data-theme][data-reading-ruler="static"] .reading-chapter { position: static; width: auto !important; height: auto !important; color: var(--theme-text); font: 18px var(--font-rail-cjk); }
+:root[data-theme][data-reading-ruler="static"] .reading-chapters { inset: 64px 60px auto auto; width: 104px; max-height: calc(100dvh - 72px); overflow-y: auto; }
+:root[data-theme][data-reading-ruler="static"] .reading-chapter { position: static; width: 100% !important; height: auto !important; min-height: 44px; padding-inline: 6px; color: var(--theme-muted); font: 600 14px/1.4 var(--font-rail-cjk); text-align: right; }
+:root[data-theme][data-reading-ruler="static"] .reading-chapter[aria-current] { color: var(--theme-accent-text); background: var(--theme-accent-soft); }
 :root[data-theme][data-reading-ruler="static"] .reading-static-label { display: block; }
 
 /* Shared surfaces and controls, including all six workspaces. */
-:root[data-theme] :is(.panel, .peg-page, .research-assistant-card, .paper-stat, .paper-ticket, .paper-holdings, .paper-history, .paper-automation) { background: var(--theme-panel); border: 1px solid var(--theme-border); border-radius: 2px; box-shadow: none; color: var(--theme-text); }
+:root[data-theme] :is(.panel, .peg-page, .research-assistant-card, .paper-ticket, .paper-holdings, .paper-history, .paper-automation) { background: var(--theme-panel); border: 1px solid var(--theme-border); border-radius: 2px; box-shadow: none; color: var(--theme-text); }
 :root[data-theme] :is(.panel, .peg-page, .research-assistant-card) { transition: opacity 550ms var(--ease-out), transform 550ms var(--ease-out), border-color 180ms, background-color 180ms; }
 :root[data-theme] :is(.primary-button, .auth-submit) { min-height: 38px; background: var(--action-background); color: var(--action-text); border: 1px solid var(--action-background); border-radius: 2px; padding: 10px 15px; font-size: 11px; font-weight: 550; box-shadow: none; }
 :root[data-theme] :is(.primary-button, .auth-submit):hover:not(:disabled) { background: var(--action-hover); border-color: var(--action-hover); }
@@ -500,10 +482,6 @@
 :root[data-theme] .peg-summary { padding: 28px 0; }
 :root[data-theme] .peg-summary strong { font-family: var(--mono); font-size: 30px; font-weight: 400; }
 :root[data-theme] .peg-value { font-family: var(--mono); font-weight: 500; }
-:root[data-theme] .paper-stat { padding: 26px; }
-:root[data-theme] .paper-stat.paper-equity { background: linear-gradient(140deg, var(--theme-raised), var(--theme-panel) 80%); border-color: var(--theme-border); }
-:root[data-theme] .paper-stat > strong { font-family: var(--mono); font-weight: 400; }
-:root[data-theme] :is(.paper-ticket, .paper-holdings, .paper-history, .paper-automation) { padding: 28px; }
 :root[data-theme] :is(.paper-tag, .paper-session, .paper-selected-stock, .paper-quote, .paper-note, .paper-search-field, .paper-password-notice) { border-radius: 2px; border-color: var(--theme-border); background: transparent; }
 :root[data-theme] :is(.digest-panel, .subscription-panel, .admin-intro) { border-radius: 2px; }
 :root[data-theme] .finance-footer { margin-top: 56px; padding: 26px 0; font-size: 10px; line-height: 1.8; color: var(--theme-subtle); border-color: var(--theme-border); }
@@ -575,6 +553,11 @@
 :root[data-theme] .finance-shell summary::-webkit-details-marker { display: none; }
 :root[data-theme] .finance-shell summary:not(.research-details summary)::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 10px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: translateY(-2px) rotate(45deg); }
 :root[data-theme] .finance-shell details[open] > summary:not(.research-details summary)::after { transform: translateY(1px) rotate(225deg); }
+@media (max-width: 1200px) {
+  :root[data-theme] .market-overview { grid-template-columns: 125px minmax(175px, 1fr) minmax(210px, 1fr); }
+  :root[data-theme] .market-overview-trend { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--theme-border); padding: 22px 0 0; }
+  :root[data-theme] .sentiment-trend-chart { height: 135px; }
+}
 @media (max-width: 1199px) {
   :root[data-theme] .research-right-rail { border-left: 0; padding-left: 0; }
 }
@@ -585,9 +568,6 @@
 }
 
 /* Motion is limited to orientation, feedback, and actual content arrival. */
-.workspace-view { animation: workspace-enter 500ms var(--ease-out) both; }
-.reveal-pending { opacity: 0; transform: translateY(14px); }
-@keyframes workspace-enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
 @keyframes quote-update { from { background-color: var(--theme-accent-soft); } to { background-color: transparent; } }
 :root[data-theme] .quote-update { animation: quote-update 700ms ease-out; }
 
@@ -599,7 +579,7 @@
 }
 :root[data-theme] .portfolio-list { min-height: 0; max-height: 60dvh; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--theme-border) transparent; }
 @media (min-width: 1024px) {
-  :root[data-theme] .portfolio-rail { position: sticky; top: 28px; height: calc(100dvh - 56px); }
+  :root[data-theme] .portfolio-rail { position: sticky; top: 68px; height: calc(100dvh - 84px); }
   :root[data-theme] .portfolio-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   :root[data-theme] .portfolio-panel > :is(header, .rail-caption, .add-watch) { flex-shrink: 0; }
   :root[data-theme] .portfolio-list { flex: 1; max-height: none; }
@@ -607,25 +587,18 @@
 }
 @media (max-width: 1450px) {
   :root[data-theme] .header-inner { gap: 16px; }
-  :root[data-theme] .finance-brand small { display: none; }
   :root[data-theme] .finance-search { max-width: 310px; }
-  :root[data-theme] .market-overview { grid-template-columns: 125px minmax(175px, 1fr) minmax(210px, 1fr); }
-  :root[data-theme] .market-overview-trend { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--theme-border); padding: 22px 0 0; }
-  :root[data-theme] .sentiment-trend-chart { height: 135px; }
+  :root[data-theme] .market-overview { grid-template-columns: 125px minmax(175px, .85fr) minmax(185px, 1fr) minmax(230px, 1.2fr); gap: 18px; }
   :root[data-theme] .finance-layout { grid-template-columns: 190px minmax(0, 1fr) 245px; gap: 22px; }
   :root[data-theme] .live-price-row { align-items: flex-start; flex-direction: column; gap: 25px; }
   :root[data-theme] .live-price-row dl { width: 100%; }
 }
 @media (max-width: 1199px) {
-  :root[data-theme] .finance-nav > div { gap: 25px; }
-  :root[data-theme] .finance-nav > div > span { display: none; }
-  :root[data-theme] .research-badge { display: none; }
   :root[data-theme] .finance-search { margin-left: auto; }
   :root[data-theme] .finance-layout { grid-template-columns: 200px minmax(0, 1fr); gap: 24px; }
   :root[data-theme] .research-right-rail { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 24px; }
   :root[data-theme] .ticker-label { min-width: 115px; }
   :root[data-theme] .ticker-card { padding: 3px 14px; gap: 15px; }
-  :root[data-theme] .workspace-meta { display: none; }
   :root[data-theme] .market-overview .sentiment-body { display: contents; }
   :root[data-theme] .market-overview-trend { grid-row: auto; }
 }
@@ -635,7 +608,6 @@
   :root[data-theme] .finance-search { order: 5; width: 100%; max-width: none; margin: 0; }
   :root[data-theme] .finance-nav > div { overflow-x: auto; scrollbar-width: none; gap: 25px; height: 56px; }
   :root[data-theme] .finance-nav button { flex-shrink: 0; }
-  :root[data-theme] .finance-nav button small { display: none; }
   :root[data-theme] .ticker-inner { gap: 0; overflow-x: auto; scrollbar-width: none; padding-top: 16px; padding-bottom: 16px; }
   :root[data-theme] .ticker-label { display: none; }
   :root[data-theme] .ticker-card { min-width: 210px; flex: 1 0 210px; padding: 0 20px; gap: 16px; flex-wrap: nowrap; }
@@ -664,16 +636,13 @@
   :root[data-theme] .finance-brand > svg { width: 23px; }
   :root[data-theme] :is(button.theme-toggle, a.github-link) { padding: 8px; min-height: 34px; }
   :root[data-theme] :is(button.theme-toggle, a.github-link) > span { display: none; }
-  :root[data-theme] .admin-login-button { display: none; }
   :root[data-theme] .account-control { gap: 0; }
   :root[data-theme] .account-button { font-size: 10px; padding: 8px 10px; }
   :root[data-theme] .finance-nav > div { gap: 26px; height: 52px; }
   :root[data-theme] .finance-nav button { font-size: 11px; }
   :root[data-theme] .finance-search { padding: 11px 12px; font-size: 11px; }
   :root[data-theme] .finance-heading { padding: 35px 0; }
-  :root[data-theme] .finance-heading .eyebrow { font-size: 8px; letter-spacing: 1.7px; margin-bottom: 17px; }
   :root[data-theme] .finance-heading h1 { font-size: 27px; letter-spacing: -1px; }
-  :root[data-theme] .finance-heading > div > p:last-child { font-size: 11px; max-width: 320px; }
   :root[data-theme] .market-overview { margin-bottom: 28px; gap: 25px; grid-template-columns: 1fr; }
   :root[data-theme] .market-overview .sentiment-body { display: contents; }
   :root[data-theme] .market-overview-mood { grid-column: 1; }
@@ -752,7 +721,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme] *, :root[data-theme] *::before, :root[data-theme] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .reveal-pending { opacity: 1; transform: none; }
 }
 
 /* Keep the warm light surfaces; give small labels and controls enough ink. */
@@ -776,10 +744,6 @@
 :root[data-theme="light"] .chart-period-shortcuts > button { font-size: 11px; }
 :root[data-theme="light"] .chart-period-shortcuts > button[aria-pressed="true"] { color: #234769; box-shadow: inset 0 -2px #375878; font-weight: 600; }
 :root[data-theme="light"] .portfolio-row.active strong { color: var(--theme-heading); font-weight: 600; }
-/* The title backplates otherwise blur real values beneath the page ruler. */
-:root[data-theme="light"] .reading-contrast { display: none; }
-:root[data-theme="light"][data-reading-ruler] .finance-shell { padding-right: 180px; }
-
 /* Light dialogs need their own nested surfaces, not the legacy dark defaults. */
 :root[data-theme="light"] .ai-drawer :is(.context-card, .analysis-result, .chat-entry.user, .suggestions > button) {
   background: var(--theme-background); border-color: var(--theme-border); color: var(--theme-text);

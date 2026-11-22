@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Pause, Play, RefreshCw } from 'lucide-react';
+import { Pause, Play, RefreshCw } from 'lucide-react';
 import { api } from './api';
 import UserStrategyEditor from './UserStrategyEditor';
 import type { PaperAutomationState, PaperStrategy, QuantDecision } from './paperTypes';
@@ -115,8 +115,8 @@ export default function PaperAutomation({ disabled, onModeChange }: { disabled: 
   const displayed = strategy ?? strategies[0];
   const model = displayed?.report?.test?.model;
   const latest = state?.last_decision;
-  return <section className="panel paper-automation" aria-label="模拟盘操作方式">
-    <header><div><span className="paper-eyebrow">ACCOUNT PILOT</span><h2><Bot size={19} />自己操作，或选择算法托管</h2></div><span className={`paper-pilot-status ${state?.mode === 'algorithm' ? 'active' : ''}`}>{state ? state.mode === 'algorithm' ? '算法托管中' : '手动操作' : '读取操作方式'}</span></header>
+  return <section className="panel paper-automation" id="paper-automation" tabIndex={-1} aria-label="模拟盘操作方式">
+    <header><h2>账户操作方式</h2><span className={`paper-pilot-status ${state?.mode === 'algorithm' ? 'active' : ''}`}>{state ? state.mode === 'algorithm' ? '算法托管中' : '手动操作' : '读取操作方式'}</span></header>
     <div className="paper-pilot-controls"><label>操作方式<select aria-label="操作方式" value={selected} disabled={busy || disabled || !state} onChange={event => { setSelected(event.target.value); setDirty(true); }}><option value="manual">自己操作 · 手动交易</option><optgroup label="官方算法">{strategies.filter(item => item.origin !== 'user').map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.name}{item.available ? ' · 官方' : ' · 暂不可用'}</option>)}</optgroup><optgroup label="我的策略">{strategies.filter(item => item.origin === 'user').map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.name} · 我的策略 · r{item.revision}{item.available ? '' : ' · 暂不可用'}</option>)}</optgroup></select></label>
       {selected === PEG_ID && <><label>目标持股数量<select aria-label="PEG目标持股数量" value={pegCount} disabled={busy || disabled} onChange={event => { setPegCount(Number(event.target.value)); setDirty(true); }}>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n} 只</option>)}</select></label><label>PEG选股范围<select aria-label="PEG选股范围" value={pegGroup} disabled={busy || disabled} onChange={event => { setPegGroup(event.target.value); setDirty(true); }}><option value="all">全部合格股票</option><option value="非金融">仅非金融</option><option value="金融">仅金融</option></select></label></>}
       <button className="primary-button" disabled={busy || disabled || !state || !!unchanged || selected !== 'manual' && !strategy?.available} onClick={() => { void change(selected === 'manual' ? 'manual' : 'algorithm', selected === 'manual' ? undefined : selected); }}>{busy ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}{selected === 'manual' ? '切回手动' : selected === N2_ID ? '启用双股倒波动' : selected === PEG_B_ID ? '启用 PEG B 策略' : selected === PEG_ID ? (state?.strategy_id === PEG_ID && state.mode === 'algorithm' ? '更新PEG参数' : '启用低 PEG 策略') : strategy?.origin === 'user' ? '启用我的策略' : '启用官方算法'}</button>

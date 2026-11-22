@@ -20,7 +20,6 @@ import type { BatchAnalyzeResponse, BatchQuotesResponse, Dashboard, Health, Job,
 import { number, percent, tone } from './format';
 import ReadingRail from './ReadingRail';
 import BrandWordmark from './BrandWordmark';
-import WorkspaceView from './WorkspaceView';
 
 const defaults = ['600519', '300750', '688981'];
 const EtfFundsCard = lazy(() => import('./EtfFundsCard'));
@@ -28,73 +27,38 @@ const EtfFlowIndicator = lazy(() => import('./EtfFlowIndicator'));
 const StockBondOverview = lazy(() => import('./StockBondOverview'));
 const NorthboundOverview = lazy(() => import('./NorthboundOverview'));
 const navigation = [
-  { id: 'dashboard', label: '行情与新闻', english: 'MARKET INTELLIGENCE' },
-  { id: 'etf-funds', label: '资金与宏观', english: 'FUND FLOWS & MACRO' },
-  { id: 'hot-news', label: '热点榜单', english: 'GLOBAL SIGNALS' },
-  { id: 'screener', label: 'PEG榜单', english: 'EQUITY SCREENER' },
-  { id: 'convertible-bonds', label: '可转债研究', english: 'CONVERTIBLE BONDS' },
-  { id: 'paper', label: '模拟盘', english: 'PAPER TRADING' },
-  { id: 'briefing', label: '自选股早报', english: 'DAILY BRIEFING' },
-  { id: 'lab', label: '连接状态', english: 'CONNECTIONS' },
-  { id: 'admin', label: '管理中心', english: 'ADMINISTRATION' },
+  { id: 'dashboard', label: '行情与新闻' },
+  { id: 'etf-funds', label: '资金与宏观' },
+  { id: 'hot-news', label: '热点榜单' },
+  { id: 'screener', label: 'PEG榜单' },
+  { id: 'convertible-bonds', label: '可转债研究' },
+  { id: 'paper', label: '模拟盘' },
+  { id: 'briefing', label: '自选股早报' },
+  { id: 'lab', label: '连接状态' },
+  { id: 'admin', label: '管理中心' },
 ];
 
 const shareableViews = ['screener', 'hot-news', 'convertible-bonds', 'etf-funds', 'paper'];
 
 function FinanceNav({ view, isAdmin, onSelect }: { view: string; isAdmin: boolean; onSelect: (view: string) => void }) {
   const row = useRef<HTMLDivElement>(null);
-  const previousButton = useRef<HTMLButtonElement>(null);
-  const filterId = useId();
 
   useLayoutEffect(() => {
-    const active = row.current?.querySelector<HTMLButtonElement>('button[aria-current="page"]') ?? null;
-    const previous = previousButton.current;
-    previousButton.current = active;
-    if (!active || !previous?.isConnected || active === previous || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    const marker = active.querySelector('svg')!;
-    const drop = marker.querySelector('circle')!;
-    const from = previous.getBoundingClientRect();
-    const to = active.getBoundingClientRect();
-    const distance = from.left - to.left;
-    const tail = Math.sign(distance) * 14;
-    const timing = { duration: 440, easing: 'cubic-bezier(.22,.65,.32,1)' };
-    const slide = marker.animate([
-      { transform: `translateX(${distance}px) scaleX(${from.width / to.width})` },
-      { transform: `translateX(${distance * .22}px) scaleX(1.14)`, offset: .48 },
-      { transform: 'none' },
-    ], timing);
-    const merge = drop.animate([
-      { transform: 'scale(.45)', opacity: 1 },
-      { transform: `translate(${tail}px, -6px)`, opacity: 1, offset: .36 },
-      { transform: `translate(${tail / 2}px, -1px) scale(.65)`, opacity: 1, offset: .72 },
-      { transform: 'scale(.35)', opacity: 0 },
-    ], timing);
-    return () => { slide.cancel(); merge.cancel(); };
+    const strip = row.current;
+    const active = strip?.querySelector('[aria-current="page"]');
+    if (!strip || !active) return;
+    const bounds = strip.getBoundingClientRect();
+    const tab = active.getBoundingClientRect();
+    if (tab.left < bounds.left) strip.scrollLeft += tab.left - bounds.left;
+    else if (tab.right > bounds.right) strip.scrollLeft += tab.right - bounds.right;
   }, [view]);
 
   return <nav className="finance-nav" aria-label="主导航"><div ref={row}>
-    {navigation.filter(item => item.id !== 'admin' || isAdmin).map((item, index) => {
-      const active = view === item.id;
-      return <button key={item.id} type="button" className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={() => onSelect(item.id)}>
-        <small aria-hidden="true">{String(index + 1).padStart(2, '0')}</small>{item.label}
-        {active && <svg className="finance-nav-marker" viewBox="0 0 80 17" preserveAspectRatio="none" aria-hidden="true">
-          <defs>
-            {/* Adapted from GoopUI's SVG filter. See public/licenses/goopui.txt. */}
-            <filter id={filterId} x="-20%" y="-50%" width="140%" height="200%" colorInterpolationFilters="sRGB">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="blur" />
-              <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -6.84" result="goo" />
-              <feComposite in="SourceGraphic" in2="goo" operator="atop" />
-            </filter>
-          </defs>
-          <g filter={`url(#${filterId})`} fill="currentColor">
-            <rect x="1" y="12" width="78" height="4" rx="2" />
-            <circle cx="40" cy="12" r="4.4" />
-          </g>
-        </svg>}
-      </button>;
-    })}
-    <span>沪深 A 股 / RESEARCH</span>
+    {navigation.filter(item => item.id !== 'admin' || isAdmin).map(item =>
+      <button key={item.id} type="button" className={view === item.id ? 'active' : ''} aria-current={view === item.id ? 'page' : undefined} onClick={() => onSelect(item.id)}>
+        {item.label}
+      </button>
+    )}
   </div></nav>;
 }
 
@@ -143,13 +107,36 @@ const newerSnapshot = (previous: Dashboard | null | undefined, next: Dashboard) 
 };
 
 function Dialog({ title, children, close }: { title: string; children: React.ReactNode; close: () => void }) {
+  const dialog = useRef<HTMLElement>(null);
+  const titleId = useId();
   useDialogScroll();
-  useEffect(() => {
-    const listener = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('keydown', listener);
-    return () => window.removeEventListener('keydown', listener);
-  }, [close]);
-  return <div className="modal-overlay" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}><section className="research-modal" role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button autoFocus className="icon-button" aria-label="关闭弹窗" onClick={close}><X size={20} /></button></header>{children}</section></div>;
+  useLayoutEffect(() => {
+    const previous = document.activeElement;
+    const first = dialog.current?.querySelector<HTMLElement>('input') ?? dialog.current?.querySelector('button');
+    first?.focus({ preventScroll: true });
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true }); };
+  }, []);
+
+  function handleKey(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
+    if (event.key !== 'Tab') return;
+    const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), summary, a[href]');
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && event.target === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && event.target === last) { event.preventDefault(); first.focus(); }
+  }
+
+  return <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
+    <section ref={dialog} className="research-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleKey}>
+      <header><h2 id={titleId}>{title}</h2><button className="icon-button" aria-label="关闭弹窗" onClick={close}><X size={20} /></button></header>
+      {children}
+    </section>
+  </div>;
 }
 
 export default function App() {
@@ -380,7 +367,11 @@ export default function App() {
 
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
-    const listener = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setAdding(true); } };
+    const listener = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return;
+      e.preventDefault();
+      if (!document.querySelector('[aria-modal="true"]')) setAdding(true);
+    };
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
   }, []);
@@ -467,12 +458,33 @@ export default function App() {
   const currentPage = navigation.find(item => item.id === view) ?? navigation[0];
   return <div className="finance-shell">
     <a className="skip-link" href="#workspace-content">跳至主要内容</a>
-    <header className="finance-header"><div className="header-inner"><a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /><small className="brand-caption">财经研究</small></a><button className="finance-search" onClick={() => setAdding(true)}><Search size={17} /><span>搜索股票、指数名称或代码</span><kbd>Ctrl K</kbd></button><span className="research-badge"><span className="status-dot" />真实数据工作台</span><ThemeToggle /><a className="github-link" href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer" title="访问项目 GitHub 仓库" aria-label="访问 FinPulse GitHub 仓库"><Github size={17} aria-hidden="true" /><span>GitHub</span></a><AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} /></div></header>
+    <header className="finance-header"><div className="header-inner">
+      <a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /></a>
+      <button type="button" className="finance-search" onClick={() => setAdding(true)}>
+        <Search size={17} aria-hidden="true" /><span>搜索股票、指数名称或代码</span>
+        <kbd aria-hidden="true">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd>
+      </button>
+      <ThemeToggle />
+      <AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} />
+    </div></header>
     <FinanceNav view={view} isAdmin={user?.role === 'admin'} onSelect={setView} />
-    <div className="ticker-bar"><div className="ticker-inner"><div className="ticker-label"><Activity size={16} /><strong>关注市场</strong><span>主要指数 · 行情快照</span></div>{headlineIndices.flatMap(code => catalog.find(stock => stock.code === code) ?? []).map(stock => { const cached = snapshots[stock.code]; return <button className={`ticker-card ${code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => { setCode(stock.code); setView('dashboard'); }}><span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span><strong key={cached?.stock.price ?? stock.price} className="mono quote-update">{number(cached?.stock.price ?? stock.price)}</strong><span className={tone(cached?.stock.change ?? stock.change)}>{percent(cached?.stock.change ?? stock.change)}</span></button>; })}</div></div>
-    <main className="finance-main" id="workspace-content" tabIndex={-1}><div className="finance-heading"><div><p className="eyebrow"><span className="heading-mark" />{currentPage.english}</p><h1>{view === 'etf-funds' ? currentPage.label : view === 'hot-news' ? '看见热点，识别市场影响。' : view === 'screener' ? '低 PEG 筛选，逐项核验。' : view === 'convertible-bonds' ? '可转债单券轮动' : view === 'paper' ? '先练习，再做判断。' : view === 'dashboard' ? '跟踪行情，读懂消息。' : view === 'briefing' ? '你的自选股早报' : view === 'admin' ? '团队账号管理' : '研究引擎连接状态'}</h1><p>{view === 'etf-funds' ? '跟踪宽基 ETF 申赎与机构持仓，观察股债联动和北向资金。' : view === 'hot-news' ? '汇集全领域平台热榜，筛选可能影响股市与产业的事件。' : view === 'screener' ? '沪深300 · 每日估值快照 · 从PEG榜单连接行情与公司消息。' : view === 'convertible-bonds' ? '同类券相对低估 · 正股驱动 · 周度决策' : view === 'paper' ? '20 万虚拟资金，独立账户，体验 A 股交易规则与资金变化。' : view === 'dashboard' ? '从新闻原文到 AI 研判，每一个结论都有可追溯的来源。' : view === 'briefing' ? '查看已采集消息的汇总，配置邮件或微信订阅。' : view === 'admin' ? '管理账号状态与操作记录。' : '查看数据源和模型配置，验证真实请求。'}</p></div><div className="workspace-meta" aria-hidden="true"><span>{String(navigation.indexOf(currentPage) + 1).padStart(2, '0')}</span><div><strong>{currentPage.label}</strong><small>FINPULSE / RESEARCH</small></div></div></div>
+    {view === 'dashboard' && <div className="ticker-bar"><div className="ticker-inner">
+      <div className="ticker-label"><Activity size={16} aria-hidden="true" /><strong>主要指数</strong><span>行情快照</span></div>
+      {headlineIndices.flatMap(id => catalog.find(stock => stock.code === id) ?? []).map(stock => {
+        const cached = snapshots[stock.code];
+        const price = cached?.stock.price ?? stock.price;
+        const change = cached?.stock.change ?? stock.change;
+        return <button type="button" className={`ticker-card ${code === stock.code ? 'selected' : ''}`} aria-pressed={code === stock.code} key={stock.code} onClick={() => setCode(stock.code)}>
+          <span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span>
+          <strong key={price} className="mono quote-update">{number(price)}</strong>
+          <span className={tone(change)}>{percent(change)}</span>
+        </button>;
+      })}
+    </div></div>}
+    <main className="finance-main" id="workspace-content" tabIndex={-1}>
+      <header className="finance-heading"><h1>{currentPage.label}</h1></header>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
-      <WorkspaceView key={view}>
+      <div className="workspace-view" key={view}>
       {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
       {view === 'briefing' && <BriefingPanel key={user?.id ?? 'guest'} />}
       {view === 'hot-news' && <HotNewsPanel key={user?.id ?? 'guest'} watchlist={watchlist} watchReady={watchReady} />}
@@ -488,8 +500,8 @@ export default function App() {
         <Suspense fallback={<p role="status">正在打开北向资金…</p>}><NorthboundOverview /></Suspense>
       </>}
       {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} jobs={jobs} batchAnalyze={batchAnalyzeWatchlist} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
-      </WorkspaceView>
-      <footer className="finance-footer"><span><Activity size={14} />FinPulse · 来源可查，推断可辨。</span><span>分钟行情按需更新 · AI 研判需要结合原文核验</span></footer>
+      </div>
+      <footer className="finance-footer"><span>FinPulse</span><a href="https://github.com/hus-king/finpulse" target="_blank" rel="noopener noreferrer"><Github size={15} aria-hidden="true" />GitHub</a></footer>
     </main>
     <ReadingRail view={view} />
     {drawer && <AiDrawer key={`${user?.id}-${drawer.stock.code}-${drawer.news?.id ?? 'chat'}`} stock={drawer.stock} news={drawer.news} onClose={() => setDrawer(null)} onResult={reply => { setLastReply(reply); void loadSnapshot(code).catch(e => setError(e.message)); }} />}

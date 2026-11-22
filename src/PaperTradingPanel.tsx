@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock3, History, Info, LoaderCircle, RefreshCw, Search, ShieldCheck, WalletCards, X } from 'lucide-react';
+import { ArrowDown, ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock3, Info, LoaderCircle, RefreshCw, Search, ShieldCheck, WalletCards, X } from 'lucide-react';
 import { api, ApiError } from './api';
 import { useAuth } from './AuthContext';
 import PaperStockSearch from './PaperStockSearch';
@@ -212,24 +212,78 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
     finally { if (!controller.signal.aborted) setMoreLoading(false); }
   }
 
-  if (!user) return <section className="panel paper-welcome"><span className="paper-welcome-icon"><WalletCards size={38} /></span><span className="paper-tag">PAPER TRADING</span><h2>用 20 万虚拟资金，练习你的交易判断。</h2><p>独立模拟账户 · A 股交易时段 · T+1 · 持仓盈亏与成交记录</p><button className="primary-button" disabled={authLoading} onClick={() => requestLogin('登录后拥有独立的 20 万元模拟账户，资金与成交记录保存在你的账号下。')}>登录体验模拟盘<ArrowUpRight size={16} /></button><small>虚拟资金，不连接券商，不产生真实交易。</small></section>;
+  if (!user) return <section className="panel paper-welcome">
+    <WalletCards size={30} aria-hidden="true" />
+    <h2>用 20 万元虚拟资金练习 A 股交易</h2>
+    <p>登录后可模拟买卖、查看持仓，并对比账户和指数的收益。</p>
+    <button className="primary-button" disabled={authLoading} onClick={() => requestLogin('登录后拥有独立的 20 万元模拟账户，资金与成交记录保存在你的账号下。')}>登录体验模拟盘<ArrowUpRight size={16} /></button>
+    <small>仅模拟成交，不产生真实交易。</small>
+  </section>;
 
+  const manageAutomation = operationMode === 'algorithm' && !unknown;
   return <div className="paper-workspace">
-    <div className="paper-topbar"><div><span className="paper-tag"><ShieldCheck size={13} />虚拟资金 · 模拟成交</span><span className={`paper-session ${accountConfirmed && account?.market.can_trade ? 'trading' : ''}`}><Clock3 size={13} />{accountConfirmed ? account?.market.label : '读取交易状态'}<small>北京时间</small></span>{!accountConfirmed && snapshot && <small className="paper-session">上次读取 {date(new Date(snapshot.savedAt).toISOString())}</small>}</div><button className="paper-refresh" aria-label="刷新模拟账户" disabled={reading || submitting} onClick={() => { void loadAccount(true); }}><RefreshCw size={15} className={reading ? 'spin' : ''} />刷新账户</button></div>
-    {readError && <div className="paper-error" role="alert">{readError}<button onClick={() => { void loadAccount(true); }}>重试</button></div>}
-    <div className="paper-stats">
-      <section className="panel paper-stat paper-equity"><span>模拟账户总资产</span><strong className="mono" data-testid="paper-equity">{money(account?.equity_fen ?? null)}</strong><small>初始本金 ¥ 200,000.00</small></section>
-      <section className="panel paper-stat"><span>可用现金</span><strong className="mono" data-testid="paper-cash">{money(account?.cash_fen ?? null)}</strong><small>买入时需预留交易费用</small></section>
-      <section className="panel paper-stat"><span>持仓市值</span><strong className="mono">{money(account?.market_value_fen ?? null)}</strong><small>{account?.positions.length ?? 0} 只股票 · 按最新缓存报价估值</small></section>
-      <section className="panel paper-stat"><span title="当前总资产减去上一交易日收盘资产，包含当日买卖和交易费用。休市时显示最近交易日盈亏。">当日盈亏</span><strong className={`mono ${tone(account?.daily_pnl_fen ?? 0)}`} data-testid="paper-daily-pnl">{account?.daily_pnl_fen != null ? signed(account.daily_pnl_fen) : '—'}{account?.daily_return_percent != null && <small>{account.daily_return_percent > 0 ? '+' : ''}{account.daily_return_percent.toFixed(2)}%</small>}</strong><small>{account?.daily_pnl_status === 'available' ? `${account.daily_pnl_date?.slice(5).replace('-', '/')} · 较 ${account.daily_reference_date?.slice(5).replace('-', '/')} 收盘` : account?.daily_pnl_reason || '正在读取当日盈亏'}</small></section>
-      <section className="panel paper-stat"><span>累计盈亏</span><strong className={`mono ${tone(account?.total_pnl_fen ?? 0)}`}>{account ? signed(account.total_pnl_fen) : '—'}<small>{account ? `${account.return_percent > 0 ? '+' : ''}${account.return_percent.toFixed(2)}%` : ''}</small></strong><small>已实现 {account ? signed(account.realized_pnl_fen) : '—'} · 浮动 {account ? signed(account.unrealized_pnl_fen) : '—'}{account?.receivable_fen ? ` · 应收分红 ${money(account.receivable_fen)}` : ''}</small></section>
-    </div>
+    <section className="panel paper-account" aria-label="账户总览">
+      <div className="paper-topbar">
+        <div>
+          <span className="paper-session"><ShieldCheck size={14} />虚拟资金</span>
+          <span className={`paper-session ${accountConfirmed && account?.market.can_trade ? 'trading' : ''}`}><Clock3 size={14} />{accountConfirmed ? account?.market.label : '读取交易状态'}<small>北京时间</small></span>
+          {!accountConfirmed && snapshot && <small className="paper-session">上次读取 {date(new Date(snapshot.savedAt).toISOString())}</small>}
+        </div>
+        <div>
+          <a className="paper-action-link" href={manageAutomation ? '#paper-automation' : '#paper-ticket'}>{unknown ? '确认未完成交易' : manageAutomation ? '管理算法托管' : '买卖股票'}<ArrowDown size={14} /></a>
+          <button className="paper-refresh" aria-label="刷新模拟账户" title="刷新模拟账户" disabled={reading || submitting} onClick={() => { void loadAccount(true); }}><RefreshCw size={16} className={reading ? 'spin' : ''} /></button>
+        </div>
+      </div>
+      {readError && <div className="paper-error" role="alert">{readError}<button onClick={() => { void loadAccount(true); }}>重试</button></div>}
+      <div className="paper-stats">
+        <div className="paper-equity">
+          <h2>模拟账户总资产</h2>
+          <strong data-testid="paper-equity">{money(account?.equity_fen ?? null)}</strong>
+          <small>初始本金 {money(account?.initial_cash_fen ?? null)}</small>
+        </div>
+        <dl className="paper-balances">
+          <div><dt title="当前总资产减去上一交易日收盘资产，包含当日买卖和费用。休市时显示最近交易日盈亏。">当日盈亏</dt>
+            <dd className={tone(account?.daily_pnl_fen ?? 0)} data-testid="paper-daily-pnl">{account?.daily_pnl_fen != null ? signed(account.daily_pnl_fen) : '—'}{account?.daily_return_percent != null && <small>{account.daily_return_percent > 0 ? '+' : ''}{account.daily_return_percent.toFixed(2)}%</small>}</dd>
+            <dd className="paper-balance-note">{account?.daily_pnl_status === 'available' ? `${account.daily_pnl_date?.slice(5).replace('-', '/')} · 较 ${account.daily_reference_date?.slice(5).replace('-', '/')} 收盘` : account?.daily_pnl_reason || '正在读取当日盈亏'}</dd>
+          </div>
+          <div><dt>累计盈亏</dt>
+            <dd className={tone(account?.total_pnl_fen ?? 0)}>{account ? signed(account.total_pnl_fen) : '—'}{account && <small>{account.return_percent > 0 ? '+' : ''}{account.return_percent.toFixed(2)}%</small>}</dd>
+            {account && <dd className="paper-balance-note">已实现 {signed(account.realized_pnl_fen)} · 浮动 {signed(account.unrealized_pnl_fen)}{account.receivable_fen ? ` · 应收分红 ${money(account.receivable_fen)}` : ''}</dd>}
+          </div>
+          <div><dt>可用现金</dt><dd data-testid="paper-cash">{money(account?.cash_fen ?? null)}</dd></div>
+          <div><dt>持仓市值</dt><dd>{money(account?.market_value_fen ?? null)}</dd></div>
+        </dl>
+      </div>
+    </section>
 
-    <PaperPerformance revision={performanceRevision} ownerKey={owner} />
-    <PaperAutomation disabled={submitting || unknown} onModeChange={setOperationMode} />
+    <div className="paper-portfolio">
+      <section className="panel paper-holdings" aria-labelledby="paper-holdings-title">
+        <header><h2 id="paper-holdings-title">我的持仓 {account && <small>{account.positions.length} 只</small>}</h2></header>
+        {account?.valuation_refreshing && <p className="paper-validation" role="status"><LoaderCircle size={14} className="spin" />正在更新账户行情，先展示已保存的估值。</p>}
+        {!!Object.keys(account?.valuation_errors ?? {}).length && <p className="paper-error" role="alert">部分持仓报价更新失败：{Object.entries(account?.valuation_errors ?? {}).map(([code, error]) => `${code} ${error}`).join('；')}</p>}
+        {account?.positions.length ? <>
+          <div className="paper-table-scroll" role="region" aria-label="持仓明细" tabIndex={0}>
+            <table>
+              <thead><tr><th>股票</th><th title="包含当日买卖及费用；收益率以昨收持仓市值加当日买入金额与费用为基准。">当日盈亏 / 收益率</th><th>市值</th><th>持仓 / 可卖</th><th>成本 / 估值价</th><th>浮动盈亏</th></tr></thead>
+              <tbody>{account.positions.map(item => <tr key={item.code} data-testid={`paper-holding-${item.code}`} data-sellable={item.sellable}>
+                <td><button type="button" className="paper-holding-link" aria-label={`查看${item.name}（${item.code}）详情`} onClick={() => onOpenStock(item.code)}><strong>{item.name}</strong><small>{item.code}</small></button></td>
+                <td className={tone(item.daily_pnl_fen ?? 0)} data-testid={`paper-holding-daily-${item.code}`} title={item.daily_pnl_reason || undefined}><strong>{item.daily_pnl_fen != null ? signed(item.daily_pnl_fen) : '—'}</strong><small className="paper-daily-return">{item.daily_return_percent != null ? `${item.daily_return_percent > 0 ? '+' : ''}${item.daily_return_percent.toFixed(2)}%` : item.daily_pnl_reason || account.daily_pnl_reason || '等待当日数据'}</small></td>
+                <td>{formatMoney(item.market_value_fen)}</td>
+                <td><strong>{item.quantity.toLocaleString()} / {item.sellable.toLocaleString()}</strong>{item.locked > 0 && <small>今日买入 {item.locked.toLocaleString()} 股 · T+1</small>}</td>
+                <td><strong>{formatMoney(item.average_cost_fen)} / {formatMoney(item.price_fen)}</strong><small>{item.valuation_status === 'estimated' ? '按成交价估算' : `${item.valuation_status === 'stale' ? account.market.can_trade ? '延迟 ' : '快照 ' : ''}${date(item.price_as_of)}`}</small></td>
+                <td className={tone(item.unrealized_pnl_fen)}>{signed(item.unrealized_pnl_fen)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <p className="paper-holdings-note">成本含买入费用，卖出按平均成本核算。当日买入的股份下一交易日可卖。</p>
+        </> : <p className="paper-empty">{account ? '暂无持仓' : readError ? '持仓暂不可用' : '正在读取持仓…'}</p>}
+      </section>
+
+      <PaperPerformance revision={performanceRevision} ownerKey={owner} />
+    </div>
     <div className="paper-trading-grid">
-      <section className="panel paper-ticket"><header><div><span className="paper-eyebrow">PLACE A SIMULATED TRADE</span><h2>买卖股票</h2></div><span className="paper-mini-tag">T+1</span></header>
-        <div className="paper-selected-stock"><div><strong>{selected?.stock.name ?? code}</strong><span>{code}{rule && ` · ${rule.board}`}</span></div><button type="button" className="paper-icon-button" aria-label="更换交易股票" disabled={frozen} onClick={() => setPicking(!picking)}>{picking ? <X size={17} /> : <Search size={17} />}</button></div>
+      <section className="panel paper-ticket" id="paper-ticket" tabIndex={-1}><header><h2>买卖股票</h2></header>
+        <div className="paper-selected-stock"><div><strong>{selected?.stock.name ?? code}</strong><span>{code}{rule && ` · ${rule.board}`}</span></div><button type="button" className="paper-icon-button" aria-label="更换交易股票" aria-expanded={picking} disabled={frozen} onClick={() => setPicking(!picking)}>{picking ? <X size={17} /> : <Search size={17} />}</button></div>
         {picking && <PaperStockSearch onSelect={chooseStock} />}
         <div className="paper-quote" data-testid="paper-quote" data-code={selected?.stock.code ?? ''}><div><strong className="mono">{money(selected?.price_fen ?? null)}</strong><small>{selected?.quote_status === 'fresh' ? '有效分钟报价' : selected?.quote_status === 'stale' ? '报价延迟 · 暂停成交' : '等待有效报价'}</small></div><button className="paper-icon-button" type="button" aria-label="刷新交易报价" onClick={() => setRefreshNonce(value => value + 1)}><RefreshCw size={16} className={selected?.refreshing ? 'spin' : ''} /></button><p><Clock3 size={12} />{date(selected?.as_of ?? null)} · 北京时间</p></div>
         <form onSubmit={event => { event.preventDefault(); void submit(); }}>
@@ -242,21 +296,16 @@ export default function PaperTradingPanel({ initialCode, onOpenStock }: { initia
           {notice && <p className="paper-success" role="status"><CheckCircle2 size={15} />{notice}</p>}
           {invalid && !unknown && <p className="paper-validation"><Info size={14} />{invalid}</p>}
           <button type="submit" className={`paper-submit ${side}`} disabled={submitting || !unknown && !!invalid}>{submitting ? <LoaderCircle size={17} className="spin" /> : side === 'buy' ? <ArrowUpRight size={17} /> : <ArrowDownLeft size={17} />}{submitting ? '正在确认成交…' : unknown ? '重试确认成交' : `确认模拟${side === 'buy' ? '买入' : '卖出'}`}</button>
-          <p className="paper-source">成交以服务器有效报价为准 · {selected?.source ?? '新浪分钟行情'}<br />手动交易采用有效分钟报价；各托管策略的成交与费用口径见操作方式说明。</p>
+          <p className="paper-source">成交以服务器有效分钟报价为准 · {selected?.source ?? '新浪分钟行情'}</p>
         </form>
       </section>
-
-      <section className="panel paper-holdings"><header><div><span className="paper-eyebrow">YOUR POSITIONS</span><h2>我的持仓 <small>{account?.positions.length ?? 0}</small></h2></div><span className="paper-mini-tag">T+1 · 下一交易日可卖</span></header>
-        {account?.valuation_refreshing && <p className="paper-validation" role="status"><LoaderCircle size={14} className="spin" />正在更新账户行情，先展示已保存的估值。</p>}
-        {!!Object.keys(account?.valuation_errors ?? {}).length && <p className="paper-error" role="alert">部分持仓报价更新失败：{Object.entries(account?.valuation_errors ?? {}).map(([code, error]) => `${code} ${error}`).join('；')}</p>}
-        {account?.positions.length ? <div className="paper-table-scroll"><table><thead><tr><th>股票</th><th>持仓 / 可卖</th><th>成本 / 估值价</th><th>市值</th><th title="包含当日买卖及费用；收益率以昨收持仓市值加当日买入金额与费用为基准。">当日盈亏 / 收益率</th><th>浮动盈亏</th></tr></thead><tbody>{account.positions.map(item => <tr key={item.code} data-testid={`paper-holding-${item.code}`} data-sellable={item.sellable}><td><button type="button" className="paper-holding-link" aria-label={`查看${item.name}（${item.code}）详情`} onClick={() => onOpenStock(item.code)}><strong>{item.name}</strong><small>{item.code}</small></button></td><td><strong>{item.quantity.toLocaleString()} / {item.sellable.toLocaleString()}</strong><small>{item.locked > 0 ? `今日买入 ${item.locked.toLocaleString()} 股 · T+1` : '无当日买入锁定'}</small></td><td><strong className="mono">{formatMoney(item.average_cost_fen)} / {formatMoney(item.price_fen)}</strong><small>{item.valuation_status === 'estimated' ? '按成交价估算' : `${item.valuation_status === 'stale' ? account.market.can_trade ? '延迟 ' : '快照 ' : ''}${date(item.price_as_of)}`}</small></td><td className="mono">{formatMoney(item.market_value_fen)}</td><td className={`mono ${tone(item.daily_pnl_fen ?? 0)}`} data-testid={`paper-holding-daily-${item.code}`} title={item.daily_pnl_reason || undefined}><strong>{item.daily_pnl_fen != null ? signed(item.daily_pnl_fen) : '—'}</strong><small className="paper-daily-return">{item.daily_return_percent != null ? `${item.daily_return_percent > 0 ? '+' : ''}${item.daily_return_percent.toFixed(2)}%` : item.daily_pnl_reason || account.daily_pnl_reason || '等待当日数据'}</small></td><td className={`mono ${tone(item.unrealized_pnl_fen)}`}>{signed(item.unrealized_pnl_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-empty"><WalletCards size={35} /><h3>{reading ? '正在读取持仓' : '你的第一笔模拟交易，从这里开始。'}</h3><p>选择股票，输入股数，体验资金与持仓的变化。</p><div><span>20 万元虚拟本金</span><span>T+1 交易规则</span><span>账号独立记录</span></div></div>}
-        <div className="paper-holdings-note"><Info size={14} /><p>买入费用计入持仓成本，卖出使用平均成本计算已实现盈亏。市值与盈亏按分钟行情更新，数据时间单独展示。T+1限制当日卖出，持仓估值持续更新。</p></div>
-      </section>
+      <PaperAutomation disabled={submitting || unknown} onModeChange={setOperationMode} />
     </div>
 
-    <section className="panel paper-history"><header><div><span className="paper-eyebrow">TRADE JOURNAL</span><h2><History size={18} />成交记录</h2></div><span className="paper-mini-tag">仅模拟成交</span></header>
+    <section className="panel paper-history" aria-labelledby="paper-history-title">
+      <header><h2 id="paper-history-title">成交记录</h2></header>
       {historyError && <p className="paper-error" role="alert">{historyError}<button onClick={() => { void loadAccount(); }}>重试</button></p>}
-      {history?.items.length ? <div className="paper-table-scroll"><table><thead><tr><th>成交时间 · 北京时间</th><th>股票</th><th>方向</th><th>股数</th><th>成交价</th><th>成交金额</th><th>费用与依据</th><th>成交后现金</th></tr></thead><tbody>{history.items.map(trade => <tr key={trade.request_id}><td>{date(trade.executed_at)}</td><td><strong>{trade.name}</strong><small>{trade.code} · {trade.execution_mode === 'daily_open_replay' ? '历史回放' : trade.actor === 'algorithm' ? '算法托管' : '手动'}</small>{trade.model_version && <small>{trade.model_version}</small>}</td><td><span className={`paper-trade-side ${trade.side}`}>{trade.side === 'buy' ? '买入' : '卖出'}</span></td><td>{trade.quantity.toLocaleString()}</td><td className="mono">{formatMoney(trade.price_fen)}</td><td className="mono">{formatMoney(trade.gross_fen)}</td><td><details><summary>{money(trade.fees_fen)}</summary><div>佣金 {money(trade.commission_fen)}<br />过户费 {money(trade.transfer_fen)}<br />印花税 {money(trade.stamp_fen)}<br />{trade.friction_fen ? <>模型摩擦成本 {money(trade.friction_fen)}<br /></> : null}{trade.source}<br />报价 {date(trade.quote_as_of)}<br />已实现 {signed(trade.realized_pnl_fen)}</div></details></td><td className="mono">{formatMoney(trade.cash_after_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-history-empty">{historyError ? '成交记录暂不可用' : !history ? '正在读取成交记录…' : '暂时没有成交记录，每笔成功交易都会保存在这里。'}</div>}
+      {history?.items.length ? <div className="paper-table-scroll" role="region" aria-label="成交明细" tabIndex={0}><table><thead><tr><th>成交时间 · 北京时间</th><th>股票</th><th>方向</th><th>股数</th><th>成交价</th><th>成交金额</th><th>费用与依据</th><th>成交后现金</th></tr></thead><tbody>{history.items.map(trade => <tr key={trade.request_id}><td>{date(trade.executed_at)}</td><td><strong>{trade.name}</strong><small>{trade.code} · {trade.execution_mode === 'daily_open_replay' ? '历史回放' : trade.actor === 'algorithm' ? '算法托管' : '手动'}</small>{trade.model_version && <small>{trade.model_version}</small>}</td><td><span className={`paper-trade-side ${trade.side}`}>{trade.side === 'buy' ? '买入' : '卖出'}</span></td><td>{trade.quantity.toLocaleString()}</td><td className="mono">{formatMoney(trade.price_fen)}</td><td className="mono">{formatMoney(trade.gross_fen)}</td><td><details><summary>{money(trade.fees_fen)}</summary><div>佣金 {money(trade.commission_fen)}<br />过户费 {money(trade.transfer_fen)}<br />印花税 {money(trade.stamp_fen)}<br />{trade.friction_fen ? <>模型摩擦成本 {money(trade.friction_fen)}<br /></> : null}{trade.source}<br />报价 {date(trade.quote_as_of)}<br />已实现 {signed(trade.realized_pnl_fen)}</div></details></td><td className="mono">{formatMoney(trade.cash_after_fen)}</td></tr>)}</tbody></table></div> : <div className="paper-history-empty">{historyError ? '成交记录暂不可用' : !history ? '正在读取成交记录…' : '暂无成交记录'}</div>}
       {history?.next_before_seq && <button className="paper-load-more" disabled={moreLoading} onClick={() => { void loadMore(); }}>{moreLoading ? '正在加载…' : '加载更早成交'}</button>}
     </section>
     <details className="panel paper-rules"><summary><ShieldCheck size={16} />模拟盘交易规则与费用</summary><div><p>每个账号初始资金 20 万元；仅在核验交易日 09:30–11:30、13:00–14:57 模拟成交。当天买入的股份下一交易日才能卖出。集合竞价、盘后和未经核验的交易日暂不支持。</p><p>主板、创业板买入为 100 股整数倍；科创板至少 200 股，之后可逐股增加。卖出时零股需一次处理；不支持融资、卖空、限价挂单或撤单。</p><p>固定模拟费用：双向佣金 0.03%，每笔最低 5 元；双向过户费 0.001%；卖出印花税 0.05%。费用分别四舍五入到分，不代表实际券商收费。</p><p>成交使用新鲜、有效的未复权 1 分钟价格；延迟或缺失行情暂停成交。估值可使用缓存或最近成交价格。第一版不处理分红、送股和拆股；所有资金均为虚拟资金。</p></div></details>
