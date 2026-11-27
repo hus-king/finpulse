@@ -460,7 +460,7 @@ export default function App() {
     <a className="skip-link" href="#workspace-content">跳至主要内容</a>
     <header className="finance-header"><div className="header-inner">
       <a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /></a>
-      <FinanceNav view={view} isAdmin={user?.role === 'admin'} onSelect={setView} />
+      <FinanceNav view={view} isAdmin={user?.role === 'admin' || view === 'admin'} onSelect={setView} />
       <div className="header-actions">
         <button type="button" className="finance-search" onClick={() => setAdding(true)}>
           <Search size={15} aria-hidden="true" /><span>搜索股票或指数</span>

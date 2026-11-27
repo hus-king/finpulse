@@ -6,6 +6,39 @@ import AuthDialog from './AuthDialog';
 import PasswordDialog from './PasswordDialog';
 import type { AuthSession, User } from './types';
 
+const USER_CACHE_KEY = 'finpulse-user-cache';
+
+interface CachedSession {
+  user: User;
+  csrf_token?: string;
+}
+
+function getInitialSession(): CachedSession | null {
+  try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.user && typeof parsed.user === 'object' && parsed.user.id) {
+        return parsed as CachedSession;
+      }
+      if (parsed.id && parsed.username) {
+        return { user: parsed as User };
+      }
+    }
+  } catch {
+    // Local storage unavailable or malformed
+  }
+  return null;
+}
+
+const initialSession = getInitialSession();
+if (initialSession) {
+  setPaperSnapshotOwner(initialSession.user.id);
+  if (initialSession.csrf_token) setCsrfToken(initialSession.csrf_token);
+}
+
 interface AuthState {
   user: User | null; loading: boolean; sessionError: string;
   requestLogin: (reason?: string) => void;
@@ -23,8 +56,8 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => initialSession?.user ?? null);
+  const [loading, setLoading] = useState(() => !initialSession);
   const [sessionError, setSessionError] = useState('');
   const [dialog, setDialog] = useState<{ reason: string; admin?: boolean } | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -34,6 +67,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPaperSnapshotOwner(session?.user.id ?? null);
     setCsrfToken(session?.csrf_token ?? null);
     setUser(session?.user ?? null);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (session?.user) {
+          localStorage.setItem(USER_CACHE_KEY, JSON.stringify({ user: session.user, csrf_token: session.csrf_token }));
+        } else {
+          localStorage.removeItem(USER_CACHE_KEY);
+        }
+      }
+    } catch {
+      // Local storage unavailable
+    }
     if (!session) setChangingPassword(false);
     setLoading(false);
     setSessionError('');
@@ -94,6 +138,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try { await api('/api/auth/logout', {}); }
     catch (error) { if (!(error instanceof ApiError && (error.status === 401 || error.code === 'ACCOUNT_DISABLED'))) throw error; }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(USER_CACHE_KEY);
+      }
+    } catch {
+      // Local storage unavailable
+    }
     pending.current?.abort(); update(null); setDialog(null);
     setChangingPassword(false);
     channel.current?.postMessage('changed');
