@@ -749,16 +749,50 @@
 :root[data-theme] .portfolio-header-actions { display: flex; gap: 6px; }
 :root[data-theme] .portfolio-batch-btn { border-radius: var(--radius-sm); font-size: 11px; background: var(--theme-raised); border: 1px solid var(--theme-border); color: var(--theme-muted); padding: 4px 8px; cursor: pointer; }
 :root[data-theme] .portfolio-batch-btn:hover { background: var(--theme-hover); color: var(--theme-heading); }
-:root[data-theme] .portfolio-row { min-width: 0; border-top: 1px solid var(--theme-border); border-left: 3px solid transparent; transition: all 140ms var(--ease-out); }
-:root[data-theme] .portfolio-row > button:first-child { padding: 16px 18px 18px; }
+:root[data-theme] .portfolio-row { position: relative; min-width: 0; border-top: 1px solid var(--theme-border); border-left: 3px solid transparent; transition: all 140ms var(--ease-out); }
+:root[data-theme] .portfolio-row > button:first-child { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px 44px 14px 16px; border: none; background: transparent; cursor: pointer; text-align: left; }
+:root[data-theme] .portfolio-row > button:first-child > span:first-child { display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding-right: 8px; }
+:root[data-theme] .portfolio-row > button:first-child > span:last-child { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; flex-shrink: 0; text-align: right; }
 :root[data-theme] .portfolio-row.active { background: var(--theme-raised); border-left-color: var(--theme-accent-text); }
 :root[data-theme] .portfolio-row:hover { background: var(--theme-hover); }
 :root[data-theme] .portfolio-row strong { color: var(--theme-text); font-size: 12px; font-weight: 600; }
-:root[data-theme] .portfolio-row small { color: var(--theme-subtle); font-size: 10px; margin-top: 6px; }
+:root[data-theme] .portfolio-row small { color: var(--theme-subtle); font-size: 10px; margin-top: 4px; }
 :root[data-theme] .portfolio-row small.up { color: var(--up); font-weight: 500; }
 :root[data-theme] .portfolio-row small.down { color: var(--down); font-weight: 500; }
-:root[data-theme] .remove-stock { opacity: .7; bottom: 6px; }
-:root[data-theme] .remove-stock:hover { opacity: 1; color: var(--theme-error); }
+:root[data-theme] :is(.portfolio-row, body) .remove-stock {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--theme-subtle);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms var(--ease-out), color 120ms var(--ease-out), background-color 120ms var(--ease-out);
+  z-index: 2;
+}
+:root[data-theme] .portfolio-row:hover .remove-stock,
+:root[data-theme] .portfolio-row:focus-within .remove-stock {
+  opacity: 0.65;
+}
+:root[data-theme] :is(.portfolio-row, body) .remove-stock:hover {
+  opacity: 1;
+  color: var(--theme-error);
+  background: var(--theme-hover);
+}
+@media (hover: none) {
+  :root[data-theme] :is(.portfolio-row, body) .remove-stock {
+    opacity: 0.6;
+  }
+}
 :root[data-theme] .add-watch { min-width: 0; font-size: 11px; color: var(--theme-text); padding: 14px 10px; border-top: 1px solid var(--theme-border); }
 :root[data-theme] .add-watch:hover { color: var(--theme-accent-text); background: var(--theme-hover); }
 :root[data-theme] .rail-note { padding: 12px 16px; border-radius: var(--radius-md); background: var(--theme-panel); border: 1px solid var(--theme-border); }
@@ -993,7 +1027,7 @@
 @media (min-width: 1600px) {
   :root[data-theme] .finance-layout { grid-template-columns: 240px minmax(0, 1fr) 310px; gap: 28px; }
   :root[data-theme] .portfolio-panel header { padding-left: 20px; padding-right: 20px; }
-  :root[data-theme] .portfolio-row > button:first-child { padding-left: 20px; padding-right: 20px; }
+  :root[data-theme] .portfolio-row > button:first-child { padding-left: 20px; padding-right: 44px; }
 }
 
 :root[data-theme] .portfolio-list { min-height: 0; max-height: 60dvh; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--theme-border) transparent; }
