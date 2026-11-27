@@ -71,20 +71,19 @@ export default function HotNewsMatchPanel({ topics, watchlist, ready, disabled, 
       </div>
       {job.watchlist_changed && <p className="pipeline-warning" role="status">自选股已变化，当前只展示仍在自选中的股票；请重新分析以核对新列表。</p>}
       {job.counts.failed > 0 && <p className="hot-inline-note" role="status">{job.counts.failed} 对尚未完成，可重新一键分析重试；失败不表示无关。</p>}
-      {job.counts.uncertain > 0 && <p className="hot-inline-note">另有 {job.counts.uncertain} 对关联证据不足，保留待核实。</p>}
       {groups.length > 0 && <div className="hot-match-results">{groups.map(stock => <article className="hot-match-stock" key={stock.code}>
         <header><div><strong>{stock.name}</strong><small>{stock.code}</small></div><span>{stock.news.length} 条相关消息</span></header>
         {stock.news.map(news => <section className="hot-match-news" key={news.topic_id}>
           <div><h3>{news.title}</h3><ImpactScore analysis={news.analysis} /></div>
-          <p>{news.analysis.mechanism}</p><small>{news.analysis.relation === 'direct' ? '直接关联' : '间接关联'} · 证据可信度低，实际敞口待核实</small>
+          <p>{news.analysis.mechanism}</p><small>{news.analysis.relation === 'direct' ? '直接关联' : '间接关联'}</small>
           <details><summary>查看判断依据与成立条件</summary>{news.analysis.news_evidence.map((quote, index) => <blockquote key={index}>{quote}</blockquote>)}
             {news.analysis.business_evidence && <><small>主营原文依据</small><blockquote>{news.analysis.business_evidence}</blockquote></>}
             {news.analysis.relationship_evidence?.map(quote => <div key={quote.id}><small>品牌 / 产品 / 公司关系依据</small><blockquote>{quote.quote}</blockquote><a href={quote.url} target="_blank" rel="noopener noreferrer">{quote.source}<ExternalLink size={11} /></a></div>)}
-            <p>{news.analysis.uncertainty}</p>{news.sources.map(source => <a href={source.url} target="_blank" rel="noopener noreferrer" key={source.id}>{source.publisher || source.name} · {source.link_kind === 'provider_doc' ? '接口说明' : '来源入口'}<ExternalLink size={11} /></a>)}
+            <p>{news.analysis.uncertainty}</p>{news.sources.filter(source => source.link_kind === 'article').map(source => <a href={source.url} target="_blank" rel="noopener noreferrer" key={source.id}>查看原文<ExternalLink size={11} /></a>)}
           </details>
         </section>)}
       </article>)}</div>}
-      {!groups.length && <p className="hot-inline-note">{running ? '正在核对资料，有依据的关联会陆续显示在这里。' : job.counts.completed === job.counts.total ? '已核对本次范围，暂未发现有依据的关联。' : '暂未取得有依据的关联，仍有未完成或待核实的判断。'}</p>}
+      {!groups.length && <p className="hot-inline-note">{running ? '正在核对资料，有依据的关联会陆续显示在这里。' : job.counts.completed === job.counts.total ? '已核对本次范围，暂未发现有依据的关联。' : '未确认关联，仍有分析未完成。'}</p>}
     </>}
   </section>;
 }

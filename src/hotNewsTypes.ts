@@ -1,6 +1,5 @@
 export type MarketChannel = 'trade' | 'supply' | 'cost' | 'demand' | 'regulation' | 'funding' | 'risk';
 export type ImpactDirection = 'positive' | 'negative' | 'mixed' | 'unclear';
-export const impactDirections = { positive: '利好', negative: '利空', mixed: '正反并存', unclear: '影响不明' };
 export interface SectorImpact {
   id: string; name: string; direction: ImpactDirection; reason: string; evidence: string; method: 'rules' | 'model';
 }

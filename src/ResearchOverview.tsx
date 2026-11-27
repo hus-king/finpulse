@@ -7,7 +7,7 @@ export default function ResearchOverview({data,openAssistant,running=false}:{dat
   const overview=data?.research_overview, score=overview?.net_score ?? null, series=overview?.score_series ?? [];
   const angle=Math.PI * (1 - ((score ?? 0) + 100) / 200);
   const open=(id:string)=>{const news=data?.news.find(n=>n.id===id);if(news)openAssistant(news);};
-  return <section className="panel research-overview"><span className="eyebrow">AI NEWS SCORE</span><h2>公司消息面研判</h2>
+  return <section className="panel research-overview"><h2>公司消息面研判</h2>
     {updating ? <div className="empty-card" role="status" aria-live="polite"><strong>正在更新消息面研判</strong><p>先展示行情和新闻。完成本轮合并与研判后，统一显示复用分数、新增分数和综合消息分。</p><small>已有研判已保存在数据库中，不会重复评分。</small></div> : <>
     <div className="score-gauge"><svg viewBox="0 0 240 140" role="img" aria-label={`AI综合消息分：${score === null ? '待研判' : score}`}>
       <defs>

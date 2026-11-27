@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090c12" />
+    <meta name="theme-color" content="#0b0f19" />
     <script>
       (() => {
         let theme = 'dark';
         try { if (localStorage.getItem('finpulse-theme') === 'light') theme = 'light'; } catch {}
         document.documentElement.dataset.theme = theme;
         document.documentElement.style.colorScheme = theme;
-        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#090c12' : '#f4f3ef';
+        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#0b0f19' : '#f5f6f8';
       })();
     </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />

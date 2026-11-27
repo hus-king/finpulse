@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ExternalLink, Flame, LoaderCircle, RefreshCw, Search } from 'lucide-react';
+import { ExternalLink, LoaderCircle, RefreshCw, Search } from 'lucide-react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
 import { dateTime } from './format';
@@ -17,7 +17,6 @@ const channels: Record<MarketChannel, string> = {
 export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: string[]; watchReady: boolean }) {
   const { user, requireAuth } = useAuth();
   const [result, setResult] = useState<{ key: string; data: HotFeed } | null>(null);
-  const [source, setSource] = useState('all');
   const [channel, setChannel] = useState('all');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -32,7 +31,7 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
   const [impactRead, setImpactRead] = useState<{ scope: string; items: Record<string, HotImpactPreview>; loading: boolean; error: string } | null>(null);
   const work = useRef<AbortController | null>(null);
   const impactOpener = useRef<HTMLButtonElement | null>(null);
-  const params = new URLSearchParams({ source, channel, q: query, sort, limit: String(limit) }).toString();
+  const params = new URLSearchParams({ channel, q: query, sort, limit: String(limit) }).toString();
   const feed = result?.data ?? null;
   const current = result?.key === params ? result.data : null;
   const refreshState = feed?.refresh;
@@ -96,34 +95,28 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
   }
 
   function resetFilters() {
-    setSource('all'); setChannel('all'); setSearch(''); setQuery(''); setSort('hot');
+    setChannel('all'); setSearch(''); setQuery(''); setSort('hot');
   }
   const topics = current?.items ?? [];
-  const filtering = source !== 'all' || channel !== 'all' || !!search.trim() || sort !== 'hot';
+  const filtering = channel !== 'all' || !!search.trim() || sort !== 'hot';
   return <section className="hot-news-workspace" aria-label="市场相关热点榜单">
-    <header className="hot-toolbar panel"><div><Flame size={24} /><div><h2>国内国际 · 重要热点新闻</h2><p>每个平台最多采集20条，仅展示通过筛选后综合评分最高的6条新闻。</p></div></div>
-      <button className="primary-button" onClick={() => void refresh()} disabled={refreshing || loading}>
-        {refreshing ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{refreshing ? '更新进行中…' : '更新热点'}
-      </button>
-    </header>
     {error && <div className="error-box" role="alert">{error}<button onClick={() => setReload(previous => previous + 1)}>重新读取</button></div>}
-    <div className="hot-source-grid">{feed?.sources.map(item => <section className="panel hot-source-card" key={item.id}>
-      <div><strong>{item.name}</strong><span className={`hot-source-status ${item.status}`}>{item.status === 'ok' ? '已更新' : item.status === 'stale' ? '沿用上次快照' : '暂不可用'}</span></div>
-      <p>{item.fetched_at ? `采集于 ${dateTime(item.fetched_at)}` : '尚未取得可用快照'}</p>
-      {item.error && <small>{item.error}</small>}<a href={item.url} target="_blank" rel="noopener noreferrer">{item.id === 'tushare_major' ? '查看接口说明' : item.id.startsWith('tushare_') ? '查看新闻来源入口' : '查看平台热榜'}<ExternalLink size={12} /></a>
-    </section>)}</div>
     {refreshState?.status === 'error' && <div className="error-box" role="alert">{refreshState.message || '上次更新未完成，请重试。'}</div>}
     {!!feed?.warnings.length && <div className="pipeline-warning" role="status">{feed.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>}
     {feed?.status === 'stale' && <p className="pipeline-warning" role="status">热榜快照已过期，请更新后核对。各来源保留自己的采集时间。</p>}
     <HotNewsMatchPanel topics={topics} watchlist={watchlist} ready={watchReady} disabled={loading || refreshing}
       onBusy={setMatching} onResults={rows => rows.forEach(rememberImpact)} />
     <section className="panel hot-board" aria-busy={loading || refreshing}>
-      <header className="hot-board-heading"><div><h2>重要热点新闻</h2><p>{feed?.note ?? '读取已保存的热榜快照，不自动发起外部采集。'}</p></div>
-        {filtering && <button className="hot-reset" onClick={resetFilters} disabled={refreshing}>重置筛选</button>}
+      <header className="hot-board-heading"><div><h2>重要热点新闻</h2><p>{feed?.note ?? '每个平台最多采集 20 条，筛选展示综合评分最高的 6 条市场相关新事件。'}</p></div>
+        <div className="hot-board-actions">
+          {filtering && <button className="hot-reset" onClick={resetFilters} disabled={refreshing}>重置筛选</button>}
+          <button className="primary-button" onClick={() => void refresh()} disabled={refreshing || loading}>
+            {refreshing ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{refreshing ? '更新进行中…' : '更新热点'}
+          </button>
+        </div>
       </header>
       <div className="hot-query-controls">
         <label className="hot-search"><span>关键词</span><div><Search size={15} /><input aria-label="搜索热点新闻" value={search} maxLength={80} placeholder="搜索标题或摘要，如关税、航运" onChange={event => setSearch(event.target.value)} disabled={refreshing} /></div></label>
-        <label>来源<select aria-label="筛选热榜来源" value={source} onChange={event => setSource(event.target.value)} disabled={refreshing}><option value="all">全部平台</option>{feed?.sources.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label>影响类型<select aria-label="筛选经济影响类型" value={channel} onChange={event => setChannel(event.target.value)} disabled={refreshing}><option value="all">全部影响类型</option>{Object.entries(channels).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
         <label>排序<select aria-label="热点排序方式" value={sort} onChange={event => setSort(event.target.value)} disabled={refreshing}><option value="hot">综合评分优先</option><option value="latest">最近更新</option></select></label>
       </div>
@@ -131,11 +124,13 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
       {loading && <p className="hot-empty" role="status">正在读取热点榜单…</p>}
       {refreshing && <p className="hot-empty" role="status">{refreshState?.message}{refreshState?.total ? `（${refreshState.completed}/${refreshState.total} 条已处理）` : ''} · 正在后台采集和筛选重要新事件，完成后自动展示；可以离开页面稍后回来。</p>}
       <ol className="hot-topic-list">{topics.map((topic, index) => <li key={topic.id} className="hot-topic-card">
-        <div className="hot-topic-rank" aria-label={`当前列表第${index + 1}名`}>{String(index + 1).padStart(2, '0')}</div>
+        <div className="hot-topic-rank" aria-label={`当前列表第${index + 1}名`}>{index + 1}</div>
         <article><header><h3>{topic.title}</h3><span className={`hot-decision ${topic.screening.decision}`}>{'重要新事件'}</span></header>
-          <div className="hot-topic-sources">{topic.sources.map(entry => <a href={entry.url} key={entry.id} target="_blank" rel="noopener noreferrer">
-            {entry.publisher || entry.name}{entry.kind === 'news' ? ` · 报道于 ${dateTime(entry.published_at ?? null)} · ${entry.link_kind === 'provider_doc' ? '接口说明' : '来源入口'}` : ` · 第 ${entry.rank} 名`}{entry.heat ? ` · 热度 ${entry.heat}` : ''}{entry.stale ? ' · 旧快照' : ''}<ExternalLink size={11} />
-          </a>)}</div>
+          {topic.sources.some(entry => entry.link_kind === 'article') && <div className="hot-topic-sources">
+            {topic.sources.filter(entry => entry.link_kind === 'article').map(entry => <a href={entry.url} key={entry.id} target="_blank" rel="noopener noreferrer">
+              查看原文{entry.published_at ? ` · ${dateTime(entry.published_at)}` : ''}<ExternalLink size={11} />
+            </a>)}
+          </div>}
           {topic.summary && <p className="hot-summary">{topic.summary}</p>}
           {topic.newsworthiness && <details className="hot-score-details"><summary>
             {topic.newsworthiness.decision === 'core' ? '核心热点' : topic.newsworthiness.major_event_supplement ? '重大事件补充' : '热点'} · 新闻优先级 {topic.newsworthiness.total_score}/100
@@ -148,14 +143,16 @@ export default function HotNewsPanel({ watchlist, watchReady }: { watchlist: str
             {topic.attention.priority ? '重点关注 · ' : ''}{topic.attention.mentions ? `${topic.attention.mentions} 条热搜 · ${topic.attention.platforms} 个平台 · 近24小时 ${topic.attention.snapshots} 次采集上榜` : '资讯报道 · 未取得热搜名次'}
           </p>}
           {topic.members && topic.members.length > 1 && <details className="hot-event-members"><summary>同一事件的 {topic.members.length} 条热搜 / 报道</summary>
-            {topic.members.map(member => <div key={member.id}><strong>{member.title}</strong>{member.sources.map(entry => <a key={entry.id} href={entry.url} target="_blank" rel="noopener noreferrer">{entry.name}{entry.rank ? ` · 第${entry.rank}名` : ' · 资讯'}<ExternalLink size={11} /></a>)}</div>)}
+            {topic.members.map(member => <div key={member.id}><strong>{member.title}</strong>
+              {member.sources.filter(entry => entry.link_kind === 'article').map(entry => <a key={entry.id} href={entry.url} target="_blank" rel="noopener noreferrer">查看原文<ExternalLink size={11} /></a>)}
+            </div>)}
           </details>}
           <div className="hot-market-path"><strong>{'事件与影响'}</strong><p>{topic.screening.reason}</p>
             {!!topic.screening.channels.length && <div className="hot-channel-tags">{topic.screening.channels.map(channel => <span key={channel}>{channels[channel]}</span>)}</div>}
           </div>
           <details><summary>查看筛选依据与采集时间</summary><blockquote>{topic.screening.evidence}</blockquote>
             <p>{topic.screening.method === 'model' ? '模型辅助初筛' : '规则初筛'} · {topic.sources.some(entry => entry.kind === 'news') ? '新闻接口材料' : '平台话题摘要'}，尚未独立核验原始报道</p>
-            {topic.sources.map(entry => <p key={entry.id}>{entry.name}：{dateTime(entry.observed_at)}{entry.stale ? '（旧快照）' : ''}</p>)}
+            {[...new Set(topic.sources.map(entry => dateTime(entry.observed_at) + (entry.stale ? '（旧快照）' : '')))].map(value => <p key={value}>采集于 {value}</p>)}
           </details>
           <HotTopicImpacts key={`${watchKey}:${JSON.stringify(topic)}`} topic={topic}
             data={impacts?.items[topic.id]?.title === topic.title && impacts.items[topic.id].summary === topic.summary ? impacts.items[topic.id] : undefined}

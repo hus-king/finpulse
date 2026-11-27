@@ -94,25 +94,25 @@ export default function MarketSentimentCard() {
     <section className="panel market-sentiment-card market-overview" aria-label="大盘概览">
       <div className="market-sentiment-header">
         <div>
-          <span className="eyebrow">沪深全市场</span>
           <div className="title-with-hint">
             <h2>大盘概览</h2>
             <span
               className="info-hint"
               title={`计算模型：(上涨家数 + 0.5 × 平盘家数) / 总家数 × 100\n基于沪深 A 股涨跌家数；成交额单独展示，不参与评分`}
             >
-              <Info size={13} />
+              <Info size={14} />
             </span>
           </div>
-          <p className="market-overview-scope">全市场情绪与涨跌广度</p>
+          <p className="market-overview-scope">{timeLabel ? `沪深全市场 · ${timeLabel}` : '沪深全市场涨跌广度'}</p>
         </div>
         <button
           className="subtle-button"
           disabled={loading}
           onClick={() => void fetchSentiment(true)}
           title="刷新全市场情绪"
+          aria-label="刷新全市场情绪"
         >
-          {loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}
+          {loading ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />}
         </button>
       </div>
 
@@ -160,11 +160,11 @@ export default function MarketSentimentCard() {
           <div className="market-overview-breadth">
           <div className="market-breadth-grid">
             <div className="breadth-item up">
-              <small>上涨家数</small>
+              <small>上涨</small>
               <strong>{sentiment.advancing.toLocaleString()}</strong>
             </div>
             <div className="breadth-item down">
-              <small>下跌家数</small>
+              <small>下跌</small>
               <strong>{sentiment.declining.toLocaleString()}</strong>
             </div>
             <div className="breadth-item breadth-flat">
@@ -175,20 +175,6 @@ export default function MarketSentimentCard() {
               <small>两市成交</small>
               <strong>{formatTurnover(sentiment.turnover_cny)}</strong>
             </div>
-          </div>
-
-          <div className="sentiment-card-footer">
-            <span
-              className="source-tag"
-              title={`数据来源: ${sentiment.source ?? '沪深全市场数据'}\n计算方法: ${sentiment.method ?? '全市场广度代理指标'}`}
-            >
-              沪深全市场广度
-            </span>
-            {timeLabel && (
-              <span className="time-tag">
-                行情时间 {timeLabel}
-              </span>
-            )}
           </div>
           </div>
         </div>

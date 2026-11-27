@@ -460,29 +460,31 @@ export default function App() {
     <a className="skip-link" href="#workspace-content">跳至主要内容</a>
     <header className="finance-header"><div className="header-inner">
       <a className="finance-brand" href="/" aria-label="FinPulse 财经研究"><BrandWordmark /></a>
-      <button type="button" className="finance-search" onClick={() => setAdding(true)}>
-        <Search size={17} aria-hidden="true" /><span>搜索股票、指数名称或代码</span>
-        <kbd aria-hidden="true">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd>
-      </button>
-      <ThemeToggle />
-      <AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} />
+      <FinanceNav view={view} isAdmin={user?.role === 'admin'} onSelect={setView} />
+      <div className="header-actions">
+        <button type="button" className="finance-search" onClick={() => setAdding(true)}>
+          <Search size={15} aria-hidden="true" /><span>搜索股票或指数</span>
+          <kbd aria-hidden="true">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
+        <ThemeToggle />
+        <AccountMenu open={accountOpen} setOpen={setAccountOpen} onAdmin={() => setView('admin')} />
+      </div>
     </div></header>
-    <FinanceNav view={view} isAdmin={user?.role === 'admin'} onSelect={setView} />
     {view === 'dashboard' && <div className="ticker-bar"><div className="ticker-inner">
-      <div className="ticker-label"><Activity size={16} aria-hidden="true" /><strong>主要指数</strong><span>行情快照</span></div>
+      <div className="ticker-label"><Activity size={14} aria-hidden="true" /><strong>主要指数</strong></div>
       {headlineIndices.flatMap(id => catalog.find(stock => stock.code === id) ?? []).map(stock => {
         const cached = snapshots[stock.code];
         const price = cached?.stock.price ?? stock.price;
         const change = cached?.stock.change ?? stock.change;
         return <button type="button" className={`ticker-card ${code === stock.code ? 'selected' : ''}`} aria-pressed={code === stock.code} key={stock.code} onClick={() => setCode(stock.code)}>
-          <span>{stock.name}<small>{cached?.quote.as_of_date ?? '待获取'}</small></span>
+          <span className="ticker-name">{stock.name}<small>{cached?.quote.as_of_date ?? ''}</small></span>
           <strong key={price} className="mono quote-update">{number(price)}</strong>
-          <span className={tone(change)}>{percent(change)}</span>
+          <span className={`ticker-change mono ${tone(change)}`}>{percent(change)}</span>
         </button>;
       })}
     </div></div>}
     <main className="finance-main" id="workspace-content" tabIndex={-1}>
-      <header className="finance-heading"><h1>{currentPage.label}</h1></header>
+      <header className="finance-heading sr-only"><h1>{currentPage.label}</h1></header>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
       <div className="workspace-view" key={view}>
       {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}

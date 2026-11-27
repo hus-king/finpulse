@@ -6,9 +6,9 @@ import useDialogScroll from './useDialogScroll';
 import ImpactScore from './ImpactScore';
 import type { HotImpactSnapshot, HotTopic } from './hotNewsTypes';
 
-const relations = { direct: '直接关联', indirect: '间接关联', none: '未发现关联', uncertain: '关联待核实' };
+const relations = { direct: '直接关联', indirect: '间接关联', none: '未确认关联', uncertain: '未确认关联' };
 const confidence = { high: '高', medium: '中', low: '低' };
-type Filter = 'related' | 'all' | 'positive' | 'negative' | 'uncertain';
+type Filter = 'related' | 'all' | 'positive' | 'negative' | 'pending';
 
 export default function HotStockImpactPanel({ topic, watchlist, ready, close, returnFocus, onResult, matching }: {
   topic: HotTopic; watchlist: string[]; ready: boolean; close: () => void; returnFocus: HTMLElement | null;
@@ -68,9 +68,9 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
 
   const rows = data?.items ?? [];
   const related = rows.filter(row => row.analysis && ['direct', 'indirect'].includes(row.analysis.relation));
-  const uncertain = rows.filter(row => !row.analysis || row.analysis.relation === 'uncertain');
+  const pending = rows.filter(row => !row.analysis);
   const shown = rows.filter(row => filter === 'all' || (filter === 'related' ? row.analysis && ['direct', 'indirect'].includes(row.analysis.relation)
-    : filter === 'uncertain' ? !row.analysis || row.analysis.relation === 'uncertain' : row.analysis?.direction === filter));
+    : filter === 'pending' ? !row.analysis : row.analysis?.direction === filter));
   return <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <section className="panel hot-impact-dialog" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="hot-impact-heading">
       <header><div><small>热点与我的自选股</small><h2 id="hot-impact-heading">关联与股价影响评分</h2></div><button autoFocus className="icon-button" aria-label="关闭关联分析" onClick={close}><X size={22} /></button></header>
@@ -87,7 +87,7 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
         {!rows.length && <p className="hot-empty">请先添加自选股，再判断热点与哪些公司有关。</p>}
         {!!rows.length && <nav className="hot-filters" aria-label="筛选关联结果">{([
           ['related', `有关联 ${related.length}`], ['positive', '利好'], ['negative', '利空'],
-          ['uncertain', `待核实 / 未完成 ${uncertain.length}`], ['all', `全部自选 ${rows.length}`],
+          ['pending', `未完成 ${pending.length}`], ['all', `全部自选 ${rows.length}`],
         ] as [Filter, string][]).map(([value, label]) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</nav>}
         {shown.map(row => <article className="hot-stock-card" key={row.code}>
           <header><div><strong>{row.name}</strong><small>{row.code}</small></div>{row.analysis && <ImpactScore analysis={row.analysis} />}</header>
@@ -99,7 +99,7 @@ export default function HotStockImpactPanel({ topic, watchlist, ready, close, re
               {row.analysis.business_evidence && <div><small>公司主营原文</small><blockquote>{row.analysis.business_evidence}</blockquote>{row.business.url && <a href={row.business.url} target="_blank" rel="noopener noreferrer">{row.business.source || '主营资料来源'}<ExternalLink size={12} /></a>}
                 <p>{row.business.status === 'stale' ? '沿用旧资料 · ' : ''}{row.business.fetched_at ? dateTime(new Date(row.business.fetched_at * 1000).toISOString()) : '资料时间未知'}</p></div>}
             </details>
-            <p className="hot-stock-uncertainty">成立条件与局限：{row.analysis.uncertainty}</p>
+            {['direct', 'indirect'].includes(row.analysis.relation) && <p className="hot-stock-uncertainty">成立条件与局限：{row.analysis.uncertainty}</p>}
             {!!row.analysis.project_evidence?.length && <details>
               <summary>候选项目关系证据</summary>
               <ol>{row.analysis.project_evidence.map((edge, index) => <li key={index}>
