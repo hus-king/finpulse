@@ -1,7 +1,7 @@
 import type { Candle } from './types';
 import type { buildIntraday } from './intradayMath';
 import type { IndicatorResult } from './technicalIndicators';
-import { weeklyCandles } from './chartMath.ts';
+import { weeklyCandles } from './chartMath';
 
 type Session = ReturnType<typeof buildIntraday>;
 export function preparePlotData(candles: readonly Candle[], period: string, session?: Pick<Session, 'day' | 'times' | 'rows' | 'previousClose'>) {

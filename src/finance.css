@@ -82,3 +82,156 @@ body{min-width:320px;overflow-x:hidden}.finance-shell{min-height:100vh}button:di
 .research-overview .score-weighting-rule{margin:8px 0 14px;color:var(--theme-muted);font-size:11px;line-height:1.6;text-align:center}
 
 .instrument-filters{display:flex;gap:8px;margin:16px 0}.instrument-filters button{padding:7px 20px;border:1px solid var(--border);border-radius:18px;color:var(--text-secondary)}.instrument-filters button[aria-pressed="true"]{background:var(--accent,#16856f);color:white;border-color:transparent}.index-notice{padding:24px}.index-notice h2{font-size:17px;margin:10px 0}.index-notice p{font-size:12px;line-height:1.9;color:var(--text-secondary);margin:10px 0}.index-point-unit{font-size:14px;margin-left:7px;font-weight:400}
+
+/* === Price Tick Flash Animations === */
+@keyframes tickUpFlash {
+  0% { background-color: rgba(239, 68, 68, 0.28); color: #ef4444; }
+  100% { background-color: transparent; }
+}
+
+@keyframes tickDownFlash {
+  0% { background-color: rgba(16, 185, 129, 0.28); color: #10b981; }
+  100% { background-color: transparent; }
+}
+
+.portfolio-row.tick-up {
+  animation: tickUpFlash 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 8px;
+}
+
+.portfolio-row.tick-down {
+  animation: tickDownFlash 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 8px;
+}
+
+.price-tick-up {
+  color: var(--up, #ef4444) !important;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+  transition: all 0.3s ease;
+}
+
+.price-tick-down {
+  color: var(--down, #10b981) !important;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  transition: all 0.3s ease;
+}
+
+/* === Apple-Style Glass Shimmer Skeletons === */
+@keyframes shimmerWave {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-panel-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.skeleton-panel-header {
+  padding: 8px 4px 12px;
+}
+
+.skeleton-panel-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.skeleton-caption {
+  font-size: 13px;
+  color: var(--theme-muted, #8b949e);
+  margin: 0;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.skeleton-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--theme-card-bg, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.skeleton-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.skeleton-bar {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.8s infinite ease-in-out;
+}
+
+:root[data-theme="light"] .skeleton-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.04) 25%,
+    rgba(0, 0, 0, 0.09) 50%,
+    rgba(0, 0, 0, 0.04) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* === Network Toast Resilience Banner === */
+.network-toast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  animation: slideDownToast 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.network-toast.offline {
+  background: rgba(220, 38, 38, 0.88);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.network-toast.online {
+  background: rgba(16, 185, 129, 0.88);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@keyframes slideDownToast {
+  0% { opacity: 0; transform: translate(-50%, -12px) scale(0.96); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}

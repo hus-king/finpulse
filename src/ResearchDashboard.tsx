@@ -1,5 +1,5 @@
 import { displayCode, isIndex } from './instruments';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import QuotePanel from './QuotePanel';
 import NewsFeed from './NewsFeed';
@@ -21,6 +21,8 @@ interface Props {
 export default function ResearchDashboard(props: Props) {
   const { data, loading, catalog, snapshots, watchlist, savingWatch, code, setCode, userSignedIn, add, remove, running, job, jobs = {}, batchAnalyze, collect, audit, auditLoading, openAssistant } = props;
   const [days, setDays] = useState(30);
+  const [ticks, setTicks] = useState<Record<string, 'up' | 'down'>>({});
+  const prevPrices = useRef<Record<string, number>>({});
   const indexView = !!data && isIndex(data.stock);
   const researchCodes = watchlist.filter(c => !catalog.find(stock => stock.code === c && isIndex(stock)));
   const stages = data?.pipeline?.stages;
@@ -28,6 +30,36 @@ export default function ResearchDashboard(props: Props) {
   const activeWatchlistJobs = researchCodes.map(c => jobs[c]).filter(j => j && ['queued', 'running'].includes(j.status));
   const isBatchActive = activeWatchlistJobs.length > 0;
   const completedCount = researchCodes.length - activeWatchlistJobs.length;
+
+  useEffect(() => {
+    const nextTicks: Record<string, 'up' | 'down'> = {};
+    let hasTick = false;
+    for (const stockCode of watchlist) {
+      const stock = catalog.find(row => row.code === stockCode);
+      const snapshot = snapshots[stockCode];
+      const isSelected = code === stockCode;
+      const currentPrice = (isSelected && data?.stock.price != null ? data.stock.price : snapshot?.stock.price) ?? stock?.price;
+      const oldPrice = prevPrices.current[stockCode];
+      if (currentPrice != null && oldPrice != null && currentPrice !== oldPrice) {
+        nextTicks[stockCode] = currentPrice > oldPrice ? 'up' : 'down';
+        hasTick = true;
+      }
+      if (currentPrice != null) {
+        prevPrices.current[stockCode] = currentPrice;
+      }
+    }
+    if (hasTick) {
+      setTicks(prev => ({ ...prev, ...nextTicks }));
+      const timer = window.setTimeout(() => {
+        setTicks(prev => {
+          const cleaned = { ...prev };
+          for (const k of Object.keys(nextTicks)) delete cleaned[k];
+          return cleaned;
+        });
+      }, 700);
+      return () => window.clearTimeout(timer);
+    }
+  }, [watchlist, snapshots, catalog, data, code]);
 
   return <div className="finance-layout" role="region" aria-label={indexView ? '指数行情' : '个股行情与新闻'}>
     <aside className="portfolio-rail">
@@ -54,7 +86,8 @@ export default function ResearchDashboard(props: Props) {
             const isSelected = code === stockCode;
             const displayPrice = (isSelected && data?.stock.price != null ? data.stock.price : snapshot?.stock.price) ?? stock?.price;
             const displayChange = (isSelected && data?.stock.change != null ? data.stock.change : snapshot?.stock.change) ?? stock?.change;
-            return stock && <div key={stockCode} className={`portfolio-row ${isSelected ? 'active' : ''}`}>
+            const tick = ticks[stockCode];
+            return stock && <div key={stockCode} className={`portfolio-row ${isSelected ? 'active' : ''} ${tick ? `tick-${tick}` : ''}`}>
               <button onClick={() => setCode(stockCode)}>
                 <span>
                   <strong>{stock.name}</strong>
@@ -62,7 +95,7 @@ export default function ResearchDashboard(props: Props) {
                   {isStockActive && <span className="stock-job-tag" title={stockJob.stage || '研判中'}><LoaderCircle className="spin" size={10} /><span>{stockJob.stage ? (stockJob.stage.length > 6 ? stockJob.stage.slice(0, 6) + '…' : stockJob.stage) : '研判中'}</span></span>}
                 </span>
                 <span>
-                  <strong className="mono">{number(displayPrice)}</strong>
+                  <strong className={`mono ${tick ? `price-tick-${tick}` : ''}`}>{number(displayPrice)}</strong>
                   <small className={`mono ${tone(displayChange ?? null)}`}>{percent(displayChange)}</small>
                 </span>
               </button>

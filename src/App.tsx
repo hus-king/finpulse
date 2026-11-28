@@ -1,21 +1,16 @@
 import { headlineIndices } from './instruments';
 import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { Activity, ExternalLink, FlaskConical, Github, LoaderCircle, Search, X } from 'lucide-react';
+import { Activity, ExternalLink, FlaskConical, Github, LoaderCircle, Search, Wifi, WifiOff, X } from 'lucide-react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
 import { ThemeToggle } from './ThemeContext';
 import AccountMenu from './AccountMenu';
-import AdminPanel from './AdminPanel';
 import AiDrawer from './AiDrawer';
 import ResearchDashboard from './ResearchDashboard';
 import MarketSentimentCard from './MarketSentimentCard';
-import BriefingPanel from './BriefingPanel';
-import HotNewsPanel from './HotNewsPanel';
-import PaperTradingPanel from './PaperTradingPanel';
-import PegLeaderboard from './PegLeaderboard';
-import ConvertibleBondResearch from './ConvertibleBondResearch';
 import useDialogScroll from './useDialogScroll';
 import StockSearch from './StockSearch';
+import SkeletonPanel from './SkeletonLoader';
 import type { BatchAnalyzeResponse, BatchQuotesResponse, Dashboard, Health, Job, ModelReply, Stock } from './types';
 import { number, percent, tone } from './format';
 import ReadingRail from './ReadingRail';
@@ -26,6 +21,12 @@ const EtfFundsCard = lazy(() => import('./EtfFundsCard'));
 const EtfFlowIndicator = lazy(() => import('./EtfFlowIndicator'));
 const StockBondOverview = lazy(() => import('./StockBondOverview'));
 const NorthboundOverview = lazy(() => import('./NorthboundOverview'));
+const AdminPanel = lazy(() => import('./AdminPanel'));
+const BriefingPanel = lazy(() => import('./BriefingPanel'));
+const HotNewsPanel = lazy(() => import('./HotNewsPanel'));
+const PegLeaderboard = lazy(() => import('./PegLeaderboard'));
+const ConvertibleBondResearch = lazy(() => import('./ConvertibleBondResearch'));
+const PaperTradingPanel = lazy(() => import('./PaperTradingPanel'));
 const navigation = [
   { id: 'dashboard', label: '行情与新闻' },
   { id: 'etf-funds', label: '资金与宏观' },
@@ -366,15 +367,74 @@ export default function App() {
   }, [jobs, user?.id, loadSnapshot]);
 
   useEffect(() => () => controller.current?.abort(), []);
+  const [online, setOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [onlineBanner, setOnlineBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setOnline(true);
+      setOnlineBanner('网络已恢复 · 数据已同步');
+      const timer = window.setTimeout(() => setOnlineBanner(null), 3000);
+      return () => window.clearTimeout(timer);
+    };
+    const handleOffline = () => {
+      setOnline(false);
+      setOnlineBanner('网络连接已断开 · 使用离线缓存');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return;
-      e.preventDefault();
-      if (!document.querySelector('[aria-modal="true"]')) setAdding(true);
+      const target = e.target as HTMLElement | null;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (!document.querySelector('[aria-modal="true"]')) setAdding(true);
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === 'Escape') {
+        if (adding) { setAdding(false); e.preventDefault(); return; }
+        if (audit) { setAudit(null); e.preventDefault(); return; }
+        if (drawer) { setDrawer(null); e.preventDefault(); return; }
+        if (accountOpen) { setAccountOpen(false); e.preventDefault(); return; }
+      }
+
+      const num = parseInt(e.key, 10);
+      if (!Number.isNaN(num) && num >= 1 && num <= navigation.length) {
+        const targetNav = navigation[num - 1];
+        if (targetNav && (targetNav.id !== 'admin' || user?.role === 'admin')) {
+          e.preventDefault();
+          setView(targetNav.id);
+          return;
+        }
+      }
+
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (view === 'dashboard' && watchlist.length > 0) {
+          e.preventDefault();
+          const currentIndex = watchlist.indexOf(code);
+          if (currentIndex !== -1) {
+            const nextIndex = e.key === 'ArrowDown'
+              ? (currentIndex + 1) % watchlist.length
+              : (currentIndex - 1 + watchlist.length) % watchlist.length;
+            setCode(watchlist[nextIndex]);
+          }
+        }
+      }
     };
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
-  }, []);
+  }, [view, watchlist, code, adding, audit, drawer, accountOpen, user?.role]);
 
   async function collect(days: number, community: boolean, communityOnly = false, analysisOnly = false) {
     if (!requireAuth('登录后可以采集真实新闻并使用模型研判。')) return;
@@ -483,23 +543,29 @@ export default function App() {
         </button>;
       })}
     </div></div>}
+    {onlineBanner && (
+      <div className={`network-toast ${online ? 'online' : 'offline'}`} role="status">
+        {online ? <Wifi size={14} aria-hidden="true" /> : <WifiOff size={14} aria-hidden="true" />}
+        <span>{onlineBanner}</span>
+      </div>
+    )}
     <main className="finance-main" id="workspace-content" tabIndex={-1}>
       <header className="finance-heading sr-only"><h1>{currentPage.label}</h1></header>
       {error && <div className="error-box" role="alert">{error}<button onClick={() => setError('')}>关闭</button></div>}{sessionError && <div className="error-box" role="alert">登录状态暂时无法确认：{sessionError}</div>}
       <div className="workspace-view" key={view}>
-      {view === 'admin' && user?.role === 'admin' && <AdminPanel key={user.id} />}
-      {view === 'briefing' && <BriefingPanel key={user?.id ?? 'guest'} />}
-      {view === 'hot-news' && <HotNewsPanel key={user?.id ?? 'guest'} watchlist={watchlist} watchReady={watchReady} />}
-      {view === 'screener' && <PegLeaderboard watchlist={watchlist} savingWatch={savingWatch || !watchReady} onAddStock={addStock} onOpenStock={openListedStock} />}
-      {view === 'convertible-bonds' && <ConvertibleBondResearch onOpenStock={openListedStock} />}
-      {view === 'paper' && <PaperTradingPanel key={user?.id ?? 'guest'} initialCode={code} onOpenStock={target => { setCode(target); setView('dashboard'); }} />}
+      {view === 'admin' && user?.role === 'admin' && <Suspense fallback={<SkeletonPanel title="管理中心" description="正在加载管理控制台与系统日志…" />}><AdminPanel key={user.id} /></Suspense>}
+      {view === 'briefing' && <Suspense fallback={<SkeletonPanel title="自选股早报" description="正在生成自选股早间研报快照…" />}><BriefingPanel key={user?.id ?? 'guest'} /></Suspense>}
+      {view === 'hot-news' && <Suspense fallback={<SkeletonPanel title="热点榜单" description="正在获取全网财经舆情与热点标的…" />}><HotNewsPanel key={user?.id ?? 'guest'} watchlist={watchlist} watchReady={watchReady} /></Suspense>}
+      {view === 'screener' && <Suspense fallback={<SkeletonPanel title="PEG榜单" description="正在筛选并计算 PEG 估值模型…" />}><PegLeaderboard watchlist={watchlist} savingWatch={savingWatch || !watchReady} onAddStock={addStock} onOpenStock={openListedStock} /></Suspense>}
+      {view === 'convertible-bonds' && <Suspense fallback={<SkeletonPanel title="可转债研究" description="正在拉取可转债平价、溢价率与双低指标…" />}><ConvertibleBondResearch onOpenStock={openListedStock} /></Suspense>}
+      {view === 'paper' && <Suspense fallback={<SkeletonPanel title="模拟盘" description="正在同步模拟账户资产与委托订单…" />}><PaperTradingPanel key={user?.id ?? 'guest'} initialCode={code} onOpenStock={target => { setCode(target); setView('dashboard'); }} /></Suspense>}
       {view === 'lab' && <div className="connection-grid"><section className="panel connection-card"><FlaskConical size={28} className="mint-text" /><h2>模型与数据源</h2><dl><div><dt>模型服务</dt><dd>{health?.provider ?? '未配置'}</dd></div><div><dt>当前模型</dt><dd>{health?.model ?? '未配置'}</dd></div><div><dt>Tavily</dt><dd>{health?.tavily_configured ? '密钥已配置' : '未配置'}</dd></div><div><dt>AkShare</dt><dd>东方财富新闻 / 腾讯日线 / 新浪分钟行情</dd></div><div><dt>自动早报</dt><dd>{health?.scheduler_enabled ? '已开启调度' : '默认关闭'}</dd></div></dl><button className="primary-button" disabled={testing || !health?.configured || running} onClick={testConnection}>{testing ? <LoaderCircle size={16} className="spin" /> : <FlaskConical size={16} />}发送连接测试</button><p>已配置不代表源站可用。采集任务会记录各接口的实际结果。</p></section><section className="panel connection-card"><h2>最近一次模型响应</h2>{lastReply ? <><div className="reply-metadata">{lastReply.model} · {(lastReply.elapsed_ms / 1000).toFixed(1)}s · {lastReply.usage.total_tokens ?? '—'} tokens</div><pre>{lastReply.content}</pre></> : <div className="empty-card"><Activity size={32} /><p>发送连接测试或分析新闻后，在这里查看结果。</p></div>}</section></div>}
       {view === 'dashboard' && <MarketSentimentCard />}
       {view === 'etf-funds' && <>
-        <Suspense fallback={<p role="status">正在打开 ETF 资金动向…</p>}><EtfFlowIndicator /></Suspense>
-        <Suspense fallback={<p role="status">正在打开 ETF 资金监控…</p>}><EtfFundsCard /></Suspense>
-        <Suspense fallback={<p role="status">正在打开股债联动…</p>}><StockBondOverview /></Suspense>
-        <Suspense fallback={<p role="status">正在打开北向资金…</p>}><NorthboundOverview /></Suspense>
+        <Suspense fallback={<SkeletonPanel title="ETF 资金与宏观" description="正在拉取 ETF 资金动向与资金监控…" />}><EtfFlowIndicator /></Suspense>
+        <Suspense fallback={<div className="panel skeleton-card" style={{ minHeight: '200px' }} />}><EtfFundsCard /></Suspense>
+        <Suspense fallback={<div className="panel skeleton-card" style={{ minHeight: '200px' }} />}><StockBondOverview /></Suspense>
+        <Suspense fallback={<div className="panel skeleton-card" style={{ minHeight: '200px' }} />}><NorthboundOverview /></Suspense>
       </>}
       {view === 'dashboard' && <ResearchDashboard data={data} loading={loading} catalog={catalog} snapshots={snapshots} watchlist={watchlist} savingWatch={savingWatch || !watchReady} code={code} setCode={setCode} userSignedIn={!!user} add={() => setAdding(true)} remove={target => { void updateWatchlist(watchlist.filter(row => row !== target)); }} running={running} job={job} jobs={jobs} batchAnalyze={batchAnalyzeWatchlist} collect={collect} audit={openAudit} auditLoading={auditLoading} openAssistant={openAssistant} briefing={() => setView('briefing')} onMarket={marketSnapshot} />}
       </div>
