@@ -18,7 +18,7 @@
 .analysis-evidence details, .business-profile { font-size: 12px; line-height: 1.7; margin: 12px 0; }
 .analysis-evidence summary, .business-profile summary { cursor: pointer; color: var(--theme-muted); }
 .analysis-evidence ul { padding-left: 18px; }
-.business-profile { margin: 12px 25px; padding: 10px 15px; border: 1px solid var(--border); border-radius: 8px; }
+.business-profile { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--theme-border); border-radius: 8px; width: 100%; box-sizing: border-box; }
 .overview-assessment { display: block; margin-top: 18px; font-size: 23px; }
 .overview-evidence { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 16px; }
 .overview-evidence h3 { font-size: 13px; margin: 0 0 9px; }
@@ -27,7 +27,7 @@
 .overview-evidence small { display: block; color: var(--theme-muted); font-size: 11px; margin-top: 3px; }
 .overview-note { font-size: 11px; line-height: 1.7; }
 
-.analyze-all-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 25px;border-bottom:1px solid var(--theme-border);font-size:12px;color:var(--theme-muted)}
+.analyze-all-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--theme-border);font-size:12px;color:var(--theme-muted)}
 .score-gauge{position:relative;margin:26px auto 8px;text-align:center;max-width:260px;color:var(--theme-text)}
 .score-gauge svg{display:block;width:100%;overflow:visible}.score-gauge text,.news-score-chart text{font-size:10px;fill:var(--theme-muted)}
 .score-gauge>strong{display:block;font:600 36px Consolas,monospace;margin-top:4px}.score-gauge>span{display:block;font-size:12px;color:var(--theme-muted);margin-top:5px}

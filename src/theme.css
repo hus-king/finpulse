@@ -235,14 +235,6 @@ a.github-link:focus-visible {
   background: var(--theme-accent);
 }
 
-:root[data-theme="dark"] .remove-stock {
-  opacity: .8;
-}
-
-:root[data-theme="dark"] .remove-stock:hover {
-  color: var(--theme-error);
-}
-
 :root[data-theme="dark"] .portfolio-panel .portfolio-row small.up {
   color: var(--up);
 }

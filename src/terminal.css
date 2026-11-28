@@ -233,22 +233,21 @@ html {
 }
 
 :root[data-theme] .header-inner {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   min-height: 56px;
   height: 56px;
   box-sizing: border-box;
 }
 
 :root[data-theme] .finance-brand {
-  grid-column: 1;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   text-decoration: none;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   min-width: max-content;
 }
 
@@ -260,10 +259,9 @@ html {
 }
 
 :root[data-theme] .finance-nav {
-  grid-column: 2;
-  justify-self: center;
   display: flex;
   align-items: center;
+  margin-inline: auto;
   padding: 3px;
   background: color-mix(in srgb, var(--theme-raised) 70%, transparent);
   border: 1px solid var(--theme-border);
@@ -317,12 +315,10 @@ html {
 }
 
 :root[data-theme] .header-actions {
-  grid-column: 3;
-  justify-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   min-width: max-content;
 }
 
@@ -778,7 +774,7 @@ html {
 :root[data-theme] .portfolio-batch-btn { border-radius: var(--radius-sm); font-size: 11px; background: var(--theme-raised); border: 1px solid var(--theme-border); color: var(--theme-muted); padding: 4px 8px; cursor: pointer; }
 :root[data-theme] .portfolio-batch-btn:hover { background: var(--theme-hover); color: var(--theme-heading); }
 :root[data-theme] .portfolio-row { position: relative; min-width: 0; border-top: 1px solid var(--theme-border); border-left: 3px solid transparent; transition: all 140ms var(--ease-out); }
-:root[data-theme] .portfolio-row > button:first-child { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px 44px 14px 16px; border: none; background: transparent; cursor: pointer; text-align: left; }
+:root[data-theme] .portfolio-row > button:first-child { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px 44px 14px 16px !important; border: none; background: transparent; cursor: pointer; text-align: left; }
 :root[data-theme] .portfolio-row > button:first-child > span:first-child { display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding-right: 8px; }
 :root[data-theme] .portfolio-row > button:first-child > span:last-child { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; flex-shrink: 0; text-align: right; }
 :root[data-theme] .portfolio-row.active { background: var(--theme-raised); border-left-color: var(--theme-accent-text); }
@@ -789,12 +785,12 @@ html {
 :root[data-theme] .portfolio-row small.down { color: var(--down); font-weight: 500; }
 :root[data-theme] :is(.portfolio-row, body) .remove-stock {
   position: absolute;
-  right: 10px;
+  right: 12px;
   top: 50%;
-  bottom: auto;
+  bottom: auto !important;
   transform: translateY(-50%);
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -809,7 +805,7 @@ html {
 }
 :root[data-theme] .portfolio-row:hover .remove-stock,
 :root[data-theme] .portfolio-row:focus-within .remove-stock {
-  opacity: 0.65;
+  opacity: 0.7;
 }
 :root[data-theme] :is(.portfolio-row, body) .remove-stock:hover {
   opacity: 1;
@@ -818,7 +814,7 @@ html {
 }
 @media (hover: none) {
   :root[data-theme] :is(.portfolio-row, body) .remove-stock {
-    opacity: 0.6;
+    opacity: 0.5;
   }
 }
 :root[data-theme] .add-watch { min-width: 0; font-size: 11px; color: var(--theme-text); padding: 14px 10px; border-top: 1px solid var(--theme-border); }
@@ -1027,15 +1023,53 @@ html {
   transform: translateY(1px) rotate(225deg);
 }
 
+/* News Filter Bar & Context Strip */
+:root[data-theme] .news-filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1px solid var(--theme-border);
+  padding: 0 24px;
+}
+:root[data-theme] .news-filter-bar .news-tabs {
+  padding: 0;
+  border-bottom: none;
+}
+:root[data-theme] .news-context-strip {
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid var(--theme-border);
+}
+:root[data-theme] .news-industry-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--theme-muted);
+  background: var(--theme-raised);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+}
+:root[data-theme] .news-updating-banner {
+  padding: 12px 24px;
+  margin: 0;
+  border-bottom: 1px solid var(--theme-border);
+}
+
 /* Research Details Accordion */
-:root[data-theme] .research-update { padding: 18px 0 4px; border-top: 1px solid var(--theme-border); }
+:root[data-theme] .research-update { padding: 14px 24px; border-top: 1px solid var(--theme-border); }
 :root[data-theme] .research-update-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
 :root[data-theme] .research-update-heading h2 { color: var(--theme-heading); font-size: 15px; font-weight: 600; margin: 0; }
 :root[data-theme] .research-update-heading .pipeline-options { width: auto; max-width: 100%; margin-left: auto; gap: 10px; }
 :root[data-theme] .research-update-heading select { width: auto; min-width: 90px; }
 :root[data-theme] .research-refresh { display: inline-flex; align-items: center; gap: 8px; color: var(--theme-heading); padding: 8px 12px; border: 1px solid var(--theme-border); border-radius: var(--radius-md); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 140ms; }
 :root[data-theme] .research-refresh:hover:not(:disabled) { background: var(--surface-blue); border-color: var(--theme-accent-border); }
-:root[data-theme] .research-metadata { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 18px; color: var(--theme-muted); font-size: 11px; }
+:root[data-theme] .research-metadata { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; color: var(--theme-muted); font-size: 11px; }
 :root[data-theme] .research-details { max-width: 70%; text-align: right; }
 :root[data-theme] .research-details summary { cursor: pointer; color: var(--theme-muted); font-size: 11px; }
 :root[data-theme] .research-details summary::after { content: ''; display: inline-block; width: 5px; height: 5px; border-bottom: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); margin-left: 8px; transition: transform 140ms; }

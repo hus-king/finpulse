@@ -1,5 +1,5 @@
 /* News replay uses the research workspace's surfaces, rules and market colors. */
-:root[data-theme] .news-replay > .news-replay-heading { padding: 22px 24px 18px; align-items: flex-start; }
+:root[data-theme] .news-replay > .news-replay-heading { display: flex; justify-content: space-between; padding: 22px 24px 18px; align-items: flex-start; }
 .news-replay-heading h2 { margin: 0; }
 .news-replay-heading p { margin: 8px 0 0; color: var(--theme-muted); font-size: 11px; line-height: 1.8; }
 .news-replay-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-block: 1px solid var(--theme-border); padding: 10px 24px; }
